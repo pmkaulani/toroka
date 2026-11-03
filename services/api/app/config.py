@@ -27,6 +27,8 @@ class Settings:
     weir_api_key: str = ""  # Optional X/Reddit public-post search; absence means not checked.
     scrape_creators_api_key: str = ""  # Optional public social-profile/page inspection.
     intelligence_cache_ttl_seconds: int = 900  # Short cache for public evidence; never caches private message bodies.
+    google_places_api_key: str = ""  # Optional Google Places API (New), shop-location corroboration only.
+    urlscan_api_key: str = ""  # Optional urlscan.io historical domain search; never submits user URLs.
     blocklist_path: str = ""
     enable_link_fetch: bool = False
     enable_rdap: bool = False
@@ -96,7 +98,7 @@ class Settings:
         s = cls(env=g("SSI_ENV", "dev"), database_url=g("DATABASE_URL", cls.database_url), encryption_key=g("ENCRYPTION_KEY", ""),
                 hmac_key=g("HMAC_KEY", ""), diagnostics_api_key=g("DIAGNOSTICS_API_KEY", ""), storage_dir=g("STORAGE_DIR", cls.storage_dir), public_base_url=g("PUBLIC_BASE_URL", cls.public_base_url),
                 retention_days=int(g("RETENTION_DAYS", 7)), trust_proxy_headers=g("TRUST_PROXY_HEADERS") == "1",
-                webrisk_api_key=g("WEBRISK_API_KEY", ""), tavily_api_key=g("TAVILY_API_KEY", ""), weir_api_key=g("WEIR_API_KEY", ""), scrape_creators_api_key=g("SCRAPE_CREATORS_API_KEY", ""), intelligence_cache_ttl_seconds=max(0, min(int(g("INTELLIGENCE_CACHE_TTL_SECONDS", 900)), 86400)), blocklist_path=g("BLOCKLIST_PATH", ""), enable_link_fetch=g("ENABLE_LINK_FETCH") == "1",
+                webrisk_api_key=g("WEBRISK_API_KEY", ""), tavily_api_key=g("TAVILY_API_KEY", ""), weir_api_key=g("WEIR_API_KEY", ""), scrape_creators_api_key=g("SCRAPE_CREATORS_API_KEY", ""), intelligence_cache_ttl_seconds=max(0, min(int(g("INTELLIGENCE_CACHE_TTL_SECONDS", 900)), 86400)), google_places_api_key=g("GOOGLE_PLACES_API_KEY", ""), urlscan_api_key=g("URLSCAN_API_KEY", ""), blocklist_path=g("BLOCKLIST_PATH", ""), enable_link_fetch=g("ENABLE_LINK_FETCH") == "1",
                 enable_rdap=g("ENABLE_RDAP") == "1", geocoder_user_agent=g("GEOCODER_USER_AGENT", ""), dev_echo_codes=g("DEV_ECHO_CODES") == "1",
                 whatsapp_verify_token=g("WHATSAPP_VERIFY_TOKEN", ""), whatsapp_app_secret=g("WHATSAPP_APP_SECRET", ""), whatsapp_token=g("WHATSAPP_TOKEN", ""),
                 whatsapp_phone_number_id=g("WHATSAPP_PHONE_NUMBER_ID", ""), at_username=g("AT_USERNAME", ""), at_api_key=g("AT_API_KEY", ""),

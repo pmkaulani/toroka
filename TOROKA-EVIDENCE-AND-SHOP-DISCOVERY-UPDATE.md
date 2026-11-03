@@ -55,3 +55,9 @@ The Google Maps link opens a search for the stated place. It is not proof that t
 - `TOROKA-INTELLIGENCE-MERGE-REPORT.md`
 
 The existing no-account/guest access path, logo, and English/Swahili UI were retained.
+
+## State-of-the-art Build 1 additions (3 November 2026)
+
+This update adds a bounded per-investigation evidence graph, candidate business listings from Google Places, and urlscan.io historical domain search. Historical scanner records are supporting context only; they do not independently make an entity high risk. The urlscan adapter sends a normalized domain to search existing scans and does not submit the user's URL for a new scan.
+
+See [TOROKA-STATE-OF-THE-ART-BUILD-1.md](TOROKA-STATE-OF-THE-ART-BUILD-1.md) for setup, privacy controls, provider terms and test results.

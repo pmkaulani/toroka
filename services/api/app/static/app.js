@@ -627,7 +627,8 @@ function evidenceBasisLabel(basis) {
   return labels[basis] || String(basis || t("ev_assessment_factor")).replaceAll("_", " ");
 }
 function evidenceSourceNode(source) {
-  const claim = source.claim_status === "reported_allegation" ? t("ev_allegation_not_proof")
+  const claim = source.source_type === "urlscan_historical_scan" ? t("ev_historical_scan")
+    : source.claim_status === "reported_allegation" ? t("ev_allegation_not_proof")
     : (source.source_type === "social_profile_observation" || source.source_type === "social_public_profile_observation") ? t("ev_seller_profile")
     : source.source_type === "inspected_public_web_page" ? t("ev_page_read_not_verified")
     : t("ev_public_search_lead");
@@ -641,7 +642,7 @@ function evidenceSourceNode(source) {
   );
 }
 function intelligencePanels(parent, assessment) {
-  parent.querySelectorAll(".det-intel-evidence, .det-shop-discovery").forEach(node => node.remove());
+  parent.querySelectorAll(".det-intel-evidence, .det-shop-discovery, .det-evidence-graph").forEach(node => node.remove());
   const intel = assessment && assessment.investigation_intelligence;
   if (!intel) return;
   const explanation = intel.evidence_explanation;
@@ -688,12 +689,51 @@ function intelligencePanels(parent, assessment) {
       const url = safeEvidenceUrl(item.url);
       return url ? h("li", { class: "storefront-item" }, h("strong", { text: item.title || item.platform || t("loc_online_storefront") }), h("small", { class: "evidence-meta", text: item.platform || t("loc_online_storefront") }), h("a", { href: url, rel: "noopener noreferrer", target: "_blank", text: t("loc_open_storefront") })) : null;
     }).filter(Boolean);
+    const mapItems = (shop.map_candidates || []).map(item => {
+      const mapsUrl = safeEvidenceUrl(item.maps_url);
+      const websiteUrl = safeEvidenceUrl(item.website_url);
+      const row = h("li", { class: "location-claim map-candidate" },
+        h("strong", { text: item.name || t("loc_map_candidates") }),
+        item.address ? h("span", { class: "evidence-meta", text: item.address }) : null,
+        h("span", { class: "evidence-tag", text: t("loc_possible_match") }),
+        item.business_status && item.business_status !== "unknown" ? h("small", { class: "evidence-meta", text: String(item.business_status).replaceAll("_", " ") }) : null,
+        item.match_basis ? h("p", { class: "evidence-snippet", text: item.match_basis }) : null,
+        mapsUrl ? h("a", { href: mapsUrl, rel: "noopener noreferrer", target: "_blank", text: t("loc_open_map_listing") }) : null,
+        websiteUrl ? h("a", { href: websiteUrl, rel: "noopener noreferrer", target: "_blank", text: t("loc_open_business_website") }) : null
+      );
+      return row;
+    });
     const children = [];
     if (locationItems.length) children.push(h("div", { class: "location-list-wrap" }, h("h4", { text: t("loc_public_location_claims") }), h("ul", { class: "location-list" }, locationItems)));
     else children.push(h("p", { class: "evidence-empty", text: t("loc_none_found") }));
+    if (mapItems.length) children.push(h("div", { class: "location-list-wrap" }, h("h4", { text: t("loc_map_candidates") }), h("ul", { class: "location-list" }, mapItems)));
     if (storefrontItems.length) children.push(h("div", { class: "storefront-list-wrap" }, h("h4", { text: t("loc_online_storefronts") }), h("ul", { class: "storefront-list" }, storefrontItems)));
+    if (shop.map_note) children.push(h("p", { class: "evidence-intro", text: shop.map_note }));
     if (shop.location_note) children.push(h("p", { class: "evidence-intro", text: shop.location_note }));
-    parent.append(h("details", { class: "det-shop-discovery", open: locations.length > 0 || storefronts.length > 0 }, h("summary", { text: t("r_location") }), ...children));
+    parent.append(h("details", { class: "det-shop-discovery", open: locations.length > 0 || storefronts.length > 0 || mapItems.length > 0 }, h("summary", { text: t("r_location") }), ...children));
+  }
+
+  const graph = intel.evidence_graph;
+  if (graph && Array.isArray(graph.edges) && graph.edges.length) {
+    const nodeById = new Map((graph.nodes || []).map(node => [node.id, node]));
+    const graphRows = graph.edges.slice(0, 16).map(edge => {
+      const from = nodeById.get(edge.from), to = nodeById.get(edge.to);
+      if (!from || !to) return null;
+      const ev = edge.evidence_id ? (intel.evidence || []).find(x => x.evidence_id === edge.evidence_id) : null;
+      const sourceUrl = ev && safeEvidenceUrl(ev.url);
+      return h("li", { class: "evidence-source" },
+        h("strong", { text: from.label || from.type }),
+        h("span", { class: "evidence-tag", text: String(edge.relation || t("graph_relationship")).replaceAll("_", " ") }),
+        h("strong", { text: to.label || to.type }),
+        h("small", { class: "evidence-meta", text: `${String(edge.basis || "").replaceAll("_", " ")} · ${String(edge.strength || "context")}` }),
+        sourceUrl ? h("a", { href: sourceUrl, rel: "noopener noreferrer", target: "_blank", text: t("open_source") }) : null
+      );
+    }).filter(Boolean);
+    parent.append(h("details", { class: "det-evidence-graph" },
+      h("summary", { text: t("graph_h") }),
+      h("p", { class: "evidence-intro", text: graph.interpretation_note || t("graph_note") }),
+      graphRows.length ? h("ul", { class: "evidence-source-list" }, graphRows) : h("p", { class: "evidence-empty", text: t("graph_empty") })
+    ));
   }
 }
 

@@ -20,6 +20,9 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 import httpx
 
 from .public_search import public_search, filter_public_search_results, manual_search_url
+from .evidence_graph import build_evidence_graph
+from ssi_connectors.places import search_places
+from ssi_connectors.urlscan import normalize_domain, search_historical_domain
 
 logger = logging.getLogger("toroka.investigation_intelligence")
 
@@ -87,7 +90,8 @@ def _cache_get(key: str, ttl: int) -> dict[str, Any] | None:
             return None
         # Provider outputs are JSON-shaped; shallow copy all mutable collections.
         return {**value, "evidence": [dict(x) for x in value.get("evidence", [])],
-                "providers": [dict(x) for x in value.get("providers", [])]}
+                "providers": [dict(x) for x in value.get("providers", [])],
+                "map_candidates": [dict(x) for x in value.get("map_candidates", [])]}
 
 
 def _cache_set(key: str, value: dict[str, Any], ttl: int) -> None:
@@ -280,7 +284,53 @@ def _extract_outbound_links(raw: dict[str, Any]) -> list[str]:
             break
     return links[:8]
 
-def build_shop_discovery(evidence: list[dict[str, Any]], targets: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+def _shop_places_query(target: dict[str, Any], evidence: list[dict[str, Any]]) -> str:
+    """Build a minimal Google Places query from a public seller identifier and own claims."""
+    identifier = _clean_text(target.get("identifier"), 100).lstrip("@")
+    if not identifier:
+        return ""
+    name = re.sub(r"[_-]+", " ", identifier).strip()
+    own_locations: list[str] = []
+    for item in evidence:
+        if not isinstance(item, dict) or not _is_target_controlled_source(item):
+            continue
+        for claim in item.get("location_claims") or []:
+            if not isinstance(claim, dict) or claim.get("kind") == "delivery_area":
+                continue
+            value = _clean_text(claim.get("value"), 100)
+            if value and value.casefold() not in {x.casefold() for x in own_locations}:
+                own_locations.append(value)
+    # Limit location context to one seller-published location claim. Third-party claims
+    # are not used as search context because that could reinforce a false association.
+    location = own_locations[0] if own_locations else "Kenya"
+    return _clean_text(f"{name} {location} Kenya", 180)
+
+
+def _places_candidate_records(target: dict[str, Any], places_result: dict[str, Any]) -> list[dict[str, Any]]:
+    """Keep only plausible name candidates; a candidate is never an identity verification."""
+    ident = re.sub(r"[^a-z0-9]+", " ", _clean_text(target.get("identifier"), 100).lstrip("@").casefold()).strip()
+    target_tokens = set(ident.split())
+    candidates = []
+    for place in (places_result.get("places") or [])[:5]:
+        if not isinstance(place, dict):
+            continue
+        name = _clean_text(place.get("name"), 180)
+        place_tokens = set(re.sub(r"[^a-z0-9]+", " ", name.casefold()).split())
+        overlap = len(target_tokens & place_tokens) / max(1, len(target_tokens | place_tokens))
+        # Handle tokens like "shop" or "official" should not be mistaken for a name match.
+        if not target_tokens or not place_tokens or overlap < 0.30:
+            continue
+        candidates.append({
+            **place,
+            "name_overlap": round(overlap, 2),
+            "identity_status": "possible_name_match_not_identity_verified",
+            "target_identifier": _clean_text(target.get("identifier"), 120),
+            "match_basis": "Google Places returned a listing with overlapping name terms for the public seller identifier.",
+        })
+    return candidates[:5]
+
+
+def build_shop_discovery(evidence: list[dict[str, Any]], targets: list[dict[str, Any]] | None = None, map_candidates: list[dict[str, Any]] | None = None, map_search_status: str | None = None) -> dict[str, Any]:
     """Build source-attributed shop location and online-presence facts for UI display."""
     locations: list[dict[str, Any]] = []
     seen_locations: set[tuple[str, str]] = set()
@@ -352,6 +402,9 @@ def build_shop_discovery(evidence: list[dict[str, Any]], targets: list[dict[str,
         "status": location_status,
         "locations": locations[:12],
         "online_storefronts": storefronts[:10],
+        "map_search_status": map_search_status or "not_checked",
+        "map_candidates": (map_candidates or [])[:5],
+        "map_note": "Map results are candidate directory listings. A name or address match does not prove that the submitted social account controls the listed business. Confirm ownership directly before treating it as the same seller.",
         "location_note": "These are source-attributed location claims, not independent proof that the seller operates from that address. Toroka does not infer a physical shop from a social-media bio or delivery area.",
     }
 
@@ -1060,6 +1113,18 @@ def detect_evidence_flags(category: str, evidence: list[dict[str, Any]]) -> list
             "source_ids": [item.get("evidence_id") for item in reported_targets[:5]],
             "advice": ["Review the linked original reports and verify that they refer to the exact account or domain you submitted."],
         })
+    historical_malicious = [item for item in evidence
+                            if item.get("source_type") == "urlscan_historical_scan" and item.get("malicious_verdict") is True]
+    if historical_malicious:
+        flags.append({
+            "code": "URLSCAN_HISTORICAL_MALICIOUS_VERDICT",
+            "severity": "supporting",
+            "evidence_status": "historical_scanner_observation",
+            "statement": "urlscan.io has a historical scan record for this domain that carried a malicious verdict.",
+            "why_it_matters": "This is a useful technical warning signal, but the scan may concern an earlier page version or a different path on the same domain. Review the dated scan itself and corroborate with current evidence; this historical result alone does not prove the current site or seller is fraudulent.",
+            "source_ids": [item.get("evidence_id") for item in historical_malicious[:5]],
+            "advice": ["Open the historical scan record and compare its date, domain, page title and observed behaviour with the URL being investigated.", "Do not rely on a historical scanner result as the only reason to accuse a seller."],
+        })
     return flags
 
 
@@ -1151,19 +1216,28 @@ def investigate_public_targets(
     tavily_key = getattr(settings, "tavily_api_key", "") or ""
     weir_key = getattr(settings, "weir_api_key", "") or ""
     scrape_key = getattr(settings, "scrape_creators_api_key", "") or ""
+    places_key = getattr(settings, "google_places_api_key", "") or ""
+    urlscan_key = getattr(settings, "urlscan_api_key", "") or ""
     ttl = int(getattr(settings, "intelligence_cache_ttl_seconds", 900) or 0)
     all_evidence: list[dict[str, Any]] = []
+    all_map_candidates: list[dict[str, Any]] = []
+    map_statuses: list[str] = []
     search_fn = web_search_fn or public_search
 
     for target in safe_targets:
         # Cache identity includes provider availability. Otherwise a no-key result
         # could be served later after the operator configures a provider (or vice versa).
-        provider_profile = f"tavily:{bool(tavily_key)}|weir:{bool(weir_key)}|scrape:{bool(scrape_key)}"
-        cache_key = hashlib.sha256((_target_key(target) + "|" + result["category"] + "|" + provider_profile + "|v3").encode()).hexdigest()
+        provider_profile = f"tavily:{bool(tavily_key)}|weir:{bool(weir_key)}|scrape:{bool(scrape_key)}|places:{bool(places_key)}|urlscan:{bool(urlscan_key)}"
+        cache_key = hashlib.sha256((_target_key(target) + "|" + result["category"] + "|" + provider_profile + "|v5").encode()).hexdigest()
         cached = _cache_get(cache_key, ttl)
         if cached:
             all_evidence.extend(cached.get("evidence", []))
+            all_map_candidates.extend(cached.get("map_candidates", []))
             result["providers"].extend(cached.get("providers", []))
+            if result["category"] == "shop":
+                places_status = next((p.get("status") for p in cached.get("providers", []) if p.get("provider") == "Google Places"), None)
+                if places_status:
+                    map_statuses.append(str(places_status))
             continue
 
         local_evidence: list[dict[str, Any]] = []
@@ -1348,15 +1422,129 @@ def investigate_public_targets(
                                             "results_retrieved": 0, "results_relevant": 0, "failure_reason": type(exc).__name__,
                                             "detail": "A provider task failed; no finding was inferred from the failure."})
 
+        local_map_candidates: list[dict[str, Any]] = []
+        if result["category"] == "shop":
+            places_query = _shop_places_query(target, local_evidence)
+            places_result = search_places(places_key, places_query) if places_query else {
+                "status": "not_checked", "provider": "Google Places", "detail": "No usable public shop name was available for a map listing search.", "places": [], "results_retrieved": 0,
+            }
+            local_map_candidates = _places_candidate_records(target, places_result)
+            places_status = str(places_result.get("status") or "failed")
+            map_statuses.append(places_status)
+            local_providers.append({
+                "provider": "Google Places", "operation": "shop_location_search", "status": places_status,
+                "query": places_result.get("query") or places_query,
+                "results_retrieved": int(places_result.get("results_retrieved") or 0),
+                "results_relevant": len(local_map_candidates),
+                "detail": str(places_result.get("detail") or "No location search detail was supplied."),
+                "failure_reason": places_result.get("failure_reason"),
+            })
+
+        # urlscan historical lookup only receives a domain, never the submitted URL.
+        # For social shops, the domain must have been explicitly linked by a
+        # target-controlled public profile/page or an inspected target website.
+        domain_sources: dict[str, str | None] = {}
+        if target.get("kind") == "domain":
+            direct_domain = normalize_domain(str(target.get("identifier") or ""))
+            if direct_domain:
+                domain_sources[direct_domain] = None
+        else:
+            excluded_hosts = {
+                "instagram.com", "tiktok.com", "facebook.com", "fb.com", "x.com", "twitter.com",
+                "reddit.com", "youtube.com", "linkedin.com", "threads.net", "pinterest.com",
+                "snapchat.com", "whatsapp.com", "telegram.org", "t.me", "google.com",
+                "maps.app.goo.gl",
+            }
+            for source_item in local_evidence:
+                if not isinstance(source_item, dict) or not _is_target_controlled_source(source_item):
+                    continue
+                parent_id = str(source_item.get("evidence_id") or "") or None
+                for public_link in (source_item.get("outbound_links") or [])[:8]:
+                    host = normalize_domain(str(public_link or ""))
+                    if not host or any(host == blocked or host.endswith("." + blocked) for blocked in excluded_hosts):
+                        continue
+                    domain_sources.setdefault(host, parent_id)
+                    if len(domain_sources) >= 2:
+                        break
+                if len(domain_sources) >= 2:
+                    break
+
+        for scanned_domain, parent_evidence_id in list(domain_sources.items())[:2]:
+            scan_result = search_historical_domain(urlscan_key, scanned_domain)
+            scan_records = scan_result.get("results") if isinstance(scan_result.get("results"), list) else []
+            local_providers.append({
+                "provider": "urlscan.io", "operation": "historical_domain_search",
+                "status": str(scan_result.get("status") or "failed"),
+                "query_domain": scanned_domain,
+                "results_retrieved": int(scan_result.get("results_retrieved") or 0),
+                "results_relevant": len(scan_records),
+                "search_date_limit_days": scan_result.get("search_date_limit_days"),
+                "failure_reason": scan_result.get("failure_reason"),
+                "detail": _clean_text(scan_result.get("detail") or "Historical scan lookup did not return a detail.", 700),
+            })
+            for scan in scan_records[:5]:
+                if not isinstance(scan, dict):
+                    continue
+                scan_id = _clean_text(scan.get("scan_id"), 80)
+                if not scan_id:
+                    continue
+                malicious = scan.get("malicious_verdict") if isinstance(scan.get("malicious_verdict"), bool) else None
+                verdict_text = (
+                    "The historical scanner verdict was marked malicious."
+                    if malicious is True else
+                    "The historical scanner verdict was not marked malicious. This does not establish that the current site is safe."
+                    if malicious is False else
+                    "The historical record did not include a machine-readable malicious verdict."
+                )
+                scan_date = _clean_text(scan.get("scan_date"), 80) or "date not supplied"
+                title = _clean_text(scan.get("page_title"), 160) or scanned_domain
+                snippet = _clean_text(
+                    f"Historical urlscan.io scan of {scanned_domain} on {scan_date}. {verdict_text} "
+                    f"Visibility: {scan.get('visibility') or 'unknown'}. "
+                    f"Score: {scan.get('verdict_score') if scan.get('verdict_score') is not None else 'not supplied'}. "
+                    f"Redirect: {scan.get('redirected') or 'not supplied'}. This is a historical observation, not a live scan or proof of current behaviour.",
+                    900,
+                )
+                evidence_id = hashlib.sha256(
+                    f"urlscan|{_target_key(target)}|{scanned_domain}|{scan_id}".encode("utf-8", "ignore")
+                ).hexdigest()[:16]
+                local_evidence.append({
+                    "evidence_id": evidence_id,
+                    "provider": "urlscan.io",
+                    "source_type": "urlscan_historical_scan",
+                    "content_status": "historical_scan_record",
+                    "evidence_type": "automated_scanner_observation",
+                    "claim_status": "historical_scanner_observation",
+                    "identity_match": "exact_domain_historical_scan_match" if target.get("kind") == "domain" and scanned_domain == normalize_domain(str(target.get("identifier") or "")) else "seller_published_external_domain_historical_scan",
+                    "target_identifier": _clean_text(target.get("identifier"), 120),
+                    "related_domain": scanned_domain,
+                    "linked_from_evidence_id": parent_evidence_id,
+                    "title": title,
+                    "snippet": snippet,
+                    "url": _safe_http_url(scan.get("result_url")) or f"https://urlscan.io/result/{scan_id}/",
+                    "collected_at": _now(),
+                    "scan_date": scan_date,
+                    "scan_id": scan_id,
+                    "malicious_verdict": malicious,
+                    "verdict_score": scan.get("verdict_score"),
+                    "redirected": _clean_text(scan.get("redirected"), 50),
+                    "visibility": _clean_text(scan.get("visibility"), 20),
+                    "verified": False,
+                })
+
         # Provider records cached separately by exact public target, never by user/session.
-        if local_evidence or any(p.get("status") in {"checked", "checked_no_match"} for p in local_providers):
-            _cache_set(cache_key, {"evidence": _dedupe_evidence(local_evidence), "providers": local_providers}, ttl)
+        if local_evidence or local_map_candidates or any(p.get("status") in {"checked", "checked_no_match"} for p in local_providers):
+            _cache_set(cache_key, {"evidence": _dedupe_evidence(local_evidence), "providers": local_providers,
+                                   "map_candidates": local_map_candidates}, ttl)
         all_evidence.extend(local_evidence)
+        all_map_candidates.extend(local_map_candidates)
         result["providers"].extend(local_providers)
 
     result["evidence"] = _dedupe_evidence(all_evidence)
     if result["category"] == "shop":
-        result["shop_discovery"] = build_shop_discovery(result["evidence"], safe_targets)
+        map_status = "checked" if "checked" in map_statuses else "checked_no_match" if map_statuses and set(map_statuses) <= {"checked_no_match", "not_found"} else "not_configured" if "not_configured" in map_statuses else "failed" if map_statuses else "not_checked"
+        result["shop_discovery"] = build_shop_discovery(result["evidence"], safe_targets, all_map_candidates, map_status)
+    result["evidence_graph"] = build_evidence_graph(safe_targets, result["evidence"], shop_discovery=result.get("shop_discovery"))
     result["red_flags"].extend(detect_evidence_flags(result["category"], result["evidence"]))
     result["red_flags"].extend(detect_cross_source_flags(result["evidence"]))
 
