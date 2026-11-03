@@ -7,14 +7,18 @@ services:
     envVars:
       - key: SSI_ENV
         value: prod
-      - key: INTELLIGENCE_CACHE_TTL_SECONDS
-        value: "900"
+      - key: AI_MODEL
+        value: gemini-flash-lite-latest
+      - key: GEMINI_API_KEY
+        sync: false
       - key: TAVILY_API_KEY
         sync: false
       - key: WEIR_API_KEY
         sync: false
       - key: SCRAPE_CREATORS_API_KEY
         sync: false
+      - key: INTELLIGENCE_CACHE_TTL_SECONDS
+        value: "900"
       - key: ENCRYPTION_KEY
         generateValue: true
       - key: HMAC_KEY
