@@ -66,6 +66,12 @@ def create_app(settings: Settings | None = None, *, deps: pipeline.Deps | None =
     except Exception as e:
         logging.getLogger("toroka.evidence").warning(f"Could not initialize evidence router: {e}")
 
+    try:
+        from .routes_phase5_phase6 import router as phase5_6_router
+        app.include_router(phase5_6_router)
+    except Exception as e:
+        logging.getLogger("toroka.phase5_6").warning(f"Could not initialize phase 5/6 router: {e}")
+
     # Autonomous ML Worker Daemon
     if os.environ.get("SSI_NO_WORKER") != "1":
         try:
