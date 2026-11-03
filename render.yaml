@@ -7,6 +7,10 @@ services:
     envVars:
       - key: SSI_ENV
         value: prod
+      - key: DATABASE_URL
+        value: sqlite:////data/ssi.db
+      - key: STORAGE_DIR
+        value: /data/evidence
       - key: AI_MODEL
         value: gemini-flash-lite-latest
       - key: GEMINI_API_KEY

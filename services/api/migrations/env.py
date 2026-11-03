@@ -4,6 +4,12 @@ from sqlalchemy import create_engine
 from app.db import Base
 
 url = os.environ.get("DATABASE_URL", "sqlite:///./ssi.db")
+if url.startswith("sqlite:///"):
+    db_file = url[len("sqlite:///"):]
+    if not db_file.startswith(":memory:") and db_file:
+        db_dir = os.path.dirname(db_file)
+        if db_dir:
+            os.makedirs(db_dir, exist_ok=True)
 
 
 def run():

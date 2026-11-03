@@ -319,6 +319,13 @@ Index("ix_subject_lookup", Subject.subject_type, Subject.lookup_hmac)
 
 def make_engine(url: str):
     if url.startswith("sqlite"):
+        if url.startswith("sqlite:///"):
+            db_file = url[len("sqlite:///"):]
+            if not db_file.startswith(":memory:") and db_file:
+                import os
+                db_dir = os.path.dirname(db_file)
+                if db_dir:
+                    os.makedirs(db_dir, exist_ok=True)
         memory = ":memory:" in url or url in ("sqlite://", "sqlite:///:memory:")
         kw = {"poolclass": StaticPool} if memory else {}
         engine = create_engine(url, connect_args={"check_same_thread": False, "timeout": 30}, **kw)
