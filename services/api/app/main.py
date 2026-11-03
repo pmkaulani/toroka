@@ -60,6 +60,11 @@ def create_app(settings: Settings | None = None, *, deps: pipeline.Deps | None =
 
     app.include_router(core)
     app.include_router(community)
+    try:
+        from toroka_evidence.api_contract import router as evidence_router
+        app.include_router(evidence_router)
+    except Exception as e:
+        logging.getLogger("toroka.evidence").warning(f"Could not initialize evidence router: {e}")
 
     # Autonomous ML Worker Daemon
     if os.environ.get("SSI_NO_WORKER") != "1":
