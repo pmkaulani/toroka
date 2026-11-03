@@ -817,6 +817,7 @@ def run_check(db: Session, c: Ctx, chk: m.Check) -> None:
                 "evidence": intelligence_result.get("evidence", [])[:30],
                 "evidence_explanation": verdict_explanation,
                 "shop_discovery": intelligence_result.get("shop_discovery"),
+                "evidence_graph": intelligence_result.get("evidence_graph"),
                 "summary": intelligence_result.get("summary", ""),
                 "checked_at": intelligence_result.get("checked_at"),
             }
