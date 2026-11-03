@@ -1,0 +1,142 @@
+# Official-source registry (seed). Every statement needs a source URL, a verification
+# date and a review interval. `reviewer` stays "unreviewed" until a human confirms it
+# against the live page. Stale entries lose strength in assessments (see assessment.py).
+organisations:
+  safaricom:
+    display_name: Safaricom
+    aliases: [safaricom, m-pesa, mpesa, "m pesa"]
+    brand_tokens: [safaricom]
+    official_domains: [safaricom.co.ke]          # not exhaustive; shown as "domains on record"
+    official_numbers: ["+254722000000"]
+  kra:
+    display_name: Kenya Revenue Authority (KRA)
+    aliases: [kra, kenya revenue authority]
+    brand_tokens: []
+    official_domains: [kra.go.ke]
+    official_numbers: []
+  safarilink:
+    display_name: Safarilink Aviation
+    aliases: [safarilink, "fly safarilink", "safarilink aviation"]
+    brand_tokens: [safarilink, flysafarilink]
+    official_domains: [flysafarilink.com]
+    official_numbers: ["+254206690000", "+254730888000"]
+  ecitizen:
+    display_name: eCitizen Kenya
+    aliases: [ecitizen, "e-citizen", "ecitizen portal"]
+    brand_tokens: [ecitizen]
+    official_domains: [ecitizen.go.ke]
+    official_numbers: []
+  kenya_airways:
+    display_name: Kenya Airways
+    aliases: ["kenya airways", kq]
+    brand_tokens: ["kenya airways"]
+    official_domains: [kenya-airways.com]
+    official_numbers: ["+254711024747", "+254203274747"]
+  jambojet:
+    display_name: Jambojet
+    aliases: [jambojet]
+    brand_tokens: [jambojet]
+    official_domains: [jambojet.com]
+    official_numbers: ["+254711045888", "+254730999000"]
+  kplc:
+    display_name: Kenya Power (KPLC)
+    aliases: [kplc, "kenya power"]
+    brand_tokens: [kplc, "kenya power"]
+    official_domains: [kplc.co.ke]
+    official_numbers: ["97771", "+254703070707"]
+  jumia:
+    display_name: Jumia Kenya
+    aliases: [jumia, "jumia kenya"]
+    brand_tokens: [jumia]
+    official_domains: [jumia.co.ke]
+    official_numbers: []
+
+statements:
+  - id: safaricom-never-asks-pin
+    org: safaricom
+    statement: "Safaricom says its staff will never ask you to share your M-PESA PIN, SIM passcodes or password."
+    source_url: https://safaricom.co.ke/fraud-awareness/tips-tricks
+    source_published: null
+    last_verified_at: 2026-10-20
+    review_interval_days: 90
+    reviewer: unreviewed
+  - id: safaricom-calls-from
+    org: safaricom
+    statement: "Safaricom says it only calls customers from 0722 000 000."
+    source_url: https://safaricom.co.ke/fraud-awareness/tips-tricks
+    source_published: null
+    last_verified_at: 2026-10-20
+    review_interval_days: 90
+    reviewer: unreviewed
+  - id: safaricom-report-333
+    org: safaricom
+    statement: "Safaricom asks customers to forward suspicious messages to 333."
+    source_url: https://safaricom.co.ke/fraud-awareness
+    source_published: null
+    last_verified_at: 2026-10-20
+    review_interval_days: 90
+    reviewer: unreviewed
+  - id: kra-recruitment-no-fee
+    org: kra
+    statement: "KRA says it does not charge any fee at any stage of recruitment: application, shortlisting, interviewing or offer."
+    source_url: https://kra.go.ke/news-center/public-notices/586-recruitment-fraud
+    source_published: 2019-07-19            # notice date; KRA repeated the message in a 18 Sep 2026 warning (press report)
+    last_verified_at: 2026-10-20
+    review_interval_days: 90
+    reviewer: unreviewed
+  - id: kra-report-channel
+    org: kra
+    statement: "KRA asks the public to report suspicious vacancy adverts or job offers to cic@kra.go.ke."
+    source_url: https://kra.go.ke/news-center/public-notices/586-recruitment-fraud
+    source_published: 2019-07-19
+    last_verified_at: 2026-10-20
+    review_interval_days: 90
+    reviewer: unreviewed
+  - id: safarilink-no-personal-pay
+    org: safarilink
+    statement: "Safarilink says ticket payments are processed via flysafarilink.com or corporate Paybill 893300, never to personal mobile numbers."
+    source_url: https://www.flysafarilink.com
+    source_published: null
+    last_verified_at: 2026-10-20
+    review_interval_days: 90
+    reviewer: unreviewed
+  - id: ecitizen-official-paybill
+    org: ecitizen
+    statement: "The Government of Kenya says eCitizen services are accessed exclusively via ecitizen.go.ke and paid via Government Paybill 222222."
+    source_url: https://ecitizen.go.ke
+    source_published: null
+    last_verified_at: 2026-10-20
+    review_interval_days: 90
+    reviewer: unreviewed
+  - id: kq-official-booking
+    org: kenya_airways
+    statement: "Kenya Airways says flight bookings are paid online via kenya-airways.com or corporate Paybill 799100."
+    source_url: https://www.kenya-airways.com
+    source_published: null
+    last_verified_at: 2026-10-20
+    review_interval_days: 90
+    reviewer: unreviewed
+  - id: jambojet-official-booking
+    org: jambojet
+    statement: "Jambojet says flight bookings are paid directly on jambojet.com or via corporate Paybill 893200."
+    source_url: https://www.jambojet.com
+    source_published: null
+    last_verified_at: 2026-10-20
+    review_interval_days: 90
+    reviewer: unreviewed
+  - id: kplc-official-tokens
+    org: kplc
+    statement: "Kenya Power says electricity tokens are bought through Paybill 888880 and postpaid bills via Paybill 888888."
+    source_url: https://kplc.co.ke
+    source_published: null
+    last_verified_at: 2026-10-20
+    review_interval_days: 90
+    reviewer: unreviewed
+  - id: jumia-no-advance-rider
+    org: jumia
+    statement: "Jumia Kenya says customers should never pay delivery or dispatch rider fees to personal mobile numbers in advance."
+    source_url: https://www.jumia.co.ke
+    source_published: null
+    last_verified_at: 2026-10-20
+    review_interval_days: 90
+    reviewer: unreviewed

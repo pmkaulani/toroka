@@ -1,0 +1,14 @@
+# Local production-like stack. Not run in the authoring environment; review before use.
+services:
+  db:
+    image: postgres:16
+    environment: { POSTGRES_USER: ssi, POSTGRES_PASSWORD: change-me, POSTGRES_DB: ssi }
+    volumes: [dbdata:/var/lib/postgresql/data]
+    healthcheck: { test: ["CMD-SHELL", "pg_isready -U ssi"], interval: 5s, retries: 10 }
+  api:
+    build: .
+    env_file: .env
+    depends_on: { db: { condition: service_healthy } }
+    ports: ["8000:8000"]
+    volumes: [evidence:/data/evidence]
+volumes: { dbdata: {}, evidence: {} }

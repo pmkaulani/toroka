@@ -1,0 +1,252 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Toroka Moderator Console</title>
+  <link rel="icon" href="/static/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/styles.css">
+  <style>
+    .mod-container { max-width: 1000px; margin: 0 auto; padding: 24px 16px; }
+    .mod-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); padding-bottom: 16px; margin-bottom: 24px; }
+    .mod-tabs { display: flex; gap: 8px; margin-bottom: 20px; }
+    .mod-tab { padding: 8px 16px; border: 1px solid var(--border); background: var(--bg); border-radius: 6px; cursor: pointer; font-weight: 500; }
+    .mod-tab.active { background: var(--ink); color: #fff; }
+    .card { background: var(--card-bg, #ffffff); border: 1px solid var(--border); border-radius: 8px; padding: 16px; margin-bottom: 16px; }
+    .card-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; }
+    .actions { display: flex; gap: 8px; margin-top: 12px; }
+    .btn { padding: 6px 14px; border-radius: 6px; border: none; font-weight: 600; cursor: pointer; }
+    .btn-approve { background: #087E8B; color: #fff; }
+    .btn-reject { background: #d9383a; color: #fff; }
+    .btn-neutral { background: var(--border); color: var(--ink); }
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 12px; font-weight: 600; text-transform: uppercase; }
+    .login-box { max-width: 400px; margin: 60px auto; padding: 24px; border: 1px solid var(--border); border-radius: 8px; }
+    .form-group { margin-bottom: 16px; }
+    .form-group label { display: block; margin-bottom: 6px; font-weight: 500; }
+    .form-group input { width: 100%; padding: 8px; border: 1px solid var(--border); border-radius: 6px; box-sizing: border-box; }
+  </style>
+</head>
+<body>
+  <div class="mod-container">
+    <div id="login-view" class="login-box">
+      <h2>Moderator Access</h2>
+      <p style="color: var(--muted); font-size: 14px;">Log in with your Toroka moderator credentials.</p>
+      <form id="login-form">
+        <div class="form-group">
+          <label for="email">Email</label>
+          <input type="email" id="email" required autocomplete="email">
+        </div>
+        <div class="form-group">
+          <label for="password">Password</label>
+          <input type="password" id="password" required autocomplete="current-password">
+        </div>
+        <div id="login-err" style="color: red; margin-bottom: 12px; font-size: 14px;" hidden></div>
+        <button type="submit" class="btn btn-approve" style="width: 100%; padding: 10px;">Log In</button>
+      </form>
+    </div>
+
+    <div id="dashboard-view" hidden>
+      <header class="mod-header">
+        <div>
+          <h2>Toroka Moderator Dashboard</h2>
+          <span id="user-display" style="font-size: 13px; color: var(--muted);"></span>
+        </div>
+        <button id="logout-btn" class="btn btn-neutral">Log Out</button>
+      </header>
+
+      <nav class="mod-tabs" role="tablist">
+        <button class="mod-tab active" data-tab="queue">Reports Queue (<span id="queue-count">0</span>)</button>
+        <button class="mod-tab" data-tab="appeals">Appeals (<span id="appeals-count">0</span>)</button>
+        <button class="mod-tab" data-tab="campaigns">Linked Campaigns</button>
+      </nav>
+
+      <main id="tab-content">
+        <div id="queue-list">Loading queue...</div>
+      </main>
+    </div>
+  </div>
+
+  <script>
+    let token = localStorage.getItem("toroka_mod_token");
+    let currentTab = "queue";
+
+    async function api(path, opts = {}) {
+      opts.headers = { ...opts.headers, "Authorization": "Bearer " + token };
+      if (opts.body && typeof opts.body === "object") {
+        opts.headers["Content-Type"] = "application/json";
+        opts.body = JSON.stringify(opts.body);
+      }
+      const res = await fetch(path, opts);
+      if (res.status === 401) { logout(); throw new Error("Unauthorized"); }
+      if (!res.ok) { const err = await res.json().catch(() => ({ detail: res.statusText })); throw new Error(err.detail || "Request failed"); }
+      return res.json();
+    }
+
+    function init() {
+      if (token) { showDashboard(); }
+      else { showLogin(); }
+    }
+
+    function showLogin() {
+      document.getElementById("login-view").hidden = false;
+      document.getElementById("dashboard-view").hidden = true;
+    }
+
+    function showDashboard() {
+      document.getElementById("login-view").hidden = true;
+      document.getElementById("dashboard-view").hidden = false;
+      loadQueue();
+      loadAppeals();
+    }
+
+    function logout() {
+      localStorage.removeItem("toroka_mod_token");
+      token = null;
+      showLogin();
+    }
+
+    document.getElementById("login-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const email = document.getElementById("email").value.trim();
+      const password = document.getElementById("password").value;
+      const errBox = document.getElementById("login-err");
+      errBox.hidden = true;
+      try {
+        const res = await fetch("/v1/auth/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email, password })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || "Login failed");
+        token = data.token;
+        localStorage.setItem("toroka_mod_token", token);
+        showDashboard();
+      } catch (err) {
+        errBox.textContent = err.message;
+        errBox.hidden = false;
+      }
+    });
+
+    document.getElementById("logout-btn").addEventListener("click", logout);
+
+    document.querySelectorAll(".mod-tab").forEach(tab => {
+      tab.addEventListener("click", () => {
+        document.querySelectorAll(".mod-tab").forEach(t => t.classList.remove("active"));
+        tab.classList.add("active");
+        currentTab = tab.dataset.tab;
+        if (currentTab === "queue") loadQueue();
+        else if (currentTab === "appeals") loadAppeals();
+        else if (currentTab === "campaigns") loadCampaigns();
+      });
+    });
+
+    async function loadQueue() {
+      const container = document.getElementById("tab-content");
+      container.innerHTML = "<p>Loading reports queue...</p>";
+      try {
+        const data = await api("/v1/moderation/queue");
+        document.getElementById("queue-count").textContent = data.queue.length;
+        if (!data.queue.length) {
+          container.innerHTML = "<div class='card'><p>Queue is empty! No reports waiting for review.</p></div>";
+          return;
+        }
+        container.innerHTML = data.queue.map(r => `
+          <div class="card" id="rep-${r.report_id}">
+            <div class="card-head">
+              <strong>${r.category.toUpperCase()} Report</strong>
+              <span style="font-size: 12px; color: var(--muted);">${r.created_at}</span>
+            </div>
+            <p><strong>Identifiers:</strong> ${r.identifiers.map(i => `${i.type}: ${i.masked_value}`).join(", ")}</p>
+            <p><strong>Narrative:</strong> <em>"${r.narrative}"</em></p>
+            <div class="actions">
+              <button class="btn btn-approve" onclick="actReport('${r.report_id}', 'accept')">Approve Indicator</button>
+              <button class="btn btn-reject" onclick="actReport('${r.report_id}', 'reject')">Reject</button>
+            </div>
+          </div>
+        `).join("");
+      } catch (err) {
+        container.innerHTML = `<p style="color: red;">Error: ${err.message}</p>`;
+      }
+    }
+
+    async function actReport(reportId, decision) {
+      try {
+        await api(`/v1/moderation/reports/${reportId}/action`, {
+          method: "POST",
+          body: { decision, notes: "Processed via Moderator Web Console" }
+        });
+        const el = document.getElementById(`rep-${reportId}`);
+        if (el) el.remove();
+        loadQueue();
+      } catch (err) {
+        alert("Action failed: " + err.message);
+      }
+    }
+
+    async function loadAppeals() {
+      const container = document.getElementById("tab-content");
+      if (currentTab !== "appeals") return;
+      container.innerHTML = "<p>Loading appeals...</p>";
+      try {
+        const data = await api("/v1/moderation/appeals");
+        document.getElementById("appeals-count").textContent = data.appeals.length;
+        if (!data.appeals.length) {
+          container.innerHTML = "<div class='card'><p>No open appeals pending resolution.</p></div>";
+          return;
+        }
+        container.innerHTML = data.appeals.map(a => `
+          <div class="card" id="app-${a.appeal_id}">
+            <div class="card-head">
+              <strong>Appeal #${a.appeal_id.slice(0, 8)}</strong>
+              <span class="badge" style="background:#eee;">${a.status}</span>
+            </div>
+            <p><strong>Issue:</strong> ${a.issue_type}</p>
+            <p><strong>Statement:</strong> "${a.statement}"</p>
+            <div class="actions">
+              <button class="btn btn-approve" onclick="resolveAppeal('${a.appeal_id}', 'granted')">Grant (Remove Indicator)</button>
+              <button class="btn btn-reject" onclick="resolveAppeal('${a.appeal_id}', 'dismissed')">Dismiss Appeal</button>
+            </div>
+          </div>
+        `).join("");
+      } catch (err) {
+        if (currentTab === "appeals") container.innerHTML = `<p style="color: red;">Error: ${err.message}</p>`;
+      }
+    }
+
+    async function resolveAppeal(appealId, resolution) {
+      try {
+        await api(`/v1/moderation/appeals/${appealId}/resolve`, {
+          method: "POST",
+          body: { resolution, explanation: "Resolved via Moderator Web Console" }
+        });
+        loadAppeals();
+      } catch (err) {
+        alert("Resolution failed: " + err.message);
+      }
+    }
+
+    async function loadCampaigns() {
+      const container = document.getElementById("tab-content");
+      container.innerHTML = "<p>Loading linked campaigns...</p>";
+      try {
+        const data = await api("/v1/moderation/campaigns");
+        if (!data.campaigns.length) {
+          container.innerHTML = "<div class='card'><p>No cross-report recurring campaigns detected.</p></div>";
+          return;
+        }
+        container.innerHTML = data.campaigns.map(c => `
+          <div class="card">
+            <strong>Campaign cluster (${c.reports_count} linked reports)</strong>
+            <p>Primary indicators: ${c.identifiers.join(", ")}</p>
+          </div>
+        `).join("");
+      } catch (err) {
+        container.innerHTML = `<p style="color: red;">Error: ${err.message}</p>`;
+      }
+    }
+
+    init();
+  </script>
+</body>
+</html>

@@ -1,0 +1,23 @@
+[
+  {
+    "id": "phish_safaricom_unlock_01",
+    "timestamp": "2026-06-01T08:00:00Z",
+    "target_brand": "Safaricom",
+    "category": "credential_theft",
+    "lure_text": "Safaricom Alert: Your line has been suspended. Visit http://safaricom-line-reactivate.com and enter your M-PESA PIN immediately to restore network service."
+  },
+  {
+    "id": "phish_kcb_banking_02",
+    "timestamp": "2026-06-05T12:00:00Z",
+    "target_brand": "KCB Bank",
+    "category": "credential_theft",
+    "lure_text": "Dear KCB Customer, your internet banking access is expiring. Log in at http://kcb-mobile-update.ke-verify.net with your account number and password."
+  },
+  {
+    "id": "phish_equity_verification_03",
+    "timestamp": "2026-06-12T16:20:00Z",
+    "target_brand": "Equity Bank",
+    "category": "credential_theft",
+    "lure_text": "Equity Bank Security: A new device accessed your Equitel SIM. Confirm your identity at http://equity-sim-auth.online or your account will be locked within 1 hour."
+  }
+]

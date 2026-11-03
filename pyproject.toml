@@ -1,0 +1,18 @@
+[project]
+name = "smart-scam-identifier"
+version = "0.1.0"
+description = "Kenya-first, evidence-based scam checking (first vertical slice)"
+requires-python = ">=3.12"
+dependencies = ["fastapi>=0.110", "pydantic>=2.6", "pyyaml>=6", "uvicorn>=0.29", "sqlalchemy>=2.0", "alembic>=1.13", "cryptography>=42", "python-multipart>=0.0.9", "httpx>=0.27", "pillow>=10"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "hypothesis>=6"]
+postgres = ["psycopg[binary]>=3.1"]
+
+[tool.pytest.ini_options]
+pythonpath = ["packages/rules", "packages/connectors", "services/api"]
+testpaths = ["packages/rules/tests", "packages/connectors/tests", "services/api/tests"]
+filterwarnings = [
+  "ignore:Using ephemeral development keys:UserWarning",          # expected in tests: keys are generated per run
+  "ignore:Using `httpx` with `starlette.testclient`:DeprecationWarning",   # third-party notice about the test client
+]

@@ -1,0 +1,3359 @@
+{
+  "active_version": "v1.0.1793699729",
+  "snapshots": {
+    "v1.0.1793012697": {
+      "version": "v1.0.1793012697",
+      "created_at": "2026-10-26T11:04:57+00:00",
+      "sha256_hash": "722bb3e9ee5a441dd95769e12b6aa1e399e00ccf54cf67d06dda333d00b79ca4",
+      "total_samples": 63,
+      "category_counts": {
+        "advance_fee": 8,
+        "fake_mpesa": 5,
+        "credential_theft": 7,
+        "fake_recruitment": 5,
+        "task_scam": 5,
+        "investment_ponzi": 5,
+        "marketplace_non_delivery": 4,
+        "unsolicited_betting_promo": 6,
+        "legitimate_customer_service": 4,
+        "legitimate_commerce": 9,
+        "ambiguous_neutral": 6
+      },
+      "tier_counts": {
+        "corroborated": 63
+      },
+      "language_counts": {
+        "en": 48,
+        "sw": 11,
+        "mixed": 2,
+        "sheng": 2
+      },
+      "pseudo_label_ratio": 0.0,
+      "snapshot_path": "C:\\Users\\STD USER\\Desktop\\work\\Toroka\\smart-scam-identifier\\packages\\rules\\ssi_rules\\ml\\data\\snapshots\\snapshot_v1.0.1793012697.jsonl",
+      "parent_version": "v1.0.0"
+    },
+    "v1.0.1793012726": {
+      "version": "v1.0.1793012726",
+      "created_at": "2026-10-26T11:05:26+00:00",
+      "sha256_hash": "722bb3e9ee5a441dd95769e12b6aa1e399e00ccf54cf67d06dda333d00b79ca4",
+      "total_samples": 63,
+      "category_counts": {
+        "advance_fee": 8,
+        "fake_mpesa": 5,
+        "credential_theft": 7,
+        "fake_recruitment": 5,
+        "task_scam": 5,
+        "investment_ponzi": 5,
+        "marketplace_non_delivery": 4,
+        "unsolicited_betting_promo": 6,
+        "legitimate_customer_service": 4,
+        "legitimate_commerce": 9,
+        "ambiguous_neutral": 6
+      },
+      "tier_counts": {
+        "corroborated": 63
+      },
+      "language_counts": {
+        "en": 48,
+        "sw": 11,
+        "mixed": 2,
+        "sheng": 2
+      },
+      "pseudo_label_ratio": 0.0,
+      "snapshot_path": "C:\\Users\\STD USER\\Desktop\\work\\Toroka\\smart-scam-identifier\\packages\\rules\\ssi_rules\\ml\\data\\snapshots\\snapshot_v1.0.1793012726.jsonl",
+      "parent_version": "v1.0.1793012697"
+    },
+    "v1.0.1793012789": {
+      "version": "v1.0.1793012789",
+      "created_at": "2026-10-26T11:06:29+00:00",
+      "sha256_hash": "722bb3e9ee5a441dd95769e12b6aa1e399e00ccf54cf67d06dda333d00b79ca4",
+      "total_samples": 63,
+      "category_counts": {
+        "advance_fee": 8,
+        "fake_mpesa": 5,
+        "credential_theft": 7,
+        "fake_recruitment": 5,
+        "task_scam": 5,
+        "investment_ponzi": 5,
+        "marketplace_non_delivery": 4,
+        "unsolicited_betting_promo": 6,
+        "legitimate_customer_service": 4,
+        "legitimate_commerce": 9,
+        "ambiguous_neutral": 6
+      },
+      "tier_counts": {
+        "corroborated": 63
+      },
+      "language_counts": {
+        "en": 48,
+        "sw": 11,
+        "mixed": 2,
+        "sheng": 2
+      },
+      "pseudo_label_ratio": 0.0,
+      "snapshot_path": "C:\\Users\\STD USER\\Desktop\\work\\Toroka\\smart-scam-identifier\\packages\\rules\\ssi_rules\\ml\\data\\snapshots\\snapshot_v1.0.1793012789.jsonl",
+      "parent_version": "v1.0.1793012726"
+    },
+    "v1.0.1793012885": {
+      "version": "v1.0.1793012885",
+      "created_at": "2026-10-26T11:08:05+00:00",
+      "sha256_hash": "613dab2994d1000b50ca691be5d8f7b4e30f6a02622ac6f7b47fb88f16346e97",
+      "total_samples": 69,
+      "category_counts": {
+        "advance_fee": 9,
+        "fake_mpesa": 5,
+        "credential_theft": 10,
+        "fake_recruitment": 5,
+        "task_scam": 6,
+        "investment_ponzi": 6,
+        "marketplace_non_delivery": 4,
+        "unsolicited_betting_promo": 6,
+        "legitimate_customer_service": 4,
+        "legitimate_commerce": 9,
+        "ambiguous_neutral": 6
+      },
+      "tier_counts": {
+        "corroborated": 66,
+        "strongly_supported": 3
+      },
+      "language_counts": {
+        "en": 53,
+        "sw": 11,
+        "mixed": 3,
+        "sheng": 2
+      },
+      "pseudo_label_ratio": 0.0,
+      "snapshot_path": "C:\\Users\\STD USER\\Desktop\\work\\Toroka\\smart-scam-identifier\\packages\\rules\\ssi_rules\\ml\\data\\snapshots\\snapshot_v1.0.1793012885.jsonl",
+      "parent_version": "v1.0.1793012789"
+    },
+    "v1.0.1793012943": {
+      "version": "v1.0.1793012943",
+      "created_at": "2026-10-26T11:09:03+00:00",
+      "sha256_hash": "613dab2994d1000b50ca691be5d8f7b4e30f6a02622ac6f7b47fb88f16346e97",
+      "total_samples": 69,
+      "category_counts": {
+        "advance_fee": 9,
+        "fake_mpesa": 5,
+        "credential_theft": 10,
+        "fake_recruitment": 5,
+        "task_scam": 6,
+        "investment_ponzi": 6,
+        "marketplace_non_delivery": 4,
+        "unsolicited_betting_promo": 6,
+        "legitimate_customer_service": 4,
+        "legitimate_commerce": 9,
+        "ambiguous_neutral": 6
+      },
+      "tier_counts": {
+        "corroborated": 66,
+        "strongly_supported": 3
+      },
+      "language_counts": {
+        "en": 53,
+        "sw": 11,
+        "mixed": 3,
+        "sheng": 2
+      },
+      "pseudo_label_ratio": 0.0,
+      "snapshot_path": "C:\\Users\\STD USER\\Desktop\\work\\Toroka\\smart-scam-identifier\\packages\\rules\\ssi_rules\\ml\\data\\snapshots\\snapshot_v1.0.1793012943.jsonl",
+      "parent_version": "v1.0.1793012885"
+    },
+    "v1.0.1793012998": {
+      "version": "v1.0.1793012998",
+      "created_at": "2026-10-26T11:09:58+00:00",
+      "sha256_hash": "722bb3e9ee5a441dd95769e12b6aa1e399e00ccf54cf67d06dda333d00b79ca4",
+      "total_samples": 63,
+      "category_counts": {
+        "advance_fee": 8,
+        "fake_mpesa": 5,
+        "credential_theft": 7,
+        "fake_recruitment": 5,
+        "task_scam": 5,
+        "investment_ponzi": 5,
+        "marketplace_non_delivery": 4,
+        "unsolicited_betting_promo": 6,
+        "legitimate_customer_service": 4,
+        "legitimate_commerce": 9,
+        "ambiguous_neutral": 6
+      },
+      "tier_counts": {
+        "corroborated": 63
+      },
+      "language_counts": {
+        "en": 48,
+        "sw": 11,
+        "mixed": 2,
+        "sheng": 2
+      },
+      "pseudo_label_ratio": 0.0,
+      "snapshot_path": "C:\\Users\\STD USER\\Desktop\\work\\Toroka\\smart-scam-identifier\\packages\\rules\\ssi_rules\\ml\\data\\snapshots\\snapshot_v1.0.1793012998.jsonl",
+      "parent_version": "v1.0.1793012943"
+    },
+    "v1.0.1793013000": {
+      "version": "v1.0.1793013000",
+      "created_at": "2026-10-26T11:10:01+00:00",
+      "sha256_hash": "722bb3e9ee5a441dd95769e12b6aa1e399e00ccf54cf67d06dda333d00b79ca4",
+      "total_samples": 63,
+      "category_counts": {
+        "advance_fee": 8,
+        "fake_mpesa": 5,
+        "credential_theft": 7,
+        "fake_recruitment": 5,
+        "task_scam": 5,
+        "investment_ponzi": 5,
+        "marketplace_non_delivery": 4,
+        "unsolicited_betting_promo": 6,
+        "legitimate_customer_service": 4,
+        "legitimate_commerce": 9,
+        "ambiguous_neutral": 6
+      },
+      "tier_counts": {
+        "corroborated": 63
+      },
+      "language_counts": {
+        "en": 48,
+        "sw": 11,
+        "mixed": 2,
+        "sheng": 2
+      },
+      "pseudo_label_ratio": 0.0,
+      "snapshot_path": "C:\\Users\\STD USER\\Desktop\\work\\Toroka\\smart-scam-identifier\\packages\\rules\\ssi_rules\\ml\\data\\snapshots\\snapshot_v1.0.1793013000.jsonl",
+      "parent_version": "v1.0.1793012998"
+    },
+    "v1.0.1793013002": {
+      "version": "v1.0.1793013002",
+      "created_at": "2026-10-26T11:10:02+00:00",
+      "sha256_hash": "722bb3e9ee5a441dd95769e12b6aa1e399e00ccf54cf67d06dda333d00b79ca4",
+      "total_samples": 63,
+      "category_counts": {
+        "advance_fee": 8,
+        "fake_mpesa": 5,
+        "credential_theft": 7,
+        "fake_recruitment": 5,
+        "task_scam": 5,
+        "investment_ponzi": 5,
+        "marketplace_non_delivery": 4,
+        "unsolicited_betting_promo": 6,
+        "legitimate_customer_service": 4,
+        "legitimate_commerce": 9,
+        "ambiguous_neutral": 6
+      },
+      "tier_counts": {
+        "corroborated": 63
+      },
+      "language_counts": {
+        "en": 48,
+        "sw": 11,
+        "mixed": 2,
+        "sheng": 2
+      },
+      "pseudo_label_ratio": 0.0,
+      "snapshot_path": "C:\\Users\\STD USER\\Desktop\\work\\Toroka\\smart-scam-identifier\\packages\\rules\\ssi_rules\\ml\\data\\snapshots\\snapshot_v1.0.1793013002.jsonl",
+      "parent_version": "v1.0.1793013000"
+    },
+    "v1.0.1793013148": {
+      "version": "v1.0.1793013148",
+      "created_at": "2026-10-26T11:12:28+00:00",
+      "sha256_hash": "722bb3e9ee5a441dd95769e12b6aa1e399e00ccf54cf67d06dda333d00b79ca4",
+      "total_samples": 63,
+      "category_counts": {
+        "advance_fee": 8,
+        "fake_mpesa": 5,
+        "credential_theft": 7,
+        "fake_recruitment": 5,
+        "task_scam": 5,
+        "investment_ponzi": 5,
+        "marketplace_non_delivery": 4,
+        "unsolicited_betting_promo": 6,
+        "legitimate_customer_service": 4,
+        "legitimate_commerce": 9,
+        "ambiguous_neutral": 6
+      },
+      "tier_counts": {
+        "corroborated": 63
+      },
+      "language_counts": {
+        "en": 48,
+        "sw": 11,
+        "mixed": 2,
+        "sheng": 2
+      },
+      "pseudo_label_ratio": 0.0,
+      "snapshot_path": "C:\\Users\\STD USER\\Desktop\\work\\Toroka\\smart-scam-identifier\\packages\\rules\\ssi_rules\\ml\\data\\snapshots\\snapshot_v1.0.1793013148.jsonl",
+      "parent_version": "v1.0.1793013002"
+    },
+    "v1.0.1793013150": {
+      "version": "v1.0.1793013150",
+      "created_at": "2026-10-26T11:12:30+00:00",
+      "sha256_hash": "722bb3e9ee5a441dd95769e12b6aa1e399e00ccf54cf67d06dda333d00b79ca4",
+      "total_samples": 63,
+      "category_counts": {
+        "advance_fee": 8,
+        "fake_mpesa": 5,
+        "credential_theft": 7,
+        "fake_recruitment": 5,
+        "task_scam": 5,
+        "investment_ponzi": 5,
+        "marketplace_non_delivery": 4,
+        "unsolicited_betting_promo": 6,
+        "legitimate_customer_service": 4,
+        "legitimate_commerce": 9,
+        "ambiguous_neutral": 6
+      },
+      "tier_counts": {
+        "corroborated": 63
+      },
+      "language_counts": {
+        "en": 48,
+        "sw": 11,
+        "mixed": 2,
+        "sheng": 2
+      },
+      "pseudo_label_ratio": 0.0,
+      "snapshot_path": "C:\\Users\\STD USER\\Desktop\\work\\Toroka\\smart-scam-identifier\\packages\\rules\\ssi_rules\\ml\\data\\snapshots\\snapshot_v1.0.1793013150.jsonl",
+      "parent_version": "v1.0.1793013148"
+    },
+    "v1.0.1793013153": {
+      "version": "v1.0.1793013153",
+      "created_at": "2026-10-26T11:12:33+00:00",
+      "sha256_hash": "722bb3e9ee5a441dd95769e12b6aa1e399e00ccf54cf67d06dda333d00b79ca4",
+      "total_samples": 63,
+      "category_counts": {
+        "advance_fee": 8,
+        "fake_mpesa": 5,
+        "credential_theft": 7,
+        "fake_recruitment": 5,
+        "task_scam": 5,
+        "investment_ponzi": 5,
+        "marketplace_non_delivery": 4,
+        "unsolicited_betting_promo": 6,
+        "legitimate_customer_service": 4,
+        "legitimate_commerce": 9,
+        "ambiguous_neutral": 6
+      },
+      "tier_counts": {
+        "corroborated": 63
+      },
+      "language_counts": {
+        "en": 48,
+        "sw": 11,
+        "mixed": 2,
+        "sheng": 2
+      },
+      "pseudo_label_ratio": 0.0,
+      "snapshot_path": "C:\\Users\\STD USER\\Desktop\\work\\Toroka\\smart-scam-identifier\\packages\\rules\\ssi_rules\\ml\\data\\snapshots\\snapshot_v1.0.1793013153.jsonl",
+      "parent_version": "v1.0.1793013150"
+    },
+    "v1.0.1793013180": {
+      "version": "v1.0.1793013180",
+      "created_at": "2026-10-26T11:13:00+00:00",
+      "sha256_hash": "722bb3e9ee5a441dd95769e12b6aa1e399e00ccf54cf67d06dda333d00b79ca4",
+      "total_samples": 63,
+      "category_counts": {
+        "advance_fee": 8,
+        "fake_mpesa": 5,
+        "credential_theft": 7,
+        "fake_recruitment": 5,
+        "task_scam": 5,
+        "investment_ponzi": 5,
+        "marketplace_non_delivery": 4,
+        "unsolicited_betting_promo": 6,
+        "legitimate_customer_service": 4,
+        "legitimate_commerce": 9,
+        "ambiguous_neutral": 6
+      },
+      "tier_counts": {
+        "corroborated": 63
+      },
+      "language_counts": {
+        "en": 48,
+        "sw": 11,
+        "mixed": 2,
+        "sheng": 2
+      },
+      "pseudo_label_ratio": 0.0,
+      "snapshot_path": "C:\\Users\\STD USER\\Desktop\\work\\Toroka\\smart-scam-identifier\\packages\\rules\\ssi_rules\\ml\\data\\snapshots\\snapshot_v1.0.1793013180.jsonl",
+      "parent_version": "v1.0.1793013153"
+    },
+    "v1.0.1793013183": {
+      "version": "v1.0.1793013183",
+      "created_at": "2026-10-26T11:13:03+00:00",
+      "sha256_hash": "722bb3e9ee5a441dd95769e12b6aa1e399e00ccf54cf67d06dda333d00b79ca4",
+      "total_samples": 63,
+      "category_counts": {
+        "advance_fee": 8,
+        "fake_mpesa": 5,
+        "credential_theft": 7,
+        "fake_recruitment": 5,
+        "task_scam": 5,
+        "investment_ponzi": 5,
+        "marketplace_non_delivery": 4,
+        "unsolicited_betting_promo": 6,
+        "legitimate_customer_service": 4,
+        "legitimate_commerce": 9,
+        "ambiguous_neutral": 6
+      },
+      "tier_counts": {
+        "corroborated": 63
+      },
+      "language_counts": {
+        "en": 48,
+        "sw": 11,
+        "mixed": 2,
+        "sheng": 2
+      },
+      "pseudo_label_ratio": 0.0,
+      "snapshot_path": "C:\\Users\\STD USER\\Desktop\\work\\Toroka\\smart-scam-identifier\\packages\\rules\\ssi_rules\\ml\\data\\snapshots\\snapshot_v1.0.1793013183.jsonl",
+      "parent_version": "v1.0.1793013180"
+    },
+    "v1.0.1793013186": {
+      "version": "v1.0.1793013186",
+      "created_at": "2026-10-26T11:13:06+00:00",
+      "sha256_hash": "722bb3e9ee5a441dd95769e12b6aa1e399e00ccf54cf67d06dda333d00b79ca4",
+      "total_samples": 63,
+      "category_counts": {
+        "advance_fee": 8,
+        "fake_mpesa": 5,
+        "credential_theft": 7,
+        "fake_recruitment": 5,
+        "task_scam": 5,
+        "investment_ponzi": 5,
+        "marketplace_non_delivery": 4,
+        "unsolicited_betting_promo": 6,
+        "legitimate_customer_service": 4,
+        "legitimate_commerce": 9,
+        "ambiguous_neutral": 6
+      },
+      "tier_counts": {
+        "corroborated": 63
+      },
+      "language_counts": {
+        "en": 48,
+        "sw": 11,
+        "mixed": 2,
+        "sheng": 2
+      },
+      "pseudo_label_ratio": 0.0,
+      "snapshot_path": "C:\\Users\\STD USER\\Desktop\\work\\Toroka\\smart-scam-identifier\\packages\\rules\\ssi_rules\\ml\\data\\snapshots\\snapshot_v1.0.1793013186.jsonl",
+      "parent_version": "v1.0.1793013183"
+    },
+    "v1.0.1793014107": {
+      "version": "v1.0.1793014107",
+      "created_at": "2026-10-26T11:28:27+00:00",
+      "sha256_hash": "722bb3e9ee5a441dd95769e12b6aa1e399e00ccf54cf67d06dda333d00b79ca4",
+      "total_samples": 63,
+      "category_counts": {
+        "advance_fee": 8,
+        "fake_mpesa": 5,
+        "credential_theft": 7,
+        "fake_recruitment": 5,
+        "task_scam": 5,
+        "investment_ponzi": 5,
+        "marketplace_non_delivery": 4,
+        "unsolicited_betting_promo": 6,
+        "legitimate_customer_service": 4,
+        "legitimate_commerce": 9,
+        "ambiguous_neutral": 6
+      },
+      "tier_counts": {
+        "corroborated": 63
+      },
+      "language_counts": {
+        "en": 48,
+        "sw": 11,
+        "mixed": 2,
+        "sheng": 2
+      },
+      "pseudo_label_ratio": 0.0,
+      "snapshot_path": "C:\\Users\\STD USER\\Desktop\\work\\Toroka\\smart-scam-identifier\\packages\\rules\\ssi_rules\\ml\\data\\snapshots\\snapshot_v1.0.1793014107.jsonl",
+      "parent_version": "v1.0.1793013186"
+    },
+    "v1.0.1793014110": {
+      "version": "v1.0.1793014110",
+      "created_at": "2026-10-26T11:28:30+00:00",
+      "sha256_hash": "722bb3e9ee5a441dd95769e12b6aa1e399e00ccf54cf67d06dda333d00b79ca4",
+      "total_samples": 63,
+      "category_counts": {
+        "advance_fee": 8,
+        "fake_mpesa": 5,
+        "credential_theft": 7,
+        "fake_recruitment": 5,
+        "task_scam": 5,
+        "investment_ponzi": 5,
+        "marketplace_non_delivery": 4,
+        "unsolicited_betting_promo": 6,
+        "legitimate_customer_service": 4,
+        "legitimate_commerce": 9,
+        "ambiguous_neutral": 6
+      },
+      "tier_counts": {
+        "corroborated": 63
+      },
+      "language_counts": {
+        "en": 48,
+        "sw": 11,
+        "mixed": 2,
+        "sheng": 2
+      },
+      "pseudo_label_ratio": 0.0,
+      "snapshot_path": "C:\\Users\\STD USER\\Desktop\\work\\Toroka\\smart-scam-identifier\\packages\\rules\\ssi_rules\\ml\\data\\snapshots\\snapshot_v1.0.1793014110.jsonl",
+      "parent_version": "v1.0.1793014107"
+    },
+    "v1.0.1793014114": {
+      "version": "v1.0.1793014114",
+      "created_at": "2026-10-26T11:28:34+00:00",
+      "sha256_hash": "722bb3e9ee5a441dd95769e12b6aa1e399e00ccf54cf67d06dda333d00b79ca4",
+      "total_samples": 63,
+      "category_counts": {
+        "advance_fee": 8,
+        "fake_mpesa": 5,
+        "credential_theft": 7,
+        "fake_recruitment": 5,
+        "task_scam": 5,
+        "investment_ponzi": 5,
+        "marketplace_non_delivery": 4,
+        "unsolicited_betting_promo": 6,
+        "legitimate_customer_service": 4,
+        "legitimate_commerce": 9,
+        "ambiguous_neutral": 6
+      },
+      "tier_counts": {
+        "corroborated": 63
+      },
+      "language_counts": {
+        "en": 48,
+        "sw": 11,
+        "mixed": 2,
+        "sheng": 2
+      },
+      "pseudo_label_ratio": 0.0,
+      "snapshot_path": "C:\\Users\\STD USER\\Desktop\\work\\Toroka\\smart-scam-identifier\\packages\\rules\\ssi_rules\\ml\\data\\snapshots\\snapshot_v1.0.1793014114.jsonl",
+      "parent_version": "v1.0.1793014110"
+    },
+    "v1.0.1793014199": {
+      "version": "v1.0.1793014199",
+      "created_at": "2026-10-26T11:29:59+00:00",
+      "sha256_hash": "722bb3e9ee5a441dd95769e12b6aa1e399e00ccf54cf67d06dda333d00b79ca4",
+      "total_samples": 63,
+      "category_counts": {
+        "advance_fee": 8,
+        "fake_mpesa": 5,
+        "credential_theft": 7,
+        "fake_recruitment": 5,
+        "task_scam": 5,
+        "investment_ponzi": 5,
+        "marketplace_non_delivery": 4,
+        "unsolicited_betting_promo": 6,
+        "legitimate_customer_service": 4,
+        "legitimate_commerce": 9,
+        "ambiguous_neutral": 6
+      },
+      "tier_counts": {
+        "corroborated": 63
+      },
+      "language_counts": {
+        "en": 48,
+        "sw": 11,
+        "mixed": 2,
+        "sheng": 2
+      },
+      "pseudo_label_ratio": 0.0,
+      "snapshot_path": "C:\\Users\\STD USER\\Desktop\\work\\Toroka\\smart-scam-identifier\\packages\\rules\\ssi_rules\\ml\\data\\snapshots\\snapshot_v1.0.1793014199.jsonl",
+      "parent_version": "v1.0.1793014114"
+    },
+    "v1.0.1793014201": {
+      "version": "v1.0.1793014201",
+      "created_at": "2026-10-26T11:30:01+00:00",
+      "sha256_hash": "722bb3e9ee5a441dd95769e12b6aa1e399e00ccf54cf67d06dda333d00b79ca4",
+      "total_samples": 63,
+      "category_counts": {
+        "advance_fee": 8,
+        "fake_mpesa": 5,
+        "credential_theft": 7,
+        "fake_recruitment": 5,
+        "task_scam": 5,
+        "investment_ponzi": 5,
+        "marketplace_non_delivery": 4,
+        "unsolicited_betting_promo": 6,
+        "legitimate_customer_service": 4,
+        "legitimate_commerce": 9,
+        "ambiguous_neutral": 6
+      },
+      "tier_counts": {
+        "corroborated": 63
+      },
+      "language_counts": {
+        "en": 48,
+        "sw": 11,
+        "mixed": 2,
+        "sheng": 2
+      },
+      "pseudo_label_ratio": 0.0,
+      "snapshot_path": "C:\\Users\\STD USER\\Desktop\\work\\Toroka\\smart-scam-identifier\\packages\\rules\\ssi_rules\\ml\\data\\snapshots\\snapshot_v1.0.1793014201.jsonl",
+      "parent_version": "v1.0.1793014199"
+    },
+    "v1.0.1793014203": {
+      "version": "v1.0.1793014203",
+      "created_at": "2026-10-26T11:30:03+00:00",
+      "sha256_hash": "722bb3e9ee5a441dd95769e12b6aa1e399e00ccf54cf67d06dda333d00b79ca4",
+      "total_samples": 63,
+      "category_counts": {
+        "advance_fee": 8,
+        "fake_mpesa": 5,
+        "credential_theft": 7,
+        "fake_recruitment": 5,
+        "task_scam": 5,
+        "investment_ponzi": 5,
+        "marketplace_non_delivery": 4,
+        "unsolicited_betting_promo": 6,
+        "legitimate_customer_service": 4,
+        "legitimate_commerce": 9,
+        "ambiguous_neutral": 6
+      },
+      "tier_counts": {
+        "corroborated": 63
+      },
+      "language_counts": {
+        "en": 48,
+        "sw": 11,
+        "mixed": 2,
+        "sheng": 2
+      },
+      "pseudo_label_ratio": 0.0,
+      "snapshot_path": "C:\\Users\\STD USER\\Desktop\\work\\Toroka\\smart-scam-identifier\\packages\\rules\\ssi_rules\\ml\\data\\snapshots\\snapshot_v1.0.1793014203.jsonl",
+      "parent_version": "v1.0.1793014201"
+    },
+    "v1.0.1793014466": {
+      "version": "v1.0.1793014466",
+      "created_at": "2026-10-26T11:34:27+00:00",
+      "sha256_hash": "722bb3e9ee5a441dd95769e12b6aa1e399e00ccf54cf67d06dda333d00b79ca4",
+      "total_samples": 63,
+      "category_counts": {
+        "advance_fee": 8,
+        "fake_mpesa": 5,
+        "credential_theft": 7,
+        "fake_recruitment": 5,
+        "task_scam": 5,
+        "investment_ponzi": 5,
+        "marketplace_non_delivery": 4,
+        "unsolicited_betting_promo": 6,
+        "legitimate_customer_service": 4,
+        "legitimate_commerce": 9,
+        "ambiguous_neutral": 6
+      },
+      "tier_counts": {
+        "corroborated": 63
+      },
+      "language_counts": {
+        "en": 48,
+        "sw": 11,
+        "mixed": 2,
+        "sheng": 2
+      },
+      "pseudo_label_ratio": 0.0,
+      "snapshot_path": "C:\\Users\\STD USER\\Desktop\\work\\Toroka\\smart-scam-identifier\\packages\\rules\\ssi_rules\\ml\\data\\snapshots\\snapshot_v1.0.1793014466.jsonl",
+      "parent_version": "v1.0.1793014203"
+    },
+    "v1.0.1793014468": {
+      "version": "v1.0.1793014468",
+      "created_at": "2026-10-26T11:34:28+00:00",
+      "sha256_hash": "722bb3e9ee5a441dd95769e12b6aa1e399e00ccf54cf67d06dda333d00b79ca4",
+      "total_samples": 63,
+      "category_counts": {
+        "advance_fee": 8,
+        "fake_mpesa": 5,
+        "credential_theft": 7,
+        "fake_recruitment": 5,
+        "task_scam": 5,
+        "investment_ponzi": 5,
+        "marketplace_non_delivery": 4,
+        "unsolicited_betting_promo": 6,
+        "legitimate_customer_service": 4,
+        "legitimate_commerce": 9,
+        "ambiguous_neutral": 6
+      },
+      "tier_counts": {
+        "corroborated": 63
+      },
+      "language_counts": {
+        "en": 48,
+        "sw": 11,
+        "mixed": 2,
+        "sheng": 2
+      },
+      "pseudo_label_ratio": 0.0,
+      "snapshot_path": "C:\\Users\\STD USER\\Desktop\\work\\Toroka\\smart-scam-identifier\\packages\\rules\\ssi_rules\\ml\\data\\snapshots\\snapshot_v1.0.1793014468.jsonl",
+      "parent_version": "v1.0.1793014466"
+    },
+    "v1.0.1793014470": {
+      "version": "v1.0.1793014470",
+      "created_at": "2026-10-26T11:34:30+00:00",
+      "sha256_hash": "722bb3e9ee5a441dd95769e12b6aa1e399e00ccf54cf67d06dda333d00b79ca4",
+      "total_samples": 63,
+      "category_counts": {
+        "advance_fee": 8,
+        "fake_mpesa": 5,
+        "credential_theft": 7,
+        "fake_recruitment": 5,
+        "task_scam": 5,
+        "investment_ponzi": 5,
+        "marketplace_non_delivery": 4,
+        "unsolicited_betting_promo": 6,
+        "legitimate_customer_service": 4,
+        "legitimate_commerce": 9,
+        "ambiguous_neutral": 6
+      },
+      "tier_counts": {
+        "corroborated": 63
+      },
+      "language_counts": {
+        "en": 48,
+        "sw": 11,
+        "mixed": 2,
+        "sheng": 2
+      },
+      "pseudo_label_ratio": 0.0,
+      "snapshot_path": "C:\\Users\\STD USER\\Desktop\\work\\Toroka\\smart-scam-identifier\\packages\\rules\\ssi_rules\\ml\\data\\snapshots\\snapshot_v1.0.1793014470.jsonl",
+      "parent_version": "v1.0.1793014468"
+    },
+    "v1.0.1793018747": {
+      "version": "v1.0.1793018747",
+      "created_at": "2026-10-26T12:45:47+00:00",
+      "sha256_hash": "722bb3e9ee5a441dd95769e12b6aa1e399e00ccf54cf67d06dda333d00b79ca4",
+      "total_samples": 63,
+      "category_counts": {
+        "advance_fee": 8,
+        "fake_mpesa": 5,
+        "credential_theft": 7,
+        "fake_recruitment": 5,
+        "task_scam": 5,
+        "investment_ponzi": 5,
+        "marketplace_non_delivery": 4,
+        "unsolicited_betting_promo": 6,
+        "legitimate_customer_service": 4,
+        "legitimate_commerce": 9,
+        "ambiguous_neutral": 6
+      },
+      "tier_counts": {
+        "corroborated": 63
+      },
+      "language_counts": {
+        "en": 48,
+        "sw": 11,
+        "mixed": 2,
+        "sheng": 2
+      },
+      "pseudo_label_ratio": 0.0,
+      "snapshot_path": "C:\\Users\\STD USER\\Desktop\\work\\Toroka\\smart-scam-identifier\\packages\\rules\\ssi_rules\\ml\\data\\snapshots\\snapshot_v1.0.1793018747.jsonl",
+      "parent_version": "v1.0.1793014470"
+    },
+    "v1.0.1793018752": {
+      "version": "v1.0.1793018752",
+      "created_at": "2026-10-26T12:45:52+00:00",
+      "sha256_hash": "722bb3e9ee5a441dd95769e12b6aa1e399e00ccf54cf67d06dda333d00b79ca4",
+      "total_samples": 63,
+      "category_counts": {
+        "advance_fee": 8,
+        "fake_mpesa": 5,
+        "credential_theft": 7,
+        "fake_recruitment": 5,
+        "task_scam": 5,
+        "investment_ponzi": 5,
+        "marketplace_non_delivery": 4,
+        "unsolicited_betting_promo": 6,
+        "legitimate_customer_service": 4,
+        "legitimate_commerce": 9,
+        "ambiguous_neutral": 6
+      },
+      "tier_counts": {
+        "corroborated": 63
+      },
+      "language_counts": {
+        "en": 48,
+        "sw": 11,
+        "mixed": 2,
+        "sheng": 2
+      },
+      "pseudo_label_ratio": 0.0,
+      "snapshot_path": "C:\\Users\\STD USER\\Desktop\\work\\Toroka\\smart-scam-identifier\\packages\\rules\\ssi_rules\\ml\\data\\snapshots\\snapshot_v1.0.1793018752.jsonl",
+      "parent_version": "v1.0.1793018747"
+    },
+    "v1.0.1793018758": {
+      "version": "v1.0.1793018758",
+      "created_at": "2026-10-26T12:45:58+00:00",
+      "sha256_hash": "722bb3e9ee5a441dd95769e12b6aa1e399e00ccf54cf67d06dda333d00b79ca4",
+      "total_samples": 63,
+      "category_counts": {
+        "advance_fee": 8,
+        "fake_mpesa": 5,
+        "credential_theft": 7,
+        "fake_recruitment": 5,
+        "task_scam": 5,
+        "investment_ponzi": 5,
+        "marketplace_non_delivery": 4,
+        "unsolicited_betting_promo": 6,
+        "legitimate_customer_service": 4,
+        "legitimate_commerce": 9,
+        "ambiguous_neutral": 6
+      },
+      "tier_counts": {
+        "corroborated": 63
+      },
+      "language_counts": {
+        "en": 48,
+        "sw": 11,
+        "mixed": 2,
+        "sheng": 2
+      },
+      "pseudo_label_ratio": 0.0,
+      "snapshot_path": "C:\\Users\\STD USER\\Desktop\\work\\Toroka\\smart-scam-identifier\\packages\\rules\\ssi_rules\\ml\\data\\snapshots\\snapshot_v1.0.1793018758.jsonl",
+      "parent_version": "v1.0.1793018752"
+    },
+    "v1.0.1793019399": {
+      "version": "v1.0.1793019399",
+      "created_at": "2026-10-26T12:56:39+00:00",
+      "sha256_hash": "722bb3e9ee5a441dd95769e12b6aa1e399e00ccf54cf67d06dda333d00b79ca4",
+      "total_samples": 63,
+      "category_counts": {
+        "advance_fee": 8,
+        "fake_mpesa": 5,
+        "credential_theft": 7,
+        "fake_recruitment": 5,
+        "task_scam": 5,
+        "investment_ponzi": 5,
+        "marketplace_non_delivery": 4,
+        "unsolicited_betting_promo": 6,
+        "legitimate_customer_service": 4,
+        "legitimate_commerce": 9,
+        "ambiguous_neutral": 6
+      },
+      "tier_counts": {
+        "corroborated": 63
+      },
+      "language_counts": {
+        "en": 48,
+        "sw": 11,
+        "mixed": 2,
+        "sheng": 2
+      },
+      "pseudo_label_ratio": 0.0,
+      "snapshot_path": "C:\\Users\\STD USER\\Desktop\\work\\Toroka\\smart-scam-identifier\\packages\\rules\\ssi_rules\\ml\\data\\snapshots\\snapshot_v1.0.1793019399.jsonl",
+      "parent_version": "v1.0.1793018758"
+    },
+    "v1.0.1793019401": {
+      "version": "v1.0.1793019401",
+      "created_at": "2026-10-26T12:56:41+00:00",
+      "sha256_hash": "722bb3e9ee5a441dd95769e12b6aa1e399e00ccf54cf67d06dda333d00b79ca4",
+      "total_samples": 63,
+      "category_counts": {
+        "advance_fee": 8,
+        "fake_mpesa": 5,
+        "credential_theft": 7,
+        "fake_recruitment": 5,
+        "task_scam": 5,
+        "investment_ponzi": 5,
+        "marketplace_non_delivery": 4,
+        "unsolicited_betting_promo": 6,
+        "legitimate_customer_service": 4,
+        "legitimate_commerce": 9,
+        "ambiguous_neutral": 6
+      },
+      "tier_counts": {
+        "corroborated": 63
+      },
+      "language_counts": {
+        "en": 48,
+        "sw": 11,
+        "mixed": 2,
+        "sheng": 2
+      },
+      "pseudo_label_ratio": 0.0,
+      "snapshot_path": "C:\\Users\\STD USER\\Desktop\\work\\Toroka\\smart-scam-identifier\\packages\\rules\\ssi_rules\\ml\\data\\snapshots\\snapshot_v1.0.1793019401.jsonl",
+      "parent_version": "v1.0.1793019399"
+    },
+    "v1.0.1793019405": {
+      "version": "v1.0.1793019405",
+      "created_at": "2026-10-26T12:56:45+00:00",
+      "sha256_hash": "722bb3e9ee5a441dd95769e12b6aa1e399e00ccf54cf67d06dda333d00b79ca4",
+      "total_samples": 63,
+      "category_counts": {
+        "advance_fee": 8,
+        "fake_mpesa": 5,
+        "credential_theft": 7,
+        "fake_recruitment": 5,
+        "task_scam": 5,
+        "investment_ponzi": 5,
+        "marketplace_non_delivery": 4,
+        "unsolicited_betting_promo": 6,
+        "legitimate_customer_service": 4,
+        "legitimate_commerce": 9,
+        "ambiguous_neutral": 6
+      },
+      "tier_counts": {
+        "corroborated": 63
+      },
+      "language_counts": {
+        "en": 48,
+        "sw": 11,
+        "mixed": 2,
+        "sheng": 2
+      },
+      "pseudo_label_ratio": 0.0,
+      "snapshot_path": "C:\\Users\\STD USER\\Desktop\\work\\Toroka\\smart-scam-identifier\\packages\\rules\\ssi_rules\\ml\\data\\snapshots\\snapshot_v1.0.1793019405.jsonl",
+      "parent_version": "v1.0.1793019401"
+    },
+    "v1.0.1793020625": {
+      "version": "v1.0.1793020625",
+      "created_at": "2026-10-26T13:17:05+00:00",
+      "sha256_hash": "722bb3e9ee5a441dd95769e12b6aa1e399e00ccf54cf67d06dda333d00b79ca4",
+      "total_samples": 63,
+      "category_counts": {
+        "advance_fee": 8,
+        "fake_mpesa": 5,
+        "credential_theft": 7,
+        "fake_recruitment": 5,
+        "task_scam": 5,
+        "investment_ponzi": 5,
+        "marketplace_non_delivery": 4,
+        "unsolicited_betting_promo": 6,
+        "legitimate_customer_service": 4,
+        "legitimate_commerce": 9,
+        "ambiguous_neutral": 6
+      },
+      "tier_counts": {
+        "corroborated": 63
+      },
+      "language_counts": {
+        "en": 48,
+        "sw": 11,
+        "mixed": 2,
+        "sheng": 2
+      },
+      "pseudo_label_ratio": 0.0,
+      "snapshot_path": "C:\\Users\\STD USER\\Desktop\\work\\Toroka\\smart-scam-identifier\\packages\\rules\\ssi_rules\\ml\\data\\snapshots\\snapshot_v1.0.1793020625.jsonl",
+      "parent_version": "v1.0.1793019405"
+    },
+    "v1.0.1793020630": {
+      "version": "v1.0.1793020630",
+      "created_at": "2026-10-26T13:17:10+00:00",
+      "sha256_hash": "722bb3e9ee5a441dd95769e12b6aa1e399e00ccf54cf67d06dda333d00b79ca4",
+      "total_samples": 63,
+      "category_counts": {
+        "advance_fee": 8,
+        "fake_mpesa": 5,
+        "credential_theft": 7,
+        "fake_recruitment": 5,
+        "task_scam": 5,
+        "investment_ponzi": 5,
+        "marketplace_non_delivery": 4,
+        "unsolicited_betting_promo": 6,
+        "legitimate_customer_service": 4,
+        "legitimate_commerce": 9,
+        "ambiguous_neutral": 6
+      },
+      "tier_counts": {
+        "corroborated": 63
+      },
+      "language_counts": {
+        "en": 48,
+        "sw": 11,
+        "mixed": 2,
+        "sheng": 2
+      },
+      "pseudo_label_ratio": 0.0,
+      "snapshot_path": "C:\\Users\\STD USER\\Desktop\\work\\Toroka\\smart-scam-identifier\\packages\\rules\\ssi_rules\\ml\\data\\snapshots\\snapshot_v1.0.1793020630.jsonl",
+      "parent_version": "v1.0.1793020625"
+    },
+    "v1.0.1793020632": {
+      "version": "v1.0.1793020632",
+      "created_at": "2026-10-26T13:17:12+00:00",
+      "sha256_hash": "722bb3e9ee5a441dd95769e12b6aa1e399e00ccf54cf67d06dda333d00b79ca4",
+      "total_samples": 63,
+      "category_counts": {
+        "advance_fee": 8,
+        "fake_mpesa": 5,
+        "credential_theft": 7,
+        "fake_recruitment": 5,
+        "task_scam": 5,
+        "investment_ponzi": 5,
+        "marketplace_non_delivery": 4,
+        "unsolicited_betting_promo": 6,
+        "legitimate_customer_service": 4,
+        "legitimate_commerce": 9,
+        "ambiguous_neutral": 6
+      },
+      "tier_counts": {
+        "corroborated": 63
+      },
+      "language_counts": {
+        "en": 48,
+        "sw": 11,
+        "mixed": 2,
+        "sheng": 2
+      },
+      "pseudo_label_ratio": 0.0,
+      "snapshot_path": "C:\\Users\\STD USER\\Desktop\\work\\Toroka\\smart-scam-identifier\\packages\\rules\\ssi_rules\\ml\\data\\snapshots\\snapshot_v1.0.1793020632.jsonl",
+      "parent_version": "v1.0.1793020630"
+    },
+    "v1.0.1793028513": {
+      "version": "v1.0.1793028513",
+      "created_at": "2026-10-26T15:28:33+00:00",
+      "sha256_hash": "69e34d54bc8385775822caa175a721343b78271f365f02fb79646b9f6840ac11",
+      "total_samples": 63,
+      "category_counts": {
+        "advance_fee": 8,
+        "fake_mpesa": 5,
+        "credential_theft": 7,
+        "fake_recruitment": 5,
+        "task_scam": 5,
+        "investment_ponzi": 5,
+        "marketplace_non_delivery": 4,
+        "unsolicited_betting_promo": 6,
+        "legitimate_customer_service": 4,
+        "legitimate_commerce": 9,
+        "ambiguous_neutral": 6
+      },
+      "tier_counts": {
+        "corroborated": 63
+      },
+      "language_counts": {
+        "en": 48,
+        "sw": 11,
+        "mixed": 2,
+        "sheng": 2
+      },
+      "pseudo_label_ratio": 0.0,
+      "snapshot_path": "/mnt/data/toroka_review/Toroka/smart-scam-identifier/packages/rules/ssi_rules/ml/data/snapshots/snapshot_v1.0.1793028513.jsonl",
+      "parent_version": "v1.0.1793020632"
+    },
+    "v1.0.1793028519": {
+      "version": "v1.0.1793028519",
+      "created_at": "2026-10-26T15:28:39+00:00",
+      "sha256_hash": "69e34d54bc8385775822caa175a721343b78271f365f02fb79646b9f6840ac11",
+      "total_samples": 63,
+      "category_counts": {
+        "advance_fee": 8,
+        "fake_mpesa": 5,
+        "credential_theft": 7,
+        "fake_recruitment": 5,
+        "task_scam": 5,
+        "investment_ponzi": 5,
+        "marketplace_non_delivery": 4,
+        "unsolicited_betting_promo": 6,
+        "legitimate_customer_service": 4,
+        "legitimate_commerce": 9,
+        "ambiguous_neutral": 6
+      },
+      "tier_counts": {
+        "corroborated": 63
+      },
+      "language_counts": {
+        "en": 48,
+        "sw": 11,
+        "mixed": 2,
+        "sheng": 2
+      },
+      "pseudo_label_ratio": 0.0,
+      "snapshot_path": "/mnt/data/toroka_review/Toroka/smart-scam-identifier/packages/rules/ssi_rules/ml/data/snapshots/snapshot_v1.0.1793028519.jsonl",
+      "parent_version": "v1.0.1793028513"
+    },
+    "v1.0.1793028525": {
+      "version": "v1.0.1793028525",
+      "created_at": "2026-10-26T15:28:45+00:00",
+      "sha256_hash": "69e34d54bc8385775822caa175a721343b78271f365f02fb79646b9f6840ac11",
+      "total_samples": 63,
+      "category_counts": {
+        "advance_fee": 8,
+        "fake_mpesa": 5,
+        "credential_theft": 7,
+        "fake_recruitment": 5,
+        "task_scam": 5,
+        "investment_ponzi": 5,
+        "marketplace_non_delivery": 4,
+        "unsolicited_betting_promo": 6,
+        "legitimate_customer_service": 4,
+        "legitimate_commerce": 9,
+        "ambiguous_neutral": 6
+      },
+      "tier_counts": {
+        "corroborated": 63
+      },
+      "language_counts": {
+        "en": 48,
+        "sw": 11,
+        "mixed": 2,
+        "sheng": 2
+      },
+      "pseudo_label_ratio": 0.0,
+      "snapshot_path": "/mnt/data/toroka_review/Toroka/smart-scam-identifier/packages/rules/ssi_rules/ml/data/snapshots/snapshot_v1.0.1793028525.jsonl",
+      "parent_version": "v1.0.1793028519"
+    },
+    "v1.0.1793032230": {
+      "version": "v1.0.1793032230",
+      "created_at": "2026-10-26T16:30:30+00:00",
+      "sha256_hash": "69e34d54bc8385775822caa175a721343b78271f365f02fb79646b9f6840ac11",
+      "total_samples": 63,
+      "category_counts": {
+        "advance_fee": 8,
+        "fake_mpesa": 5,
+        "credential_theft": 7,
+        "fake_recruitment": 5,
+        "task_scam": 5,
+        "investment_ponzi": 5,
+        "marketplace_non_delivery": 4,
+        "unsolicited_betting_promo": 6,
+        "legitimate_customer_service": 4,
+        "legitimate_commerce": 9,
+        "ambiguous_neutral": 6
+      },
+      "tier_counts": {
+        "corroborated": 63
+      },
+      "language_counts": {
+        "en": 48,
+        "sw": 11,
+        "mixed": 2,
+        "sheng": 2
+      },
+      "pseudo_label_ratio": 0.0,
+      "snapshot_path": "/mnt/data/toroka_review/Toroka/smart-scam-identifier/packages/rules/ssi_rules/ml/data/snapshots/snapshot_v1.0.1793032230.jsonl",
+      "parent_version": "v1.0.1793028525"
+    },
+    "v1.0.1793032235": {
+      "version": "v1.0.1793032235",
+      "created_at": "2026-10-26T16:30:35+00:00",
+      "sha256_hash": "69e34d54bc8385775822caa175a721343b78271f365f02fb79646b9f6840ac11",
+      "total_samples": 63,
+      "category_counts": {
+        "advance_fee": 8,
+        "fake_mpesa": 5,
+        "credential_theft": 7,
+        "fake_recruitment": 5,
+        "task_scam": 5,
+        "investment_ponzi": 5,
+        "marketplace_non_delivery": 4,
+        "unsolicited_betting_promo": 6,
+        "legitimate_customer_service": 4,
+        "legitimate_commerce": 9,
+        "ambiguous_neutral": 6
+      },
+      "tier_counts": {
+        "corroborated": 63
+      },
+      "language_counts": {
+        "en": 48,
+        "sw": 11,
+        "mixed": 2,
+        "sheng": 2
+      },
+      "pseudo_label_ratio": 0.0,
+      "snapshot_path": "/mnt/data/toroka_review/Toroka/smart-scam-identifier/packages/rules/ssi_rules/ml/data/snapshots/snapshot_v1.0.1793032235.jsonl",
+      "parent_version": "v1.0.1793032230"
+    },
+    "v1.0.1793032241": {
+      "version": "v1.0.1793032241",
+      "created_at": "2026-10-26T16:30:41+00:00",
+      "sha256_hash": "69e34d54bc8385775822caa175a721343b78271f365f02fb79646b9f6840ac11",
+      "total_samples": 63,
+      "category_counts": {
+        "advance_fee": 8,
+        "fake_mpesa": 5,
+        "credential_theft": 7,
+        "fake_recruitment": 5,
+        "task_scam": 5,
+        "investment_ponzi": 5,
+        "marketplace_non_delivery": 4,
+        "unsolicited_betting_promo": 6,
+        "legitimate_customer_service": 4,
+        "legitimate_commerce": 9,
+        "ambiguous_neutral": 6
+      },
+      "tier_counts": {
+        "corroborated": 63
+      },
+      "language_counts": {
+        "en": 48,
+        "sw": 11,
+        "mixed": 2,
+        "sheng": 2
+      },
+      "pseudo_label_ratio": 0.0,
+      "snapshot_path": "/mnt/data/toroka_review/Toroka/smart-scam-identifier/packages/rules/ssi_rules/ml/data/snapshots/snapshot_v1.0.1793032241.jsonl",
+      "parent_version": "v1.0.1793032235"
+    },
+    "v1.0.1793032331": {
+      "version": "v1.0.1793032331",
+      "created_at": "2026-10-26T16:32:11+00:00",
+      "sha256_hash": "69e34d54bc8385775822caa175a721343b78271f365f02fb79646b9f6840ac11",
+      "total_samples": 63,
+      "category_counts": {
+        "advance_fee": 8,
+        "fake_mpesa": 5,
+        "credential_theft": 7,
+        "fake_recruitment": 5,
+        "task_scam": 5,
+        "investment_ponzi": 5,
+        "marketplace_non_delivery": 4,
+        "unsolicited_betting_promo": 6,
+        "legitimate_customer_service": 4,
+        "legitimate_commerce": 9,
+        "ambiguous_neutral": 6
+      },
+      "tier_counts": {
+        "corroborated": 63
+      },
+      "language_counts": {
+        "en": 48,
+        "sw": 11,
+        "mixed": 2,
+        "sheng": 2
+      },
+      "pseudo_label_ratio": 0.0,
+      "snapshot_path": "/mnt/data/toroka_review/Toroka/smart-scam-identifier/packages/rules/ssi_rules/ml/data/snapshots/snapshot_v1.0.1793032331.jsonl",
+      "parent_version": "v1.0.1793032241"
+    },
+    "v1.0.1793032337": {
+      "version": "v1.0.1793032337",
+      "created_at": "2026-10-26T16:32:17+00:00",
+      "sha256_hash": "69e34d54bc8385775822caa175a721343b78271f365f02fb79646b9f6840ac11",
+      "total_samples": 63,
+      "category_counts": {
+        "advance_fee": 8,
+        "fake_mpesa": 5,
+        "credential_theft": 7,
+        "fake_recruitment": 5,
+        "task_scam": 5,
+        "investment_ponzi": 5,
+        "marketplace_non_delivery": 4,
+        "unsolicited_betting_promo": 6,
+        "legitimate_customer_service": 4,
+        "legitimate_commerce": 9,
+        "ambiguous_neutral": 6
+      },
+      "tier_counts": {
+        "corroborated": 63
+      },
+      "language_counts": {
+        "en": 48,
+        "sw": 11,
+        "mixed": 2,
+        "sheng": 2
+      },
+      "pseudo_label_ratio": 0.0,
+      "snapshot_path": "/mnt/data/toroka_review/Toroka/smart-scam-identifier/packages/rules/ssi_rules/ml/data/snapshots/snapshot_v1.0.1793032337.jsonl",
+      "parent_version": "v1.0.1793032331"
+    },
+    "v1.0.1793032342": {
+      "version": "v1.0.1793032342",
+      "created_at": "2026-10-26T16:32:22+00:00",
+      "sha256_hash": "69e34d54bc8385775822caa175a721343b78271f365f02fb79646b9f6840ac11",
+      "total_samples": 63,
+      "category_counts": {
+        "advance_fee": 8,
+        "fake_mpesa": 5,
+        "credential_theft": 7,
+        "fake_recruitment": 5,
+        "task_scam": 5,
+        "investment_ponzi": 5,
+        "marketplace_non_delivery": 4,
+        "unsolicited_betting_promo": 6,
+        "legitimate_customer_service": 4,
+        "legitimate_commerce": 9,
+        "ambiguous_neutral": 6
+      },
+      "tier_counts": {
+        "corroborated": 63
+      },
+      "language_counts": {
+        "en": 48,
+        "sw": 11,
+        "mixed": 2,
+        "sheng": 2
+      },
+      "pseudo_label_ratio": 0.0,
+      "snapshot_path": "/mnt/data/toroka_review/Toroka/smart-scam-identifier/packages/rules/ssi_rules/ml/data/snapshots/snapshot_v1.0.1793032342.jsonl",
+      "parent_version": "v1.0.1793032337"
+    },
+    "v1.0.1793032483": {
+      "version": "v1.0.1793032483",
+      "created_at": "2026-10-26T16:34:43+00:00",
+      "sha256_hash": "69e34d54bc8385775822caa175a721343b78271f365f02fb79646b9f6840ac11",
+      "total_samples": 63,
+      "category_counts": {
+        "advance_fee": 8,
+        "fake_mpesa": 5,
+        "credential_theft": 7,
+        "fake_recruitment": 5,
+        "task_scam": 5,
+        "investment_ponzi": 5,
+        "marketplace_non_delivery": 4,
+        "unsolicited_betting_promo": 6,
+        "legitimate_customer_service": 4,
+        "legitimate_commerce": 9,
+        "ambiguous_neutral": 6
+      },
+      "tier_counts": {
+        "corroborated": 63
+      },
+      "language_counts": {
+        "en": 48,
+        "sw": 11,
+        "mixed": 2,
+        "sheng": 2
+      },
+      "pseudo_label_ratio": 0.0,
+      "snapshot_path": "/mnt/data/toroka_review/Toroka/smart-scam-identifier/packages/rules/ssi_rules/ml/data/snapshots/snapshot_v1.0.1793032483.jsonl",
+      "parent_version": "v1.0.1793032342"
+    },
+    "v1.0.1793032489": {
+      "version": "v1.0.1793032489",
+      "created_at": "2026-10-26T16:34:49+00:00",
+      "sha256_hash": "69e34d54bc8385775822caa175a721343b78271f365f02fb79646b9f6840ac11",
+      "total_samples": 63,
+      "category_counts": {
+        "advance_fee": 8,
+        "fake_mpesa": 5,
+        "credential_theft": 7,
+        "fake_recruitment": 5,
+        "task_scam": 5,
+        "investment_ponzi": 5,
+        "marketplace_non_delivery": 4,
+        "unsolicited_betting_promo": 6,
+        "legitimate_customer_service": 4,
+        "legitimate_commerce": 9,
+        "ambiguous_neutral": 6
+      },
+      "tier_counts": {
+        "corroborated": 63
+      },
+      "language_counts": {
+        "en": 48,
+        "sw": 11,
+        "mixed": 2,
+        "sheng": 2
+      },
+      "pseudo_label_ratio": 0.0,
+      "snapshot_path": "/mnt/data/toroka_review/Toroka/smart-scam-identifier/packages/rules/ssi_rules/ml/data/snapshots/snapshot_v1.0.1793032489.jsonl",
+      "parent_version": "v1.0.1793032483"
+    },
+    "v1.0.1793032494": {
+      "version": "v1.0.1793032494",
+      "created_at": "2026-10-26T16:34:54+00:00",
+      "sha256_hash": "69e34d54bc8385775822caa175a721343b78271f365f02fb79646b9f6840ac11",
+      "total_samples": 63,
+      "category_counts": {
+        "advance_fee": 8,
+        "fake_mpesa": 5,
+        "credential_theft": 7,
+        "fake_recruitment": 5,
+        "task_scam": 5,
+        "investment_ponzi": 5,
+        "marketplace_non_delivery": 4,
+        "unsolicited_betting_promo": 6,
+        "legitimate_customer_service": 4,
+        "legitimate_commerce": 9,
+        "ambiguous_neutral": 6
+      },
+      "tier_counts": {
+        "corroborated": 63
+      },
+      "language_counts": {
+        "en": 48,
+        "sw": 11,
+        "mixed": 2,
+        "sheng": 2
+      },
+      "pseudo_label_ratio": 0.0,
+      "snapshot_path": "/mnt/data/toroka_review/Toroka/smart-scam-identifier/packages/rules/ssi_rules/ml/data/snapshots/snapshot_v1.0.1793032494.jsonl",
+      "parent_version": "v1.0.1793032489"
+    },
+    "v1.0.1793032573": {
+      "version": "v1.0.1793032573",
+      "created_at": "2026-10-26T16:36:13+00:00",
+      "sha256_hash": "69e34d54bc8385775822caa175a721343b78271f365f02fb79646b9f6840ac11",
+      "total_samples": 63,
+      "category_counts": {
+        "advance_fee": 8,
+        "fake_mpesa": 5,
+        "credential_theft": 7,
+        "fake_recruitment": 5,
+        "task_scam": 5,
+        "investment_ponzi": 5,
+        "marketplace_non_delivery": 4,
+        "unsolicited_betting_promo": 6,
+        "legitimate_customer_service": 4,
+        "legitimate_commerce": 9,
+        "ambiguous_neutral": 6
+      },
+      "tier_counts": {
+        "corroborated": 63
+      },
+      "language_counts": {
+        "en": 48,
+        "sw": 11,
+        "mixed": 2,
+        "sheng": 2
+      },
+      "pseudo_label_ratio": 0.0,
+      "snapshot_path": "/mnt/data/toroka_review/Toroka/smart-scam-identifier/packages/rules/ssi_rules/ml/data/snapshots/snapshot_v1.0.1793032573.jsonl",
+      "parent_version": "v1.0.1793032494"
+    },
+    "v1.0.1793032578": {
+      "version": "v1.0.1793032578",
+      "created_at": "2026-10-26T16:36:18+00:00",
+      "sha256_hash": "69e34d54bc8385775822caa175a721343b78271f365f02fb79646b9f6840ac11",
+      "total_samples": 63,
+      "category_counts": {
+        "advance_fee": 8,
+        "fake_mpesa": 5,
+        "credential_theft": 7,
+        "fake_recruitment": 5,
+        "task_scam": 5,
+        "investment_ponzi": 5,
+        "marketplace_non_delivery": 4,
+        "unsolicited_betting_promo": 6,
+        "legitimate_customer_service": 4,
+        "legitimate_commerce": 9,
+        "ambiguous_neutral": 6
+      },
+      "tier_counts": {
+        "corroborated": 63
+      },
+      "language_counts": {
+        "en": 48,
+        "sw": 11,
+        "mixed": 2,
+        "sheng": 2
+      },
+      "pseudo_label_ratio": 0.0,
+      "snapshot_path": "/mnt/data/toroka_review/Toroka/smart-scam-identifier/packages/rules/ssi_rules/ml/data/snapshots/snapshot_v1.0.1793032578.jsonl",
+      "parent_version": "v1.0.1793032573"
+    },
+    "v1.0.1793032584": {
+      "version": "v1.0.1793032584",
+      "created_at": "2026-10-26T16:36:25+00:00",
+      "sha256_hash": "69e34d54bc8385775822caa175a721343b78271f365f02fb79646b9f6840ac11",
+      "total_samples": 63,
+      "category_counts": {
+        "advance_fee": 8,
+        "fake_mpesa": 5,
+        "credential_theft": 7,
+        "fake_recruitment": 5,
+        "task_scam": 5,
+        "investment_ponzi": 5,
+        "marketplace_non_delivery": 4,
+        "unsolicited_betting_promo": 6,
+        "legitimate_customer_service": 4,
+        "legitimate_commerce": 9,
+        "ambiguous_neutral": 6
+      },
+      "tier_counts": {
+        "corroborated": 63
+      },
+      "language_counts": {
+        "en": 48,
+        "sw": 11,
+        "mixed": 2,
+        "sheng": 2
+      },
+      "pseudo_label_ratio": 0.0,
+      "snapshot_path": "/mnt/data/toroka_review/Toroka/smart-scam-identifier/packages/rules/ssi_rules/ml/data/snapshots/snapshot_v1.0.1793032584.jsonl",
+      "parent_version": "v1.0.1793032578"
+    },
+    "v1.0.1793032867": {
+      "version": "v1.0.1793032867",
+      "created_at": "2026-10-26T16:41:07+00:00",
+      "sha256_hash": "69e34d54bc8385775822caa175a721343b78271f365f02fb79646b9f6840ac11",
+      "total_samples": 63,
+      "category_counts": {
+        "advance_fee": 8,
+        "fake_mpesa": 5,
+        "credential_theft": 7,
+        "fake_recruitment": 5,
+        "task_scam": 5,
+        "investment_ponzi": 5,
+        "marketplace_non_delivery": 4,
+        "unsolicited_betting_promo": 6,
+        "legitimate_customer_service": 4,
+        "legitimate_commerce": 9,
+        "ambiguous_neutral": 6
+      },
+      "tier_counts": {
+        "corroborated": 63
+      },
+      "language_counts": {
+        "en": 48,
+        "sw": 11,
+        "mixed": 2,
+        "sheng": 2
+      },
+      "pseudo_label_ratio": 0.0,
+      "snapshot_path": "/mnt/data/toroka_review/Toroka/smart-scam-identifier/packages/rules/ssi_rules/ml/data/snapshots/snapshot_v1.0.1793032867.jsonl",
+      "parent_version": "v1.0.1793032584"
+    },
+    "v1.0.1793032874": {
+      "version": "v1.0.1793032874",
+      "created_at": "2026-10-26T16:41:14+00:00",
+      "sha256_hash": "69e34d54bc8385775822caa175a721343b78271f365f02fb79646b9f6840ac11",
+      "total_samples": 63,
+      "category_counts": {
+        "advance_fee": 8,
+        "fake_mpesa": 5,
+        "credential_theft": 7,
+        "fake_recruitment": 5,
+        "task_scam": 5,
+        "investment_ponzi": 5,
+        "marketplace_non_delivery": 4,
+        "unsolicited_betting_promo": 6,
+        "legitimate_customer_service": 4,
+        "legitimate_commerce": 9,
+        "ambiguous_neutral": 6
+      },
+      "tier_counts": {
+        "corroborated": 63
+      },
+      "language_counts": {
+        "en": 48,
+        "sw": 11,
+        "mixed": 2,
+        "sheng": 2
+      },
+      "pseudo_label_ratio": 0.0,
+      "snapshot_path": "/mnt/data/toroka_review/Toroka/smart-scam-identifier/packages/rules/ssi_rules/ml/data/snapshots/snapshot_v1.0.1793032874.jsonl",
+      "parent_version": "v1.0.1793032867"
+    },
+    "v1.0.1793032875": {
+      "version": "v1.0.1793032875",
+      "created_at": "2026-10-26T16:41:15+00:00",
+      "sha256_hash": "69e34d54bc8385775822caa175a721343b78271f365f02fb79646b9f6840ac11",
+      "total_samples": 63,
+      "category_counts": {
+        "advance_fee": 8,
+        "fake_mpesa": 5,
+        "credential_theft": 7,
+        "fake_recruitment": 5,
+        "task_scam": 5,
+        "investment_ponzi": 5,
+        "marketplace_non_delivery": 4,
+        "unsolicited_betting_promo": 6,
+        "legitimate_customer_service": 4,
+        "legitimate_commerce": 9,
+        "ambiguous_neutral": 6
+      },
+      "tier_counts": {
+        "corroborated": 63
+      },
+      "language_counts": {
+        "en": 48,
+        "sw": 11,
+        "mixed": 2,
+        "sheng": 2
+      },
+      "pseudo_label_ratio": 0.0,
+      "snapshot_path": "/mnt/data/toroka_review/Toroka/smart-scam-identifier/packages/rules/ssi_rules/ml/data/snapshots/snapshot_v1.0.1793032875.jsonl",
+      "parent_version": "v1.0.1793032874"
+    },
+    "v1.0.1793034745": {
+      "version": "v1.0.1793034745",
+      "created_at": "2026-10-26T17:12:25+00:00",
+      "sha256_hash": "cca36c08cbb7acf700cfe8ef313a2713ccbd98b5a6fb997fd597bd4534d3f75b",
+      "total_samples": 67,
+      "category_counts": {
+        "advance_fee": 9,
+        "fake_mpesa": 5,
+        "credential_theft": 8,
+        "fake_recruitment": 5,
+        "task_scam": 6,
+        "investment_ponzi": 6,
+        "marketplace_non_delivery": 4,
+        "unsolicited_betting_promo": 6,
+        "legitimate_customer_service": 4,
+        "legitimate_commerce": 9,
+        "ambiguous_neutral": 6
+      },
+      "tier_counts": {
+        "corroborated": 64,
+        "strongly_supported": 3
+      },
+      "language_counts": {
+        "en": 52,
+        "sw": 11,
+        "mixed": 2,
+        "sheng": 2
+      },
+      "pseudo_label_ratio": 0.0,
+      "snapshot_path": "C:\\Users\\STD USER\\Desktop\\work\\Toroka\\Toroka_Professional_Audit\\Toroka\\smart-scam-identifier\\packages\\rules\\ssi_rules\\ml\\data\\snapshots\\snapshot_v1.0.1793034745.jsonl",
+      "parent_version": "v1.0.1793032875"
+    },
+    "v1.0.1793034753": {
+      "version": "v1.0.1793034753",
+      "created_at": "2026-10-26T17:12:33+00:00",
+      "sha256_hash": "7f152246aca8aadbe553f8ae4a6bb9c5f9a1ca86a4e84a491f43a3acad90201c",
+      "total_samples": 64,
+      "category_counts": {
+        "advance_fee": 8,
+        "fake_mpesa": 5,
+        "credential_theft": 8,
+        "fake_recruitment": 5,
+        "task_scam": 5,
+        "investment_ponzi": 5,
+        "marketplace_non_delivery": 4,
+        "unsolicited_betting_promo": 6,
+        "legitimate_customer_service": 4,
+        "legitimate_commerce": 9,
+        "ambiguous_neutral": 6
+      },
+      "tier_counts": {
+        "corroborated": 64
+      },
+      "language_counts": {
+        "en": 49,
+        "sw": 11,
+        "mixed": 2,
+        "sheng": 2
+      },
+      "pseudo_label_ratio": 0.0,
+      "snapshot_path": "C:\\Users\\STD USER\\Desktop\\work\\Toroka\\Toroka_Professional_Audit\\Toroka\\smart-scam-identifier\\packages\\rules\\ssi_rules\\ml\\data\\snapshots\\snapshot_v1.0.1793034753.jsonl",
+      "parent_version": "v1.0.1793034745"
+    },
+    "v1.0.1793034759": {
+      "version": "v1.0.1793034759",
+      "created_at": "2026-10-26T17:12:39+00:00",
+      "sha256_hash": "7f152246aca8aadbe553f8ae4a6bb9c5f9a1ca86a4e84a491f43a3acad90201c",
+      "total_samples": 64,
+      "category_counts": {
+        "advance_fee": 8,
+        "fake_mpesa": 5,
+        "credential_theft": 8,
+        "fake_recruitment": 5,
+        "task_scam": 5,
+        "investment_ponzi": 5,
+        "marketplace_non_delivery": 4,
+        "unsolicited_betting_promo": 6,
+        "legitimate_customer_service": 4,
+        "legitimate_commerce": 9,
+        "ambiguous_neutral": 6
+      },
+      "tier_counts": {
+        "corroborated": 64
+      },
+      "language_counts": {
+        "en": 49,
+        "sw": 11,
+        "mixed": 2,
+        "sheng": 2
+      },
+      "pseudo_label_ratio": 0.0,
+      "snapshot_path": "C:\\Users\\STD USER\\Desktop\\work\\Toroka\\Toroka_Professional_Audit\\Toroka\\smart-scam-identifier\\packages\\rules\\ssi_rules\\ml\\data\\snapshots\\snapshot_v1.0.1793034759.jsonl",
+      "parent_version": "v1.0.1793034753"
+    },
+    "v1.0.1793038480": {
+      "version": "v1.0.1793038480",
+      "created_at": "2026-10-26T18:14:40+00:00",
+      "sha256_hash": "df2ece2f9339b924f7ab9fa62c8ca6b9276977e86da0a307a8621093056a25fc",
+      "total_samples": 64,
+      "category_counts": {
+        "advance_fee": 8,
+        "fake_mpesa": 5,
+        "credential_theft": 8,
+        "fake_recruitment": 5,
+        "task_scam": 5,
+        "investment_ponzi": 5,
+        "marketplace_non_delivery": 4,
+        "unsolicited_betting_promo": 6,
+        "legitimate_customer_service": 4,
+        "legitimate_commerce": 9,
+        "ambiguous_neutral": 6
+      },
+      "tier_counts": {
+        "corroborated": 64
+      },
+      "language_counts": {
+        "en": 49,
+        "sw": 11,
+        "mixed": 2,
+        "sheng": 2
+      },
+      "pseudo_label_ratio": 0.0,
+      "snapshot_path": "C:\\Users\\STD USER\\Desktop\\work\\Toroka\\smart-scam-identifier\\packages\\rules\\ssi_rules\\ml\\data\\snapshots\\snapshot_v1.0.1793038480.jsonl",
+      "parent_version": "v1.0.1793034759"
+    },
+    "v1.0.1793046686": {
+      "version": "v1.0.1793046686",
+      "created_at": "2026-10-26T20:31:26+00:00",
+      "sha256_hash": "df2ece2f9339b924f7ab9fa62c8ca6b9276977e86da0a307a8621093056a25fc",
+      "total_samples": 64,
+      "category_counts": {
+        "advance_fee": 8,
+        "fake_mpesa": 5,
+        "credential_theft": 8,
+        "fake_recruitment": 5,
+        "task_scam": 5,
+        "investment_ponzi": 5,
+        "marketplace_non_delivery": 4,
+        "unsolicited_betting_promo": 6,
+        "legitimate_customer_service": 4,
+        "legitimate_commerce": 9,
+        "ambiguous_neutral": 6
+      },
+      "tier_counts": {
+        "corroborated": 64
+      },
+      "language_counts": {
+        "en": 49,
+        "sw": 11,
+        "mixed": 2,
+        "sheng": 2
+      },
+      "pseudo_label_ratio": 0.0,
+      "snapshot_path": "C:\\Users\\STD USER\\Desktop\\work\\Toroka\\smart-scam-identifier\\packages\\rules\\ssi_rules\\ml\\data\\snapshots\\snapshot_v1.0.1793046686.jsonl",
+      "parent_version": "v1.0.1793038480"
+    },
+    "v1.0.1793046697": {
+      "version": "v1.0.1793046697",
+      "created_at": "2026-10-26T20:31:37+00:00",
+      "sha256_hash": "bec6440173432cdd7bbb18c2f2bbdfc7e10947624a0f07d3f781693e1869e41e",
+      "total_samples": 64,
+      "category_counts": {
+        "advance_fee": 8,
+        "fake_mpesa": 5,
+        "credential_theft": 8,
+        "fake_recruitment": 5,
+        "task_scam": 5,
+        "investment_ponzi": 5,
+        "marketplace_non_delivery": 4,
+        "unsolicited_betting_promo": 6,
+        "legitimate_customer_service": 4,
+        "legitimate_commerce": 9,
+        "ambiguous_neutral": 6
+      },
+      "tier_counts": {
+        "corroborated": 64
+      },
+      "language_counts": {
+        "en": 49,
+        "sw": 11,
+        "mixed": 2,
+        "sheng": 2
+      },
+      "pseudo_label_ratio": 0.0,
+      "snapshot_path": "C:\\Users\\STD USER\\Desktop\\work\\Toroka\\smart-scam-identifier\\packages\\rules\\ssi_rules\\ml\\data\\snapshots\\snapshot_v1.0.1793046697.jsonl",
+      "parent_version": "v1.0.1793046686"
+    },
+    "v1.0.1793046702": {
+      "version": "v1.0.1793046702",
+      "created_at": "2026-10-26T20:31:43+00:00",
+      "sha256_hash": "bec6440173432cdd7bbb18c2f2bbdfc7e10947624a0f07d3f781693e1869e41e",
+      "total_samples": 64,
+      "category_counts": {
+        "advance_fee": 8,
+        "fake_mpesa": 5,
+        "credential_theft": 8,
+        "fake_recruitment": 5,
+        "task_scam": 5,
+        "investment_ponzi": 5,
+        "marketplace_non_delivery": 4,
+        "unsolicited_betting_promo": 6,
+        "legitimate_customer_service": 4,
+        "legitimate_commerce": 9,
+        "ambiguous_neutral": 6
+      },
+      "tier_counts": {
+        "corroborated": 64
+      },
+      "language_counts": {
+        "en": 49,
+        "sw": 11,
+        "mixed": 2,
+        "sheng": 2
+      },
+      "pseudo_label_ratio": 0.0,
+      "snapshot_path": "C:\\Users\\STD USER\\Desktop\\work\\Toroka\\smart-scam-identifier\\packages\\rules\\ssi_rules\\ml\\data\\snapshots\\snapshot_v1.0.1793046702.jsonl",
+      "parent_version": "v1.0.1793046697"
+    },
+    "v1.0.1793047616": {
+      "version": "v1.0.1793047616",
+      "created_at": "2026-10-26T20:46:56+00:00",
+      "sha256_hash": "bec6440173432cdd7bbb18c2f2bbdfc7e10947624a0f07d3f781693e1869e41e",
+      "total_samples": 64,
+      "category_counts": {
+        "advance_fee": 8,
+        "fake_mpesa": 5,
+        "credential_theft": 8,
+        "fake_recruitment": 5,
+        "task_scam": 5,
+        "investment_ponzi": 5,
+        "marketplace_non_delivery": 4,
+        "unsolicited_betting_promo": 6,
+        "legitimate_customer_service": 4,
+        "legitimate_commerce": 9,
+        "ambiguous_neutral": 6
+      },
+      "tier_counts": {
+        "corroborated": 64
+      },
+      "language_counts": {
+        "en": 49,
+        "sw": 11,
+        "mixed": 2,
+        "sheng": 2
+      },
+      "pseudo_label_ratio": 0.0,
+      "snapshot_path": "C:\\Users\\STD USER\\Desktop\\work\\Toroka\\smart-scam-identifier\\packages\\rules\\ssi_rules\\ml\\data\\snapshots\\snapshot_v1.0.1793047616.jsonl",
+      "parent_version": "v1.0.1793046702"
+    },
+    "v1.0.1793047622": {
+      "version": "v1.0.1793047622",
+      "created_at": "2026-10-26T20:47:02+00:00",
+      "sha256_hash": "cff8bfa977b7a0c864e0509110491ade6d6f9fd49110eddf82243833d27defc6",
+      "total_samples": 64,
+      "category_counts": {
+        "advance_fee": 8,
+        "fake_mpesa": 5,
+        "credential_theft": 8,
+        "fake_recruitment": 5,
+        "task_scam": 5,
+        "investment_ponzi": 5,
+        "marketplace_non_delivery": 4,
+        "unsolicited_betting_promo": 6,
+        "legitimate_customer_service": 4,
+        "legitimate_commerce": 9,
+        "ambiguous_neutral": 6
+      },
+      "tier_counts": {
+        "corroborated": 64
+      },
+      "language_counts": {
+        "en": 49,
+        "sw": 11,
+        "mixed": 2,
+        "sheng": 2
+      },
+      "pseudo_label_ratio": 0.0,
+      "snapshot_path": "C:\\Users\\STD USER\\Desktop\\work\\Toroka\\smart-scam-identifier\\packages\\rules\\ssi_rules\\ml\\data\\snapshots\\snapshot_v1.0.1793047622.jsonl",
+      "parent_version": "v1.0.1793047616"
+    },
+    "v1.0.1793047626": {
+      "version": "v1.0.1793047626",
+      "created_at": "2026-10-26T20:47:06+00:00",
+      "sha256_hash": "cff8bfa977b7a0c864e0509110491ade6d6f9fd49110eddf82243833d27defc6",
+      "total_samples": 64,
+      "category_counts": {
+        "advance_fee": 8,
+        "fake_mpesa": 5,
+        "credential_theft": 8,
+        "fake_recruitment": 5,
+        "task_scam": 5,
+        "investment_ponzi": 5,
+        "marketplace_non_delivery": 4,
+        "unsolicited_betting_promo": 6,
+        "legitimate_customer_service": 4,
+        "legitimate_commerce": 9,
+        "ambiguous_neutral": 6
+      },
+      "tier_counts": {
+        "corroborated": 64
+      },
+      "language_counts": {
+        "en": 49,
+        "sw": 11,
+        "mixed": 2,
+        "sheng": 2
+      },
+      "pseudo_label_ratio": 0.0,
+      "snapshot_path": "C:\\Users\\STD USER\\Desktop\\work\\Toroka\\smart-scam-identifier\\packages\\rules\\ssi_rules\\ml\\data\\snapshots\\snapshot_v1.0.1793047626.jsonl",
+      "parent_version": "v1.0.1793047622"
+    },
+    "v1.0.1793554596": {
+      "version": "v1.0.1793554596",
+      "created_at": "2026-11-01T17:36:36+00:00",
+      "sha256_hash": "0fa1d87003adad9e43d9dea9cc082915f54ce12f4100a35e95403a0bc938b3e5",
+      "total_samples": 67,
+      "category_counts": {
+        "advance_fee": 9,
+        "fake_mpesa": 5,
+        "credential_theft": 8,
+        "fake_recruitment": 5,
+        "task_scam": 6,
+        "investment_ponzi": 6,
+        "marketplace_non_delivery": 4,
+        "unsolicited_betting_promo": 6,
+        "legitimate_customer_service": 4,
+        "legitimate_commerce": 9,
+        "ambiguous_neutral": 6
+      },
+      "tier_counts": {
+        "corroborated": 64,
+        "strongly_supported": 3
+      },
+      "language_counts": {
+        "en": 52,
+        "sw": 11,
+        "mixed": 2,
+        "sheng": 2
+      },
+      "pseudo_label_ratio": 0.0,
+      "snapshot_path": "C:\\Users\\STD USER\\Desktop\\work\\Toroka\\smart-scam-identifier\\packages\\rules\\ssi_rules\\ml\\data\\snapshots\\snapshot_v1.0.1793554596.jsonl",
+      "parent_version": "v1.0.1793047626"
+    },
+    "v1.0.1793554602": {
+      "version": "v1.0.1793554602",
+      "created_at": "2026-11-01T17:36:42+00:00",
+      "sha256_hash": "1a148c36f776ad609e050ea2788c99087188313029020f3af69dcd8343f22adb",
+      "total_samples": 64,
+      "category_counts": {
+        "advance_fee": 8,
+        "fake_mpesa": 5,
+        "credential_theft": 8,
+        "fake_recruitment": 5,
+        "task_scam": 5,
+        "investment_ponzi": 5,
+        "marketplace_non_delivery": 4,
+        "unsolicited_betting_promo": 6,
+        "legitimate_customer_service": 4,
+        "legitimate_commerce": 9,
+        "ambiguous_neutral": 6
+      },
+      "tier_counts": {
+        "corroborated": 64
+      },
+      "language_counts": {
+        "en": 49,
+        "sw": 11,
+        "mixed": 2,
+        "sheng": 2
+      },
+      "pseudo_label_ratio": 0.0,
+      "snapshot_path": "C:\\Users\\STD USER\\Desktop\\work\\Toroka\\smart-scam-identifier\\packages\\rules\\ssi_rules\\ml\\data\\snapshots\\snapshot_v1.0.1793554602.jsonl",
+      "parent_version": "v1.0.1793554596"
+    },
+    "v1.0.1793554608": {
+      "version": "v1.0.1793554608",
+      "created_at": "2026-11-01T17:36:48+00:00",
+      "sha256_hash": "1a148c36f776ad609e050ea2788c99087188313029020f3af69dcd8343f22adb",
+      "total_samples": 64,
+      "category_counts": {
+        "advance_fee": 8,
+        "fake_mpesa": 5,
+        "credential_theft": 8,
+        "fake_recruitment": 5,
+        "task_scam": 5,
+        "investment_ponzi": 5,
+        "marketplace_non_delivery": 4,
+        "unsolicited_betting_promo": 6,
+        "legitimate_customer_service": 4,
+        "legitimate_commerce": 9,
+        "ambiguous_neutral": 6
+      },
+      "tier_counts": {
+        "corroborated": 64
+      },
+      "language_counts": {
+        "en": 49,
+        "sw": 11,
+        "mixed": 2,
+        "sheng": 2
+      },
+      "pseudo_label_ratio": 0.0,
+      "snapshot_path": "C:\\Users\\STD USER\\Desktop\\work\\Toroka\\smart-scam-identifier\\packages\\rules\\ssi_rules\\ml\\data\\snapshots\\snapshot_v1.0.1793554608.jsonl",
+      "parent_version": "v1.0.1793554602"
+    },
+    "v1.0.1793558149": {
+      "version": "v1.0.1793558149",
+      "created_at": "2026-11-01T18:35:49+00:00",
+      "sha256_hash": "dede161a7ac485bae83e06e783dfb28959ab668fbefbf2232a022bf35e8ac160",
+      "total_samples": 64,
+      "category_counts": {
+        "advance_fee": 8,
+        "fake_mpesa": 5,
+        "credential_theft": 8,
+        "fake_recruitment": 5,
+        "task_scam": 5,
+        "investment_ponzi": 5,
+        "marketplace_non_delivery": 4,
+        "unsolicited_betting_promo": 6,
+        "legitimate_customer_service": 4,
+        "legitimate_commerce": 9,
+        "ambiguous_neutral": 6
+      },
+      "tier_counts": {
+        "corroborated": 64
+      },
+      "language_counts": {
+        "en": 49,
+        "sw": 11,
+        "mixed": 2,
+        "sheng": 2
+      },
+      "pseudo_label_ratio": 0.0,
+      "snapshot_path": "C:\\Users\\STD USER\\Desktop\\work\\Toroka\\smart-scam-identifier\\packages\\rules\\ssi_rules\\ml\\data\\snapshots\\snapshot_v1.0.1793558149.jsonl",
+      "parent_version": "v1.0.1793554608"
+    },
+    "v1.0.1793558152": {
+      "version": "v1.0.1793558152",
+      "created_at": "2026-11-01T18:35:52+00:00",
+      "sha256_hash": "ca5a23b6620c60084df0115124225f87ed9df95dbc35aa0c615cb363151aee8d",
+      "total_samples": 64,
+      "category_counts": {
+        "advance_fee": 8,
+        "fake_mpesa": 5,
+        "credential_theft": 8,
+        "fake_recruitment": 5,
+        "task_scam": 5,
+        "investment_ponzi": 5,
+        "marketplace_non_delivery": 4,
+        "unsolicited_betting_promo": 6,
+        "legitimate_customer_service": 4,
+        "legitimate_commerce": 9,
+        "ambiguous_neutral": 6
+      },
+      "tier_counts": {
+        "corroborated": 64
+      },
+      "language_counts": {
+        "en": 49,
+        "sw": 11,
+        "mixed": 2,
+        "sheng": 2
+      },
+      "pseudo_label_ratio": 0.0,
+      "snapshot_path": "C:\\Users\\STD USER\\Desktop\\work\\Toroka\\smart-scam-identifier\\packages\\rules\\ssi_rules\\ml\\data\\snapshots\\snapshot_v1.0.1793558152.jsonl",
+      "parent_version": "v1.0.1793558149"
+    },
+    "v1.0.1793558157": {
+      "version": "v1.0.1793558157",
+      "created_at": "2026-11-01T18:35:57+00:00",
+      "sha256_hash": "ca5a23b6620c60084df0115124225f87ed9df95dbc35aa0c615cb363151aee8d",
+      "total_samples": 64,
+      "category_counts": {
+        "advance_fee": 8,
+        "fake_mpesa": 5,
+        "credential_theft": 8,
+        "fake_recruitment": 5,
+        "task_scam": 5,
+        "investment_ponzi": 5,
+        "marketplace_non_delivery": 4,
+        "unsolicited_betting_promo": 6,
+        "legitimate_customer_service": 4,
+        "legitimate_commerce": 9,
+        "ambiguous_neutral": 6
+      },
+      "tier_counts": {
+        "corroborated": 64
+      },
+      "language_counts": {
+        "en": 49,
+        "sw": 11,
+        "mixed": 2,
+        "sheng": 2
+      },
+      "pseudo_label_ratio": 0.0,
+      "snapshot_path": "C:\\Users\\STD USER\\Desktop\\work\\Toroka\\smart-scam-identifier\\packages\\rules\\ssi_rules\\ml\\data\\snapshots\\snapshot_v1.0.1793558157.jsonl",
+      "parent_version": "v1.0.1793558152"
+    },
+    "v1.0.1793562440": {
+      "version": "v1.0.1793562440",
+      "created_at": "2026-11-01T19:47:20+00:00",
+      "sha256_hash": "ca5a23b6620c60084df0115124225f87ed9df95dbc35aa0c615cb363151aee8d",
+      "total_samples": 64,
+      "category_counts": {
+        "advance_fee": 8,
+        "fake_mpesa": 5,
+        "credential_theft": 8,
+        "fake_recruitment": 5,
+        "task_scam": 5,
+        "investment_ponzi": 5,
+        "marketplace_non_delivery": 4,
+        "unsolicited_betting_promo": 6,
+        "legitimate_customer_service": 4,
+        "legitimate_commerce": 9,
+        "ambiguous_neutral": 6
+      },
+      "tier_counts": {
+        "corroborated": 64
+      },
+      "language_counts": {
+        "en": 49,
+        "sw": 11,
+        "mixed": 2,
+        "sheng": 2
+      },
+      "pseudo_label_ratio": 0.0,
+      "snapshot_path": "C:\\Users\\STD USER\\Desktop\\work\\Toroka\\smart-scam-identifier\\packages\\rules\\ssi_rules\\ml\\data\\snapshots\\snapshot_v1.0.1793562440.jsonl",
+      "parent_version": "v1.0.1793558157"
+    },
+    "v1.0.1793562446": {
+      "version": "v1.0.1793562446",
+      "created_at": "2026-11-01T19:47:26+00:00",
+      "sha256_hash": "b91270d7361b4b61a0823b062b16d71567877dfe32762c18fdc0969a9b6d4192",
+      "total_samples": 64,
+      "category_counts": {
+        "advance_fee": 8,
+        "fake_mpesa": 5,
+        "credential_theft": 8,
+        "fake_recruitment": 5,
+        "task_scam": 5,
+        "investment_ponzi": 5,
+        "marketplace_non_delivery": 4,
+        "unsolicited_betting_promo": 6,
+        "legitimate_customer_service": 4,
+        "legitimate_commerce": 9,
+        "ambiguous_neutral": 6
+      },
+      "tier_counts": {
+        "corroborated": 64
+      },
+      "language_counts": {
+        "en": 49,
+        "sw": 11,
+        "mixed": 2,
+        "sheng": 2
+      },
+      "pseudo_label_ratio": 0.0,
+      "snapshot_path": "C:\\Users\\STD USER\\Desktop\\work\\Toroka\\smart-scam-identifier\\packages\\rules\\ssi_rules\\ml\\data\\snapshots\\snapshot_v1.0.1793562446.jsonl",
+      "parent_version": "v1.0.1793562440"
+    },
+    "v1.0.1793562451": {
+      "version": "v1.0.1793562451",
+      "created_at": "2026-11-01T19:47:31+00:00",
+      "sha256_hash": "b91270d7361b4b61a0823b062b16d71567877dfe32762c18fdc0969a9b6d4192",
+      "total_samples": 64,
+      "category_counts": {
+        "advance_fee": 8,
+        "fake_mpesa": 5,
+        "credential_theft": 8,
+        "fake_recruitment": 5,
+        "task_scam": 5,
+        "investment_ponzi": 5,
+        "marketplace_non_delivery": 4,
+        "unsolicited_betting_promo": 6,
+        "legitimate_customer_service": 4,
+        "legitimate_commerce": 9,
+        "ambiguous_neutral": 6
+      },
+      "tier_counts": {
+        "corroborated": 64
+      },
+      "language_counts": {
+        "en": 49,
+        "sw": 11,
+        "mixed": 2,
+        "sheng": 2
+      },
+      "pseudo_label_ratio": 0.0,
+      "snapshot_path": "C:\\Users\\STD USER\\Desktop\\work\\Toroka\\smart-scam-identifier\\packages\\rules\\ssi_rules\\ml\\data\\snapshots\\snapshot_v1.0.1793562451.jsonl",
+      "parent_version": "v1.0.1793562446"
+    },
+    "v1.0.1793616431": {
+      "version": "v1.0.1793616431",
+      "created_at": "2026-11-02T10:47:12+00:00",
+      "sha256_hash": "b91270d7361b4b61a0823b062b16d71567877dfe32762c18fdc0969a9b6d4192",
+      "total_samples": 64,
+      "category_counts": {
+        "advance_fee": 8,
+        "fake_mpesa": 5,
+        "credential_theft": 8,
+        "fake_recruitment": 5,
+        "task_scam": 5,
+        "investment_ponzi": 5,
+        "marketplace_non_delivery": 4,
+        "unsolicited_betting_promo": 6,
+        "legitimate_customer_service": 4,
+        "legitimate_commerce": 9,
+        "ambiguous_neutral": 6
+      },
+      "tier_counts": {
+        "corroborated": 64
+      },
+      "language_counts": {
+        "en": 49,
+        "sw": 11,
+        "mixed": 2,
+        "sheng": 2
+      },
+      "pseudo_label_ratio": 0.0,
+      "snapshot_path": "C:\\Users\\STD USER\\Desktop\\work\\Toroka\\smart-scam-identifier\\packages\\rules\\ssi_rules\\ml\\data\\snapshots\\snapshot_v1.0.1793616431.jsonl",
+      "parent_version": "v1.0.1793562451"
+    },
+    "v1.0.1793616435": {
+      "version": "v1.0.1793616435",
+      "created_at": "2026-11-02T10:47:15+00:00",
+      "sha256_hash": "08b1e74ca0d5f1e51e79e70ef83b2664f02f2bc3c767eda82740366fc266d78f",
+      "total_samples": 64,
+      "category_counts": {
+        "advance_fee": 8,
+        "fake_mpesa": 5,
+        "credential_theft": 8,
+        "fake_recruitment": 5,
+        "task_scam": 5,
+        "investment_ponzi": 5,
+        "marketplace_non_delivery": 4,
+        "unsolicited_betting_promo": 6,
+        "legitimate_customer_service": 4,
+        "legitimate_commerce": 9,
+        "ambiguous_neutral": 6
+      },
+      "tier_counts": {
+        "corroborated": 64
+      },
+      "language_counts": {
+        "en": 49,
+        "sw": 11,
+        "mixed": 2,
+        "sheng": 2
+      },
+      "pseudo_label_ratio": 0.0,
+      "snapshot_path": "C:\\Users\\STD USER\\Desktop\\work\\Toroka\\smart-scam-identifier\\packages\\rules\\ssi_rules\\ml\\data\\snapshots\\snapshot_v1.0.1793616435.jsonl",
+      "parent_version": "v1.0.1793616431"
+    },
+    "v1.0.1793616439": {
+      "version": "v1.0.1793616439",
+      "created_at": "2026-11-02T10:47:19+00:00",
+      "sha256_hash": "08b1e74ca0d5f1e51e79e70ef83b2664f02f2bc3c767eda82740366fc266d78f",
+      "total_samples": 64,
+      "category_counts": {
+        "advance_fee": 8,
+        "fake_mpesa": 5,
+        "credential_theft": 8,
+        "fake_recruitment": 5,
+        "task_scam": 5,
+        "investment_ponzi": 5,
+        "marketplace_non_delivery": 4,
+        "unsolicited_betting_promo": 6,
+        "legitimate_customer_service": 4,
+        "legitimate_commerce": 9,
+        "ambiguous_neutral": 6
+      },
+      "tier_counts": {
+        "corroborated": 64
+      },
+      "language_counts": {
+        "en": 49,
+        "sw": 11,
+        "mixed": 2,
+        "sheng": 2
+      },
+      "pseudo_label_ratio": 0.0,
+      "snapshot_path": "C:\\Users\\STD USER\\Desktop\\work\\Toroka\\smart-scam-identifier\\packages\\rules\\ssi_rules\\ml\\data\\snapshots\\snapshot_v1.0.1793616439.jsonl",
+      "parent_version": "v1.0.1793616435"
+    },
+    "v1.0.1793620436": {
+      "version": "v1.0.1793620436",
+      "created_at": "2026-11-02T11:53:56+00:00",
+      "sha256_hash": "08b1e74ca0d5f1e51e79e70ef83b2664f02f2bc3c767eda82740366fc266d78f",
+      "total_samples": 64,
+      "category_counts": {
+        "advance_fee": 8,
+        "fake_mpesa": 5,
+        "credential_theft": 8,
+        "fake_recruitment": 5,
+        "task_scam": 5,
+        "investment_ponzi": 5,
+        "marketplace_non_delivery": 4,
+        "unsolicited_betting_promo": 6,
+        "legitimate_customer_service": 4,
+        "legitimate_commerce": 9,
+        "ambiguous_neutral": 6
+      },
+      "tier_counts": {
+        "corroborated": 64
+      },
+      "language_counts": {
+        "en": 49,
+        "sw": 11,
+        "mixed": 2,
+        "sheng": 2
+      },
+      "pseudo_label_ratio": 0.0,
+      "snapshot_path": "C:\\Users\\STD USER\\Desktop\\work\\Toroka\\smart-scam-identifier\\packages\\rules\\ssi_rules\\ml\\data\\snapshots\\snapshot_v1.0.1793620436.jsonl",
+      "parent_version": "v1.0.1793616439"
+    },
+    "v1.0.1793620439": {
+      "version": "v1.0.1793620439",
+      "created_at": "2026-11-02T11:54:01+00:00",
+      "sha256_hash": "6361e6d3a741f327949565ad392e5cdc01ea58489e71d26ae4c4a6bede6bd123",
+      "total_samples": 64,
+      "category_counts": {
+        "advance_fee": 8,
+        "fake_mpesa": 5,
+        "credential_theft": 8,
+        "fake_recruitment": 5,
+        "task_scam": 5,
+        "investment_ponzi": 5,
+        "marketplace_non_delivery": 4,
+        "unsolicited_betting_promo": 6,
+        "legitimate_customer_service": 4,
+        "legitimate_commerce": 9,
+        "ambiguous_neutral": 6
+      },
+      "tier_counts": {
+        "corroborated": 64
+      },
+      "language_counts": {
+        "en": 49,
+        "sw": 11,
+        "mixed": 2,
+        "sheng": 2
+      },
+      "pseudo_label_ratio": 0.0,
+      "snapshot_path": "C:\\Users\\STD USER\\Desktop\\work\\Toroka\\smart-scam-identifier\\packages\\rules\\ssi_rules\\ml\\data\\snapshots\\snapshot_v1.0.1793620439.jsonl",
+      "parent_version": "v1.0.1793620436"
+    },
+    "v1.0.1793620448": {
+      "version": "v1.0.1793620448",
+      "created_at": "2026-11-02T11:54:09+00:00",
+      "sha256_hash": "6361e6d3a741f327949565ad392e5cdc01ea58489e71d26ae4c4a6bede6bd123",
+      "total_samples": 64,
+      "category_counts": {
+        "advance_fee": 8,
+        "fake_mpesa": 5,
+        "credential_theft": 8,
+        "fake_recruitment": 5,
+        "task_scam": 5,
+        "investment_ponzi": 5,
+        "marketplace_non_delivery": 4,
+        "unsolicited_betting_promo": 6,
+        "legitimate_customer_service": 4,
+        "legitimate_commerce": 9,
+        "ambiguous_neutral": 6
+      },
+      "tier_counts": {
+        "corroborated": 64
+      },
+      "language_counts": {
+        "en": 49,
+        "sw": 11,
+        "mixed": 2,
+        "sheng": 2
+      },
+      "pseudo_label_ratio": 0.0,
+      "snapshot_path": "C:\\Users\\STD USER\\Desktop\\work\\Toroka\\smart-scam-identifier\\packages\\rules\\ssi_rules\\ml\\data\\snapshots\\snapshot_v1.0.1793620448.jsonl",
+      "parent_version": "v1.0.1793620439"
+    },
+    "v1.0.1793621298": {
+      "version": "v1.0.1793621298",
+      "created_at": "2026-11-02T12:08:18+00:00",
+      "sha256_hash": "6361e6d3a741f327949565ad392e5cdc01ea58489e71d26ae4c4a6bede6bd123",
+      "total_samples": 64,
+      "category_counts": {
+        "advance_fee": 8,
+        "fake_mpesa": 5,
+        "credential_theft": 8,
+        "fake_recruitment": 5,
+        "task_scam": 5,
+        "investment_ponzi": 5,
+        "marketplace_non_delivery": 4,
+        "unsolicited_betting_promo": 6,
+        "legitimate_customer_service": 4,
+        "legitimate_commerce": 9,
+        "ambiguous_neutral": 6
+      },
+      "tier_counts": {
+        "corroborated": 64
+      },
+      "language_counts": {
+        "en": 49,
+        "sw": 11,
+        "mixed": 2,
+        "sheng": 2
+      },
+      "pseudo_label_ratio": 0.0,
+      "snapshot_path": "C:\\Users\\STD USER\\Desktop\\work\\Toroka\\smart-scam-identifier\\packages\\rules\\ssi_rules\\ml\\data\\snapshots\\snapshot_v1.0.1793621298.jsonl",
+      "parent_version": "v1.0.1793620448"
+    },
+    "v1.0.1793621302": {
+      "version": "v1.0.1793621302",
+      "created_at": "2026-11-02T12:08:22+00:00",
+      "sha256_hash": "3d06177782240bfb31e38e2c3910da080dd70258cdc3091c9e321b8d6db39acd",
+      "total_samples": 64,
+      "category_counts": {
+        "advance_fee": 8,
+        "fake_mpesa": 5,
+        "credential_theft": 8,
+        "fake_recruitment": 5,
+        "task_scam": 5,
+        "investment_ponzi": 5,
+        "marketplace_non_delivery": 4,
+        "unsolicited_betting_promo": 6,
+        "legitimate_customer_service": 4,
+        "legitimate_commerce": 9,
+        "ambiguous_neutral": 6
+      },
+      "tier_counts": {
+        "corroborated": 64
+      },
+      "language_counts": {
+        "en": 49,
+        "sw": 11,
+        "mixed": 2,
+        "sheng": 2
+      },
+      "pseudo_label_ratio": 0.0,
+      "snapshot_path": "C:\\Users\\STD USER\\Desktop\\work\\Toroka\\smart-scam-identifier\\packages\\rules\\ssi_rules\\ml\\data\\snapshots\\snapshot_v1.0.1793621302.jsonl",
+      "parent_version": "v1.0.1793621298"
+    },
+    "v1.0.1793621307": {
+      "version": "v1.0.1793621307",
+      "created_at": "2026-11-02T12:08:27+00:00",
+      "sha256_hash": "3d06177782240bfb31e38e2c3910da080dd70258cdc3091c9e321b8d6db39acd",
+      "total_samples": 64,
+      "category_counts": {
+        "advance_fee": 8,
+        "fake_mpesa": 5,
+        "credential_theft": 8,
+        "fake_recruitment": 5,
+        "task_scam": 5,
+        "investment_ponzi": 5,
+        "marketplace_non_delivery": 4,
+        "unsolicited_betting_promo": 6,
+        "legitimate_customer_service": 4,
+        "legitimate_commerce": 9,
+        "ambiguous_neutral": 6
+      },
+      "tier_counts": {
+        "corroborated": 64
+      },
+      "language_counts": {
+        "en": 49,
+        "sw": 11,
+        "mixed": 2,
+        "sheng": 2
+      },
+      "pseudo_label_ratio": 0.0,
+      "snapshot_path": "C:\\Users\\STD USER\\Desktop\\work\\Toroka\\smart-scam-identifier\\packages\\rules\\ssi_rules\\ml\\data\\snapshots\\snapshot_v1.0.1793621307.jsonl",
+      "parent_version": "v1.0.1793621302"
+    },
+    "v1.0.1793628300": {
+      "version": "v1.0.1793628300",
+      "created_at": "2026-11-02T14:05:00+00:00",
+      "sha256_hash": "3d06177782240bfb31e38e2c3910da080dd70258cdc3091c9e321b8d6db39acd",
+      "total_samples": 64,
+      "category_counts": {
+        "advance_fee": 8,
+        "fake_mpesa": 5,
+        "credential_theft": 8,
+        "fake_recruitment": 5,
+        "task_scam": 5,
+        "investment_ponzi": 5,
+        "marketplace_non_delivery": 4,
+        "unsolicited_betting_promo": 6,
+        "legitimate_customer_service": 4,
+        "legitimate_commerce": 9,
+        "ambiguous_neutral": 6
+      },
+      "tier_counts": {
+        "corroborated": 64
+      },
+      "language_counts": {
+        "en": 49,
+        "sw": 11,
+        "mixed": 2,
+        "sheng": 2
+      },
+      "pseudo_label_ratio": 0.0,
+      "snapshot_path": "C:\\Users\\STD USER\\Desktop\\work\\Toroka\\smart-scam-identifier\\packages\\rules\\ssi_rules\\ml\\data\\snapshots\\snapshot_v1.0.1793628300.jsonl",
+      "parent_version": "v1.0.1793621307"
+    },
+    "v1.0.1793628304": {
+      "version": "v1.0.1793628304",
+      "created_at": "2026-11-02T14:05:04+00:00",
+      "sha256_hash": "f56afe774aeca599c9051f88b52d3eacb6baf6bd0f5f03550b87971aabc96d38",
+      "total_samples": 64,
+      "category_counts": {
+        "advance_fee": 8,
+        "fake_mpesa": 5,
+        "credential_theft": 8,
+        "fake_recruitment": 5,
+        "task_scam": 5,
+        "investment_ponzi": 5,
+        "marketplace_non_delivery": 4,
+        "unsolicited_betting_promo": 6,
+        "legitimate_customer_service": 4,
+        "legitimate_commerce": 9,
+        "ambiguous_neutral": 6
+      },
+      "tier_counts": {
+        "corroborated": 64
+      },
+      "language_counts": {
+        "en": 49,
+        "sw": 11,
+        "mixed": 2,
+        "sheng": 2
+      },
+      "pseudo_label_ratio": 0.0,
+      "snapshot_path": "C:\\Users\\STD USER\\Desktop\\work\\Toroka\\smart-scam-identifier\\packages\\rules\\ssi_rules\\ml\\data\\snapshots\\snapshot_v1.0.1793628304.jsonl",
+      "parent_version": "v1.0.1793628300"
+    },
+    "v1.0.1793628310": {
+      "version": "v1.0.1793628310",
+      "created_at": "2026-11-02T14:05:11+00:00",
+      "sha256_hash": "f56afe774aeca599c9051f88b52d3eacb6baf6bd0f5f03550b87971aabc96d38",
+      "total_samples": 64,
+      "category_counts": {
+        "advance_fee": 8,
+        "fake_mpesa": 5,
+        "credential_theft": 8,
+        "fake_recruitment": 5,
+        "task_scam": 5,
+        "investment_ponzi": 5,
+        "marketplace_non_delivery": 4,
+        "unsolicited_betting_promo": 6,
+        "legitimate_customer_service": 4,
+        "legitimate_commerce": 9,
+        "ambiguous_neutral": 6
+      },
+      "tier_counts": {
+        "corroborated": 64
+      },
+      "language_counts": {
+        "en": 49,
+        "sw": 11,
+        "mixed": 2,
+        "sheng": 2
+      },
+      "pseudo_label_ratio": 0.0,
+      "snapshot_path": "C:\\Users\\STD USER\\Desktop\\work\\Toroka\\smart-scam-identifier\\packages\\rules\\ssi_rules\\ml\\data\\snapshots\\snapshot_v1.0.1793628310.jsonl",
+      "parent_version": "v1.0.1793628304"
+    },
+    "v1.0.1793629718": {
+      "version": "v1.0.1793629718",
+      "created_at": "2026-11-02T14:28:38+00:00",
+      "sha256_hash": "f56afe774aeca599c9051f88b52d3eacb6baf6bd0f5f03550b87971aabc96d38",
+      "total_samples": 64,
+      "category_counts": {
+        "advance_fee": 8,
+        "fake_mpesa": 5,
+        "credential_theft": 8,
+        "fake_recruitment": 5,
+        "task_scam": 5,
+        "investment_ponzi": 5,
+        "marketplace_non_delivery": 4,
+        "unsolicited_betting_promo": 6,
+        "legitimate_customer_service": 4,
+        "legitimate_commerce": 9,
+        "ambiguous_neutral": 6
+      },
+      "tier_counts": {
+        "corroborated": 64
+      },
+      "language_counts": {
+        "en": 49,
+        "sw": 11,
+        "mixed": 2,
+        "sheng": 2
+      },
+      "pseudo_label_ratio": 0.0,
+      "snapshot_path": "C:\\Users\\STD USER\\Desktop\\work\\Toroka\\smart-scam-identifier\\packages\\rules\\ssi_rules\\ml\\data\\snapshots\\snapshot_v1.0.1793629718.jsonl",
+      "parent_version": "v1.0.1793628310"
+    },
+    "v1.0.1793629723": {
+      "version": "v1.0.1793629723",
+      "created_at": "2026-11-02T14:28:43+00:00",
+      "sha256_hash": "c5c911a325561dbdf1c12ce69c92d184f8d7d4db0bc02283567ac3873c7d0f9a",
+      "total_samples": 64,
+      "category_counts": {
+        "advance_fee": 8,
+        "fake_mpesa": 5,
+        "credential_theft": 8,
+        "fake_recruitment": 5,
+        "task_scam": 5,
+        "investment_ponzi": 5,
+        "marketplace_non_delivery": 4,
+        "unsolicited_betting_promo": 6,
+        "legitimate_customer_service": 4,
+        "legitimate_commerce": 9,
+        "ambiguous_neutral": 6
+      },
+      "tier_counts": {
+        "corroborated": 64
+      },
+      "language_counts": {
+        "en": 49,
+        "sw": 11,
+        "mixed": 2,
+        "sheng": 2
+      },
+      "pseudo_label_ratio": 0.0,
+      "snapshot_path": "C:\\Users\\STD USER\\Desktop\\work\\Toroka\\smart-scam-identifier\\packages\\rules\\ssi_rules\\ml\\data\\snapshots\\snapshot_v1.0.1793629723.jsonl",
+      "parent_version": "v1.0.1793629718"
+    },
+    "v1.0.1793629730": {
+      "version": "v1.0.1793629730",
+      "created_at": "2026-11-02T14:28:50+00:00",
+      "sha256_hash": "c5c911a325561dbdf1c12ce69c92d184f8d7d4db0bc02283567ac3873c7d0f9a",
+      "total_samples": 64,
+      "category_counts": {
+        "advance_fee": 8,
+        "fake_mpesa": 5,
+        "credential_theft": 8,
+        "fake_recruitment": 5,
+        "task_scam": 5,
+        "investment_ponzi": 5,
+        "marketplace_non_delivery": 4,
+        "unsolicited_betting_promo": 6,
+        "legitimate_customer_service": 4,
+        "legitimate_commerce": 9,
+        "ambiguous_neutral": 6
+      },
+      "tier_counts": {
+        "corroborated": 64
+      },
+      "language_counts": {
+        "en": 49,
+        "sw": 11,
+        "mixed": 2,
+        "sheng": 2
+      },
+      "pseudo_label_ratio": 0.0,
+      "snapshot_path": "C:\\Users\\STD USER\\Desktop\\work\\Toroka\\smart-scam-identifier\\packages\\rules\\ssi_rules\\ml\\data\\snapshots\\snapshot_v1.0.1793629730.jsonl",
+      "parent_version": "v1.0.1793629723"
+    },
+    "v1.0.1793632104": {
+      "version": "v1.0.1793632104",
+      "created_at": "2026-11-02T15:08:24+00:00",
+      "sha256_hash": "c5c911a325561dbdf1c12ce69c92d184f8d7d4db0bc02283567ac3873c7d0f9a",
+      "total_samples": 64,
+      "category_counts": {
+        "advance_fee": 8,
+        "fake_mpesa": 5,
+        "credential_theft": 8,
+        "fake_recruitment": 5,
+        "task_scam": 5,
+        "investment_ponzi": 5,
+        "marketplace_non_delivery": 4,
+        "unsolicited_betting_promo": 6,
+        "legitimate_customer_service": 4,
+        "legitimate_commerce": 9,
+        "ambiguous_neutral": 6
+      },
+      "tier_counts": {
+        "corroborated": 64
+      },
+      "language_counts": {
+        "en": 49,
+        "sw": 11,
+        "mixed": 2,
+        "sheng": 2
+      },
+      "pseudo_label_ratio": 0.0,
+      "snapshot_path": "C:\\Users\\STD USER\\Desktop\\work\\Toroka\\smart-scam-identifier\\packages\\rules\\ssi_rules\\ml\\data\\snapshots\\snapshot_v1.0.1793632104.jsonl",
+      "parent_version": "v1.0.1793629730"
+    },
+    "v1.0.1793632108": {
+      "version": "v1.0.1793632108",
+      "created_at": "2026-11-02T15:08:28+00:00",
+      "sha256_hash": "d6247b8dbdc5511a7e40bf760993cbb5e92806e31dfeb9a555308d22c8de24c7",
+      "total_samples": 64,
+      "category_counts": {
+        "advance_fee": 8,
+        "fake_mpesa": 5,
+        "credential_theft": 8,
+        "fake_recruitment": 5,
+        "task_scam": 5,
+        "investment_ponzi": 5,
+        "marketplace_non_delivery": 4,
+        "unsolicited_betting_promo": 6,
+        "legitimate_customer_service": 4,
+        "legitimate_commerce": 9,
+        "ambiguous_neutral": 6
+      },
+      "tier_counts": {
+        "corroborated": 64
+      },
+      "language_counts": {
+        "en": 49,
+        "sw": 11,
+        "mixed": 2,
+        "sheng": 2
+      },
+      "pseudo_label_ratio": 0.0,
+      "snapshot_path": "C:\\Users\\STD USER\\Desktop\\work\\Toroka\\smart-scam-identifier\\packages\\rules\\ssi_rules\\ml\\data\\snapshots\\snapshot_v1.0.1793632108.jsonl",
+      "parent_version": "v1.0.1793632104"
+    },
+    "v1.0.1793632112": {
+      "version": "v1.0.1793632112",
+      "created_at": "2026-11-02T15:08:32+00:00",
+      "sha256_hash": "d6247b8dbdc5511a7e40bf760993cbb5e92806e31dfeb9a555308d22c8de24c7",
+      "total_samples": 64,
+      "category_counts": {
+        "advance_fee": 8,
+        "fake_mpesa": 5,
+        "credential_theft": 8,
+        "fake_recruitment": 5,
+        "task_scam": 5,
+        "investment_ponzi": 5,
+        "marketplace_non_delivery": 4,
+        "unsolicited_betting_promo": 6,
+        "legitimate_customer_service": 4,
+        "legitimate_commerce": 9,
+        "ambiguous_neutral": 6
+      },
+      "tier_counts": {
+        "corroborated": 64
+      },
+      "language_counts": {
+        "en": 49,
+        "sw": 11,
+        "mixed": 2,
+        "sheng": 2
+      },
+      "pseudo_label_ratio": 0.0,
+      "snapshot_path": "C:\\Users\\STD USER\\Desktop\\work\\Toroka\\smart-scam-identifier\\packages\\rules\\ssi_rules\\ml\\data\\snapshots\\snapshot_v1.0.1793632112.jsonl",
+      "parent_version": "v1.0.1793632108"
+    },
+    "v1.0.1793637876": {
+      "version": "v1.0.1793637876",
+      "created_at": "2026-11-02T16:44:36+00:00",
+      "sha256_hash": "d6247b8dbdc5511a7e40bf760993cbb5e92806e31dfeb9a555308d22c8de24c7",
+      "total_samples": 64,
+      "category_counts": {
+        "advance_fee": 8,
+        "fake_mpesa": 5,
+        "credential_theft": 8,
+        "fake_recruitment": 5,
+        "task_scam": 5,
+        "investment_ponzi": 5,
+        "marketplace_non_delivery": 4,
+        "unsolicited_betting_promo": 6,
+        "legitimate_customer_service": 4,
+        "legitimate_commerce": 9,
+        "ambiguous_neutral": 6
+      },
+      "tier_counts": {
+        "corroborated": 64
+      },
+      "language_counts": {
+        "en": 49,
+        "sw": 11,
+        "mixed": 2,
+        "sheng": 2
+      },
+      "pseudo_label_ratio": 0.0,
+      "snapshot_path": "C:\\Users\\STD USER\\Desktop\\work\\Toroka\\smart-scam-identifier\\packages\\rules\\ssi_rules\\ml\\data\\snapshots\\snapshot_v1.0.1793637876.jsonl",
+      "parent_version": "v1.0.1793632112"
+    },
+    "v1.0.1793637878": {
+      "version": "v1.0.1793637878",
+      "created_at": "2026-11-02T16:44:38+00:00",
+      "sha256_hash": "1a5703ab2d755bbff3e60b9039e2cc46536a7085eb5f9d0687f59a9364645075",
+      "total_samples": 64,
+      "category_counts": {
+        "advance_fee": 8,
+        "fake_mpesa": 5,
+        "credential_theft": 8,
+        "fake_recruitment": 5,
+        "task_scam": 5,
+        "investment_ponzi": 5,
+        "marketplace_non_delivery": 4,
+        "unsolicited_betting_promo": 6,
+        "legitimate_customer_service": 4,
+        "legitimate_commerce": 9,
+        "ambiguous_neutral": 6
+      },
+      "tier_counts": {
+        "corroborated": 64
+      },
+      "language_counts": {
+        "en": 49,
+        "sw": 11,
+        "mixed": 2,
+        "sheng": 2
+      },
+      "pseudo_label_ratio": 0.0,
+      "snapshot_path": "C:\\Users\\STD USER\\Desktop\\work\\Toroka\\smart-scam-identifier\\packages\\rules\\ssi_rules\\ml\\data\\snapshots\\snapshot_v1.0.1793637878.jsonl",
+      "parent_version": "v1.0.1793637876"
+    },
+    "v1.0.1793637881": {
+      "version": "v1.0.1793637881",
+      "created_at": "2026-11-02T16:44:41+00:00",
+      "sha256_hash": "1a5703ab2d755bbff3e60b9039e2cc46536a7085eb5f9d0687f59a9364645075",
+      "total_samples": 64,
+      "category_counts": {
+        "advance_fee": 8,
+        "fake_mpesa": 5,
+        "credential_theft": 8,
+        "fake_recruitment": 5,
+        "task_scam": 5,
+        "investment_ponzi": 5,
+        "marketplace_non_delivery": 4,
+        "unsolicited_betting_promo": 6,
+        "legitimate_customer_service": 4,
+        "legitimate_commerce": 9,
+        "ambiguous_neutral": 6
+      },
+      "tier_counts": {
+        "corroborated": 64
+      },
+      "language_counts": {
+        "en": 49,
+        "sw": 11,
+        "mixed": 2,
+        "sheng": 2
+      },
+      "pseudo_label_ratio": 0.0,
+      "snapshot_path": "C:\\Users\\STD USER\\Desktop\\work\\Toroka\\smart-scam-identifier\\packages\\rules\\ssi_rules\\ml\\data\\snapshots\\snapshot_v1.0.1793637881.jsonl",
+      "parent_version": "v1.0.1793637878"
+    },
+    "v1.0.1793638687": {
+      "version": "v1.0.1793638687",
+      "created_at": "2026-11-02T16:58:07+00:00",
+      "sha256_hash": "1a5703ab2d755bbff3e60b9039e2cc46536a7085eb5f9d0687f59a9364645075",
+      "total_samples": 64,
+      "category_counts": {
+        "advance_fee": 8,
+        "fake_mpesa": 5,
+        "credential_theft": 8,
+        "fake_recruitment": 5,
+        "task_scam": 5,
+        "investment_ponzi": 5,
+        "marketplace_non_delivery": 4,
+        "unsolicited_betting_promo": 6,
+        "legitimate_customer_service": 4,
+        "legitimate_commerce": 9,
+        "ambiguous_neutral": 6
+      },
+      "tier_counts": {
+        "corroborated": 64
+      },
+      "language_counts": {
+        "en": 49,
+        "sw": 11,
+        "mixed": 2,
+        "sheng": 2
+      },
+      "pseudo_label_ratio": 0.0,
+      "snapshot_path": "C:\\Users\\STD USER\\Desktop\\work\\Toroka\\smart-scam-identifier\\packages\\rules\\ssi_rules\\ml\\data\\snapshots\\snapshot_v1.0.1793638687.jsonl",
+      "parent_version": "v1.0.1793637881"
+    },
+    "v1.0.1793638691": {
+      "version": "v1.0.1793638691",
+      "created_at": "2026-11-02T16:58:11+00:00",
+      "sha256_hash": "dd42416485be4c58c1d625067f6c901608c68c656e75c85d506930dbb4051e8b",
+      "total_samples": 64,
+      "category_counts": {
+        "advance_fee": 8,
+        "fake_mpesa": 5,
+        "credential_theft": 8,
+        "fake_recruitment": 5,
+        "task_scam": 5,
+        "investment_ponzi": 5,
+        "marketplace_non_delivery": 4,
+        "unsolicited_betting_promo": 6,
+        "legitimate_customer_service": 4,
+        "legitimate_commerce": 9,
+        "ambiguous_neutral": 6
+      },
+      "tier_counts": {
+        "corroborated": 64
+      },
+      "language_counts": {
+        "en": 49,
+        "sw": 11,
+        "mixed": 2,
+        "sheng": 2
+      },
+      "pseudo_label_ratio": 0.0,
+      "snapshot_path": "C:\\Users\\STD USER\\Desktop\\work\\Toroka\\smart-scam-identifier\\packages\\rules\\ssi_rules\\ml\\data\\snapshots\\snapshot_v1.0.1793638691.jsonl",
+      "parent_version": "v1.0.1793638687"
+    },
+    "v1.0.1793638696": {
+      "version": "v1.0.1793638696",
+      "created_at": "2026-11-02T16:58:16+00:00",
+      "sha256_hash": "dd42416485be4c58c1d625067f6c901608c68c656e75c85d506930dbb4051e8b",
+      "total_samples": 64,
+      "category_counts": {
+        "advance_fee": 8,
+        "fake_mpesa": 5,
+        "credential_theft": 8,
+        "fake_recruitment": 5,
+        "task_scam": 5,
+        "investment_ponzi": 5,
+        "marketplace_non_delivery": 4,
+        "unsolicited_betting_promo": 6,
+        "legitimate_customer_service": 4,
+        "legitimate_commerce": 9,
+        "ambiguous_neutral": 6
+      },
+      "tier_counts": {
+        "corroborated": 64
+      },
+      "language_counts": {
+        "en": 49,
+        "sw": 11,
+        "mixed": 2,
+        "sheng": 2
+      },
+      "pseudo_label_ratio": 0.0,
+      "snapshot_path": "C:\\Users\\STD USER\\Desktop\\work\\Toroka\\smart-scam-identifier\\packages\\rules\\ssi_rules\\ml\\data\\snapshots\\snapshot_v1.0.1793638696.jsonl",
+      "parent_version": "v1.0.1793638691"
+    },
+    "v1.0.1793639698": {
+      "version": "v1.0.1793639698",
+      "created_at": "2026-11-02T17:14:58+00:00",
+      "sha256_hash": "dd42416485be4c58c1d625067f6c901608c68c656e75c85d506930dbb4051e8b",
+      "total_samples": 64,
+      "category_counts": {
+        "advance_fee": 8,
+        "fake_mpesa": 5,
+        "credential_theft": 8,
+        "fake_recruitment": 5,
+        "task_scam": 5,
+        "investment_ponzi": 5,
+        "marketplace_non_delivery": 4,
+        "unsolicited_betting_promo": 6,
+        "legitimate_customer_service": 4,
+        "legitimate_commerce": 9,
+        "ambiguous_neutral": 6
+      },
+      "tier_counts": {
+        "corroborated": 64
+      },
+      "language_counts": {
+        "en": 49,
+        "sw": 11,
+        "mixed": 2,
+        "sheng": 2
+      },
+      "pseudo_label_ratio": 0.0,
+      "snapshot_path": "C:\\Users\\STD USER\\Desktop\\work\\Toroka\\smart-scam-identifier\\packages\\rules\\ssi_rules\\ml\\data\\snapshots\\snapshot_v1.0.1793639698.jsonl",
+      "parent_version": "v1.0.1793638696"
+    },
+    "v1.0.1793639702": {
+      "version": "v1.0.1793639702",
+      "created_at": "2026-11-02T17:15:02+00:00",
+      "sha256_hash": "9979324f30cf6a3631fef823b1ca4119445abb72bdf8130a83652505e8d42a36",
+      "total_samples": 64,
+      "category_counts": {
+        "advance_fee": 8,
+        "fake_mpesa": 5,
+        "credential_theft": 8,
+        "fake_recruitment": 5,
+        "task_scam": 5,
+        "investment_ponzi": 5,
+        "marketplace_non_delivery": 4,
+        "unsolicited_betting_promo": 6,
+        "legitimate_customer_service": 4,
+        "legitimate_commerce": 9,
+        "ambiguous_neutral": 6
+      },
+      "tier_counts": {
+        "corroborated": 64
+      },
+      "language_counts": {
+        "en": 49,
+        "sw": 11,
+        "mixed": 2,
+        "sheng": 2
+      },
+      "pseudo_label_ratio": 0.0,
+      "snapshot_path": "C:\\Users\\STD USER\\Desktop\\work\\Toroka\\smart-scam-identifier\\packages\\rules\\ssi_rules\\ml\\data\\snapshots\\snapshot_v1.0.1793639702.jsonl",
+      "parent_version": "v1.0.1793639698"
+    },
+    "v1.0.1793639705": {
+      "version": "v1.0.1793639705",
+      "created_at": "2026-11-02T17:15:06+00:00",
+      "sha256_hash": "9979324f30cf6a3631fef823b1ca4119445abb72bdf8130a83652505e8d42a36",
+      "total_samples": 64,
+      "category_counts": {
+        "advance_fee": 8,
+        "fake_mpesa": 5,
+        "credential_theft": 8,
+        "fake_recruitment": 5,
+        "task_scam": 5,
+        "investment_ponzi": 5,
+        "marketplace_non_delivery": 4,
+        "unsolicited_betting_promo": 6,
+        "legitimate_customer_service": 4,
+        "legitimate_commerce": 9,
+        "ambiguous_neutral": 6
+      },
+      "tier_counts": {
+        "corroborated": 64
+      },
+      "language_counts": {
+        "en": 49,
+        "sw": 11,
+        "mixed": 2,
+        "sheng": 2
+      },
+      "pseudo_label_ratio": 0.0,
+      "snapshot_path": "C:\\Users\\STD USER\\Desktop\\work\\Toroka\\smart-scam-identifier\\packages\\rules\\ssi_rules\\ml\\data\\snapshots\\snapshot_v1.0.1793639705.jsonl",
+      "parent_version": "v1.0.1793639702"
+    },
+    "v1.0.1793647819": {
+      "version": "v1.0.1793647819",
+      "created_at": "2026-11-02T19:30:19+00:00",
+      "sha256_hash": "9979324f30cf6a3631fef823b1ca4119445abb72bdf8130a83652505e8d42a36",
+      "total_samples": 64,
+      "category_counts": {
+        "advance_fee": 8,
+        "fake_mpesa": 5,
+        "credential_theft": 8,
+        "fake_recruitment": 5,
+        "task_scam": 5,
+        "investment_ponzi": 5,
+        "marketplace_non_delivery": 4,
+        "unsolicited_betting_promo": 6,
+        "legitimate_customer_service": 4,
+        "legitimate_commerce": 9,
+        "ambiguous_neutral": 6
+      },
+      "tier_counts": {
+        "corroborated": 64
+      },
+      "language_counts": {
+        "en": 49,
+        "sw": 11,
+        "mixed": 2,
+        "sheng": 2
+      },
+      "pseudo_label_ratio": 0.0,
+      "snapshot_path": "C:\\Users\\STD USER\\Desktop\\work\\Toroka\\smart-scam-identifier\\packages\\rules\\ssi_rules\\ml\\data\\snapshots\\snapshot_v1.0.1793647819.jsonl",
+      "parent_version": "v1.0.1793639705"
+    },
+    "v1.0.1793647822": {
+      "version": "v1.0.1793647822",
+      "created_at": "2026-11-02T19:30:22+00:00",
+      "sha256_hash": "f45b9f65cc1256196b344e4c3af50e53c167ffd6423874a32ee0f47dc7cfd133",
+      "total_samples": 64,
+      "category_counts": {
+        "advance_fee": 8,
+        "fake_mpesa": 5,
+        "credential_theft": 8,
+        "fake_recruitment": 5,
+        "task_scam": 5,
+        "investment_ponzi": 5,
+        "marketplace_non_delivery": 4,
+        "unsolicited_betting_promo": 6,
+        "legitimate_customer_service": 4,
+        "legitimate_commerce": 9,
+        "ambiguous_neutral": 6
+      },
+      "tier_counts": {
+        "corroborated": 64
+      },
+      "language_counts": {
+        "en": 49,
+        "sw": 11,
+        "mixed": 2,
+        "sheng": 2
+      },
+      "pseudo_label_ratio": 0.0,
+      "snapshot_path": "C:\\Users\\STD USER\\Desktop\\work\\Toroka\\smart-scam-identifier\\packages\\rules\\ssi_rules\\ml\\data\\snapshots\\snapshot_v1.0.1793647822.jsonl",
+      "parent_version": "v1.0.1793647819"
+    },
+    "v1.0.1793647826": {
+      "version": "v1.0.1793647826",
+      "created_at": "2026-11-02T19:30:26+00:00",
+      "sha256_hash": "f45b9f65cc1256196b344e4c3af50e53c167ffd6423874a32ee0f47dc7cfd133",
+      "total_samples": 64,
+      "category_counts": {
+        "advance_fee": 8,
+        "fake_mpesa": 5,
+        "credential_theft": 8,
+        "fake_recruitment": 5,
+        "task_scam": 5,
+        "investment_ponzi": 5,
+        "marketplace_non_delivery": 4,
+        "unsolicited_betting_promo": 6,
+        "legitimate_customer_service": 4,
+        "legitimate_commerce": 9,
+        "ambiguous_neutral": 6
+      },
+      "tier_counts": {
+        "corroborated": 64
+      },
+      "language_counts": {
+        "en": 49,
+        "sw": 11,
+        "mixed": 2,
+        "sheng": 2
+      },
+      "pseudo_label_ratio": 0.0,
+      "snapshot_path": "C:\\Users\\STD USER\\Desktop\\work\\Toroka\\smart-scam-identifier\\packages\\rules\\ssi_rules\\ml\\data\\snapshots\\snapshot_v1.0.1793647826.jsonl",
+      "parent_version": "v1.0.1793647822"
+    },
+    "v1.0.1793648233": {
+      "version": "v1.0.1793648233",
+      "created_at": "2026-11-02T19:37:13+00:00",
+      "sha256_hash": "f45b9f65cc1256196b344e4c3af50e53c167ffd6423874a32ee0f47dc7cfd133",
+      "total_samples": 64,
+      "category_counts": {
+        "advance_fee": 8,
+        "fake_mpesa": 5,
+        "credential_theft": 8,
+        "fake_recruitment": 5,
+        "task_scam": 5,
+        "investment_ponzi": 5,
+        "marketplace_non_delivery": 4,
+        "unsolicited_betting_promo": 6,
+        "legitimate_customer_service": 4,
+        "legitimate_commerce": 9,
+        "ambiguous_neutral": 6
+      },
+      "tier_counts": {
+        "corroborated": 64
+      },
+      "language_counts": {
+        "en": 49,
+        "sw": 11,
+        "mixed": 2,
+        "sheng": 2
+      },
+      "pseudo_label_ratio": 0.0,
+      "snapshot_path": "C:\\Users\\STD USER\\Desktop\\work\\Toroka\\smart-scam-identifier\\packages\\rules\\ssi_rules\\ml\\data\\snapshots\\snapshot_v1.0.1793648233.jsonl",
+      "parent_version": "v1.0.1793647826"
+    },
+    "v1.0.1793648235": {
+      "version": "v1.0.1793648235",
+      "created_at": "2026-11-02T19:37:15+00:00",
+      "sha256_hash": "b9cb4407ef5cac276ea74c2aeeb5c9f50815251f6e64eb847d336bfb50dabcb4",
+      "total_samples": 64,
+      "category_counts": {
+        "advance_fee": 8,
+        "fake_mpesa": 5,
+        "credential_theft": 8,
+        "fake_recruitment": 5,
+        "task_scam": 5,
+        "investment_ponzi": 5,
+        "marketplace_non_delivery": 4,
+        "unsolicited_betting_promo": 6,
+        "legitimate_customer_service": 4,
+        "legitimate_commerce": 9,
+        "ambiguous_neutral": 6
+      },
+      "tier_counts": {
+        "corroborated": 64
+      },
+      "language_counts": {
+        "en": 49,
+        "sw": 11,
+        "mixed": 2,
+        "sheng": 2
+      },
+      "pseudo_label_ratio": 0.0,
+      "snapshot_path": "C:\\Users\\STD USER\\Desktop\\work\\Toroka\\smart-scam-identifier\\packages\\rules\\ssi_rules\\ml\\data\\snapshots\\snapshot_v1.0.1793648235.jsonl",
+      "parent_version": "v1.0.1793648233"
+    },
+    "v1.0.1793648237": {
+      "version": "v1.0.1793648237",
+      "created_at": "2026-11-02T19:37:17+00:00",
+      "sha256_hash": "b9cb4407ef5cac276ea74c2aeeb5c9f50815251f6e64eb847d336bfb50dabcb4",
+      "total_samples": 64,
+      "category_counts": {
+        "advance_fee": 8,
+        "fake_mpesa": 5,
+        "credential_theft": 8,
+        "fake_recruitment": 5,
+        "task_scam": 5,
+        "investment_ponzi": 5,
+        "marketplace_non_delivery": 4,
+        "unsolicited_betting_promo": 6,
+        "legitimate_customer_service": 4,
+        "legitimate_commerce": 9,
+        "ambiguous_neutral": 6
+      },
+      "tier_counts": {
+        "corroborated": 64
+      },
+      "language_counts": {
+        "en": 49,
+        "sw": 11,
+        "mixed": 2,
+        "sheng": 2
+      },
+      "pseudo_label_ratio": 0.0,
+      "snapshot_path": "C:\\Users\\STD USER\\Desktop\\work\\Toroka\\smart-scam-identifier\\packages\\rules\\ssi_rules\\ml\\data\\snapshots\\snapshot_v1.0.1793648237.jsonl",
+      "parent_version": "v1.0.1793648235"
+    },
+    "v1.0.1793648629": {
+      "version": "v1.0.1793648629",
+      "created_at": "2026-11-02T19:43:50+00:00",
+      "sha256_hash": "b9cb4407ef5cac276ea74c2aeeb5c9f50815251f6e64eb847d336bfb50dabcb4",
+      "total_samples": 64,
+      "category_counts": {
+        "advance_fee": 8,
+        "fake_mpesa": 5,
+        "credential_theft": 8,
+        "fake_recruitment": 5,
+        "task_scam": 5,
+        "investment_ponzi": 5,
+        "marketplace_non_delivery": 4,
+        "unsolicited_betting_promo": 6,
+        "legitimate_customer_service": 4,
+        "legitimate_commerce": 9,
+        "ambiguous_neutral": 6
+      },
+      "tier_counts": {
+        "corroborated": 64
+      },
+      "language_counts": {
+        "en": 49,
+        "sw": 11,
+        "mixed": 2,
+        "sheng": 2
+      },
+      "pseudo_label_ratio": 0.0,
+      "snapshot_path": "C:\\Users\\STD USER\\Desktop\\work\\Toroka\\smart-scam-identifier\\packages\\rules\\ssi_rules\\ml\\data\\snapshots\\snapshot_v1.0.1793648629.jsonl",
+      "parent_version": "v1.0.1793648237"
+    },
+    "v1.0.1793648634": {
+      "version": "v1.0.1793648634",
+      "created_at": "2026-11-02T19:43:54+00:00",
+      "sha256_hash": "2ba2b3eb1dd8e706c655ddd93d8a920fb0758707f3f0cc77af11c14119e2ea70",
+      "total_samples": 64,
+      "category_counts": {
+        "advance_fee": 8,
+        "fake_mpesa": 5,
+        "credential_theft": 8,
+        "fake_recruitment": 5,
+        "task_scam": 5,
+        "investment_ponzi": 5,
+        "marketplace_non_delivery": 4,
+        "unsolicited_betting_promo": 6,
+        "legitimate_customer_service": 4,
+        "legitimate_commerce": 9,
+        "ambiguous_neutral": 6
+      },
+      "tier_counts": {
+        "corroborated": 64
+      },
+      "language_counts": {
+        "en": 49,
+        "sw": 11,
+        "mixed": 2,
+        "sheng": 2
+      },
+      "pseudo_label_ratio": 0.0,
+      "snapshot_path": "C:\\Users\\STD USER\\Desktop\\work\\Toroka\\smart-scam-identifier\\packages\\rules\\ssi_rules\\ml\\data\\snapshots\\snapshot_v1.0.1793648634.jsonl",
+      "parent_version": "v1.0.1793648629"
+    },
+    "v1.0.1793648638": {
+      "version": "v1.0.1793648638",
+      "created_at": "2026-11-02T19:43:58+00:00",
+      "sha256_hash": "2ba2b3eb1dd8e706c655ddd93d8a920fb0758707f3f0cc77af11c14119e2ea70",
+      "total_samples": 64,
+      "category_counts": {
+        "advance_fee": 8,
+        "fake_mpesa": 5,
+        "credential_theft": 8,
+        "fake_recruitment": 5,
+        "task_scam": 5,
+        "investment_ponzi": 5,
+        "marketplace_non_delivery": 4,
+        "unsolicited_betting_promo": 6,
+        "legitimate_customer_service": 4,
+        "legitimate_commerce": 9,
+        "ambiguous_neutral": 6
+      },
+      "tier_counts": {
+        "corroborated": 64
+      },
+      "language_counts": {
+        "en": 49,
+        "sw": 11,
+        "mixed": 2,
+        "sheng": 2
+      },
+      "pseudo_label_ratio": 0.0,
+      "snapshot_path": "C:\\Users\\STD USER\\Desktop\\work\\Toroka\\smart-scam-identifier\\packages\\rules\\ssi_rules\\ml\\data\\snapshots\\snapshot_v1.0.1793648638.jsonl",
+      "parent_version": "v1.0.1793648634"
+    },
+    "v1.0.1793699721": {
+      "version": "v1.0.1793699721",
+      "created_at": "2026-11-03T09:55:21+00:00",
+      "sha256_hash": "2ba2b3eb1dd8e706c655ddd93d8a920fb0758707f3f0cc77af11c14119e2ea70",
+      "total_samples": 64,
+      "category_counts": {
+        "advance_fee": 8,
+        "fake_mpesa": 5,
+        "credential_theft": 8,
+        "fake_recruitment": 5,
+        "task_scam": 5,
+        "investment_ponzi": 5,
+        "marketplace_non_delivery": 4,
+        "unsolicited_betting_promo": 6,
+        "legitimate_customer_service": 4,
+        "legitimate_commerce": 9,
+        "ambiguous_neutral": 6
+      },
+      "tier_counts": {
+        "corroborated": 64
+      },
+      "language_counts": {
+        "en": 49,
+        "sw": 11,
+        "mixed": 2,
+        "sheng": 2
+      },
+      "pseudo_label_ratio": 0.0,
+      "snapshot_path": "C:\\Users\\STD USER\\Desktop\\work\\Toroka\\smart-scam-identifier\\packages\\rules\\ssi_rules\\ml\\data\\snapshots\\snapshot_v1.0.1793699721.jsonl",
+      "parent_version": "v1.0.1793648638"
+    },
+    "v1.0.1793699725": {
+      "version": "v1.0.1793699725",
+      "created_at": "2026-11-03T09:55:25+00:00",
+      "sha256_hash": "b50337f0a633a5e5da2440201db157c90d282b277f5c89b658e4ebabb392c455",
+      "total_samples": 64,
+      "category_counts": {
+        "advance_fee": 8,
+        "fake_mpesa": 5,
+        "credential_theft": 8,
+        "fake_recruitment": 5,
+        "task_scam": 5,
+        "investment_ponzi": 5,
+        "marketplace_non_delivery": 4,
+        "unsolicited_betting_promo": 6,
+        "legitimate_customer_service": 4,
+        "legitimate_commerce": 9,
+        "ambiguous_neutral": 6
+      },
+      "tier_counts": {
+        "corroborated": 64
+      },
+      "language_counts": {
+        "en": 49,
+        "sw": 11,
+        "mixed": 2,
+        "sheng": 2
+      },
+      "pseudo_label_ratio": 0.0,
+      "snapshot_path": "C:\\Users\\STD USER\\Desktop\\work\\Toroka\\smart-scam-identifier\\packages\\rules\\ssi_rules\\ml\\data\\snapshots\\snapshot_v1.0.1793699725.jsonl",
+      "parent_version": "v1.0.1793699721"
+    },
+    "v1.0.1793699729": {
+      "version": "v1.0.1793699729",
+      "created_at": "2026-11-03T09:55:29+00:00",
+      "sha256_hash": "b50337f0a633a5e5da2440201db157c90d282b277f5c89b658e4ebabb392c455",
+      "total_samples": 64,
+      "category_counts": {
+        "advance_fee": 8,
+        "fake_mpesa": 5,
+        "credential_theft": 8,
+        "fake_recruitment": 5,
+        "task_scam": 5,
+        "investment_ponzi": 5,
+        "marketplace_non_delivery": 4,
+        "unsolicited_betting_promo": 6,
+        "legitimate_customer_service": 4,
+        "legitimate_commerce": 9,
+        "ambiguous_neutral": 6
+      },
+      "tier_counts": {
+        "corroborated": 64
+      },
+      "language_counts": {
+        "en": 49,
+        "sw": 11,
+        "mixed": 2,
+        "sheng": 2
+      },
+      "pseudo_label_ratio": 0.0,
+      "snapshot_path": "C:\\Users\\STD USER\\Desktop\\work\\Toroka\\smart-scam-identifier\\packages\\rules\\ssi_rules\\ml\\data\\snapshots\\snapshot_v1.0.1793699729.jsonl",
+      "parent_version": "v1.0.1793699725"
+    }
+  },
+  "staged_samples_count": 1,
+  "last_updated": "2026-11-03T13:53:36+00:00"
+}

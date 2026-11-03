@@ -1,0 +1,58 @@
+from __future__ import annotations
+
+import base64
+import hashlib
+import hmac
+import os
+import secrets
+
+from cryptography.fernet import Fernet
+
+
+class Crypto:
+    """Field encryption (Fernet) and keyed lookup digests (HMAC) so raw identifiers never sit in indexes or logs."""
+
+    def __init__(self, encryption_key: str, hmac_key: str):
+        self._f, self._k = Fernet(encryption_key.encode()), hmac_key.encode()
+
+    def enc(self, value: str | bytes) -> str:
+        return self._f.encrypt(value.encode() if isinstance(value, str) else value).decode()
+
+    def dec(self, token: str) -> str:
+        return self._f.decrypt(token.encode()).decode()
+
+    def enc_bytes(self, data: bytes) -> bytes:
+        return self._f.encrypt(data)
+
+    def dec_bytes(self, data: bytes) -> bytes:
+        return self._f.decrypt(data)
+
+    def lookup(self, kind: str, value: str) -> str:
+        return hmac.new(self._k, f"{kind}:{value}".encode(), hashlib.sha256).hexdigest()
+
+
+def sha256(s: str) -> str:
+    return hashlib.sha256(s.encode()).hexdigest()
+
+
+def new_token(n: int = 24) -> str:
+    return secrets.token_urlsafe(n)
+
+
+def same(a: str, b: str) -> bool:
+    return hmac.compare_digest(a, b)
+
+
+def hash_password(pw: str) -> str:
+    salt = os.urandom(16)
+    h = hashlib.scrypt(pw.encode(), salt=salt, n=2**14, r=8, p=1, dklen=32)
+    return "scrypt$16384$8$1$" + base64.b64encode(salt).decode() + "$" + base64.b64encode(h).decode()
+
+
+def verify_password(pw: str, stored: str) -> bool:
+    try:
+        _, n, r, p, salt, h = stored.split("$")
+        calc = hashlib.scrypt(pw.encode(), salt=base64.b64decode(salt), n=int(n), r=int(r), p=int(p), dklen=32)
+        return hmac.compare_digest(calc, base64.b64decode(h))
+    except Exception:
+        return False

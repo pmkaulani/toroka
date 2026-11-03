@@ -1,0 +1,43 @@
+__pycache__/
+.pytest_cache/
+.venv/
+*.pyc
+.env
+node_modules/
+ssi.db
+evidence_store/
+.env
+
+# Local secrets and credentials
+.env
+.env.*
+!.env.example
+
+# Local environments, caches, and generated files
+.venv/
+venv/
+__pycache__/
+.pytest_cache/
+.hypothesis/
+.mypy_cache/
+.ruff_cache/
+node_modules/
+*.pyc
+*.pyo
+
+# Local databases, private evidence and app storage
+*.db
+*.db-*
+*.sqlite
+*.sqlite*
+ssi.db*
+services/api/ssi.db*
+evidence_store/
+storage/
+
+# Autonomous ML runtime state (keep source data and model artefacts)
+packages/rules/ssi_rules/ml/models/jobs.json
+packages/rules/ssi_rules/ml/models/telemetry.jsonl
+packages/rules/ssi_rules/ml/data/sources/sources_state.json
+packages/rules/ssi_rules/ml/data/staging_samples.jsonl
+packages/rules/ssi_rules/ml/data/feedback_queue.jsonl

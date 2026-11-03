@@ -1,0 +1,29 @@
+.PHONY: install test eval browser run migrate user registry-due registry-check purge live
+PY ?= python3
+export DATABASE_URL ?= sqlite:///$(CURDIR)/ssi.db
+export STORAGE_DIR ?= $(CURDIR)/evidence_store
+PP = packages/rules:packages/connectors:services/api
+CLI = cd services/api && PYTHONPATH=../../packages/rules:../../packages/connectors:. $(PY) -m app.cli
+
+install:
+	pip install -r requirements.txt
+test:                      # Python tests (rules, connectors, API, web shell)
+	$(PY) -m pytest -q
+eval:                      # labelled evaluation (invented cases)
+	PYTHONPATH=packages/rules $(PY) eval/run_eval.py
+live:                      # real server over HTTP: every endpoint family, then a concurrent load
+	$(PY) scripts/live_check.py
+browser:                   # real Chromium: layout, keyboard, accessibility (axe), offline, errors  (cd web-tests && npm ci once)
+	cd web-tests && node browser.mjs
+run:
+	PYTHONPATH=$(PP) $(PY) -m uvicorn app.main:app --app-dir services/api --reload --port 8000
+migrate:
+	cd services/api && PYTHONPATH=../../packages/rules:../../packages/connectors:. $(PY) -m alembic upgrade head
+user:                      # make user EMAIL=you@example.com [ROLE=moderator|admin]   (password: env SSI_NEW_PASSWORD, or prompted)
+	$(CLI) create-user --email $(EMAIL) --role $(or $(ROLE),moderator)
+registry-due:
+	$(CLI) registry-due --days $(or $(DAYS),14)
+registry-check:
+	$(CLI) registry-check
+purge:
+	$(CLI) purge

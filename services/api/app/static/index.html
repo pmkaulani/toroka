@@ -1,0 +1,337 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Toroka: check a message, shop or website</title>
+  <meta name="description" content="Paste a message or attach a screenshot. Toroka tells you what it can confirm, what it cannot, and what to do next.">
+  <meta name="theme-color" content="#087F8C">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/static/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <a class="skip" href="#text" id="skip">Skip to the message box</a>
+
+  <div class="app-layout" id="app-layout">
+    <!-- LEFT SIDEBAR -->
+    <aside class="sidebar" id="sidebar" aria-label="Sidebar">
+      <div class="sidebar-top">
+        <a class="logo" href="/" id="logo" aria-label="Toroka, start a new chat">
+          <span data-runner></span>
+          <span class="word">Toroka</span>
+        </a>
+        <button type="button" id="sidebar-toggle-btn" class="icon-toggle" aria-label="Toggle sidebar" title="Toggle sidebar" aria-controls="sidebar" aria-expanded="true">
+          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M11 19l-7-7 7-7M18 19l-7-7 7-7"/></svg>
+        </button>
+        <button type="button" id="sidebar-close-btn" class="icon-toggle sidebar-close-btn" aria-label="Close sidebar" title="Close sidebar">
+          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M18 6L6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+
+      <div class="sidebar-actions">
+        <button type="button" id="new-check-btn" class="btn-new-check">
+          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 5v14M5 12h14"/></svg>
+          <span data-t-key="btn_new_check">New check</span>
+        </button>
+      </div>
+
+      <nav class="sidebar-nav" aria-label="Quick links">
+        <button type="button" id="nav-search-btn" class="nav-item">
+          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.35-4.35"/></svg>
+          <span data-t-key="nav_search_investigations">Search investigations</span>
+        </button>
+        <button type="button" id="nav-saved-btn" class="nav-item">
+          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>
+          <span data-t-key="nav_saved_checks">Saved checks</span>
+        </button>
+      </nav>
+
+      <div class="sidebar-search-field" id="sidebar-search-field" hidden>
+        <label class="sr-only" for="sidebar-search-input" data-t-key="search_conv_label">Search conversations</label>
+        <input type="search" id="sidebar-search-input" placeholder="Search conversations..." autocomplete="off">
+      </div>
+
+      <div class="sidebar-section-title" id="recent-chats-label" data-t-key="recent_chats">RECENT CHATS</div>
+      <div class="sidebar-history" id="sidebar-history" role="list" aria-label="Recent chats">
+        <!-- Rendered by JS from localStorage -->
+      </div>
+
+      <div class="sidebar-footer">
+        <p class="sidebar-local-note" data-t-key="local_note">No account required. Your conversation history stays on this device.</p>
+        <button type="button" id="open-safety-btn" class="sidebar-footer-btn" aria-label="Safety guidance">
+          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg>
+          <span data-t-key="open_safety">Safety guidance</span>
+        </button>
+        <button type="button" id="open-settings-btn" class="sidebar-footer-btn" aria-label="Settings">
+          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+          <span data-t-key="nav_settings">Settings</span>
+        </button>
+      </div>
+    </aside>
+
+    <!-- MOBILE SIDEBAR BACKDROP -->
+    <div class="sidebar-backdrop" id="sidebar-backdrop" aria-hidden="true"></div>
+
+    <!-- CENTER MAIN WORKSPACE -->
+    <div class="main-wrapper" id="main-wrapper">
+      <header class="top">
+        <div class="top-nav-left">
+          <button type="button" id="mobile-menu-btn" class="icon-toggle mobile-menu-btn" aria-label="Open menu" title="Open menu" aria-controls="sidebar" aria-expanded="false">
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+          </button>
+          <div id="header-check-title" class="header-check-pill">
+            <svg class="header-shield" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+            <span class="header-pill-texts">
+              <span class="header-main-title" id="header-main-title" data-t-key="active_check_title">New check</span>
+              <span class="header-sub-title" id="header-sub-title" data-t-key="active_check_sub">Ask anything · Scams, shops, messages, links</span>
+            </span>
+          </div>
+        </div>
+
+        <div class="top-search-container">
+          <div class="top-search-wrap">
+            <svg class="search-svg" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.35-4.35"/></svg>
+            <input type="search" id="top-search-input" placeholder="Search conversations..." aria-label="Search conversations">
+          </div>
+        </div>
+
+        <div class="tools">
+          <button type="button" id="install-btn" class="quiet bold" hidden>Install</button>
+          <button type="button" id="theme-toggle-btn" class="icon quiet" aria-label="Toggle light or dark theme" title="Toggle theme">
+            <svg class="theme-icon sun" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+            <svg class="theme-icon moon" viewBox="0 0 24 24" aria-hidden="true" focusable="false" hidden><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+          </button>
+          <div class="lang" role="group" aria-label="Language">
+            <button type="button" id="lang-en" aria-pressed="true" lang="en">EN</button>
+            <button type="button" id="lang-sw" aria-pressed="false" lang="sw">SW</button>
+          </div>
+          <button type="button" id="new-chat" class="quiet new-chat-btn">New chat</button>
+        </div>
+      </header>
+
+      <p id="status" class="sr-only" role="status" aria-live="polite"></p>
+
+      <!-- MAIN (FITS ON ONE PAGE WITHOUT SCROLLING ON WELCOME) -->
+      <main id="main">
+        <h1 class="sr-only" id="page-h">Toroka: check a message, shop or website</h1>
+        
+        <section id="welcome" aria-labelledby="welcome-h">
+          <h2 id="welcome-h" data-t-key="welcome_hi">What would you like to investigate?</h2>
+          <p class="sub" id="welcome-p" data-t-key="welcome_desc">Share a message, link, screenshot or seller profile. I'll examine the available evidence and explain what I can and cannot verify.</p>
+          
+          <ul class="suggest">
+            <li>
+              <button type="button" data-sug="1" id="sug1" class="prompt-action-card">
+                <div class="prompt-card-icon">
+                  <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                </div>
+                <div class="prompt-card-body">
+                  <strong class="prompt-card-title" data-t-key="sug1_t">Check a suspicious message</strong>
+                  <span class="prompt-card-desc" data-t-key="sug1_d">Paste an SMS, WhatsApp text, or email you received</span>
+                </div>
+              </button>
+            </li>
+            <li>
+              <button type="button" data-sug="2" id="sug2" class="prompt-action-card">
+                <div class="prompt-card-icon">
+                  <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
+                </div>
+                <div class="prompt-card-body">
+                  <strong class="prompt-card-title" data-t-key="sug2_t">Investigate an Instagram or TikTok shop</strong>
+                  <span class="prompt-card-desc" data-t-key="sug2_d">Verify if an online seller or page is legitimate</span>
+                </div>
+              </button>
+            </li>
+            <li>
+              <button type="button" data-sug="3" id="sug3" class="prompt-action-card">
+                <div class="prompt-card-icon">
+                  <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.35-4.35"/></svg>
+                </div>
+                <div class="prompt-card-body">
+                  <strong class="prompt-card-title" data-t-key="sug3_t">Look up a number or website</strong>
+                  <span class="prompt-card-desc" data-t-key="sug3_d">Check Till, Paybill, phone number, or web address</span>
+                </div>
+              </button>
+            </li>
+            <li>
+              <button type="button" data-sug="4" id="sug4" class="prompt-action-card">
+                <div class="prompt-card-icon">
+                  <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3M12 17h.01"/></svg>
+                </div>
+                <div class="prompt-card-body">
+                  <strong class="prompt-card-title" data-t-key="sug4_t">I already paid or shared something</strong>
+                  <span class="prompt-card-desc" data-t-key="sug4_d">Get calm next steps to protect your money or accounts</span>
+                </div>
+              </button>
+            </li>
+          </ul>
+        </section>
+
+        <!-- CONVERSATION THREAD -->
+        <ol id="thread" aria-label="Conversation" hidden></ol>
+      </main>
+
+      <div id="errors" tabindex="-1" role="alert" hidden></div>
+
+      <!-- COMPOSER -->
+      <form id="composer" class="composer" aria-label="Message Toroka" novalidate>
+        <ul id="attachments" class="attachments" aria-label="Attached screenshots" hidden></ul>
+        <div id="url-preview-bar" class="url-preview-bar" hidden aria-live="polite">
+          <span class="url-preview-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" class="url-svg"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" fill="none" stroke="currentColor" stroke-width="2"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+          </span>
+          <span id="url-preview-badge" class="url-preview-badge" data-t-key="url_detected">Link detected</span>
+          <span id="url-preview-target" class="url-preview-target"></span>
+          <button type="button" id="url-preview-remove" class="url-preview-remove" aria-label="Remove link from message" title="Remove link">×</button>
+        </div>
+        <div class="box">
+          <button type="button" id="attach" class="icon" aria-label="Attach screenshots" title="Attach screenshot or file">
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M21 11.5l-8.600 8.600a5.500 5.500 0 0 1-7.800-7.800l9-9a3.700 3.700 0 0 1 5.200 5.200l-9 9a1.900 1.900 0 0 1-2.600-2.600l8.200-8.200"/></svg>
+          </button>
+          <button type="button" id="camera-btn" class="icon" aria-label="Take or upload photo" title="Upload image">
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+          </button>
+          <button type="button" id="paste-btn" class="icon" aria-label="Paste from clipboard" title="Paste">
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/></svg>
+          </button>
+          <input type="file" id="file" accept="image/png,image/jpeg,image/webp" multiple hidden>
+          <textarea id="text" rows="1" maxlength="5000" aria-label="Message to Toroka" placeholder="Ask or paste a message, link…" autocomplete="off" enterkeyhint="send"></textarea>
+          <button type="submit" id="send" class="icon send" aria-label="Send" disabled>
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+          </button>
+        </div>
+        <p class="fine" id="fine">
+          <svg class="fine-shield-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+          <span data-t-key="disclaimer_fine">Never share your PIN, password or OTP with anyone. Toroka provides investigative guidance based on evidence.</span>
+        </p>
+      </form>
+    </div>
+
+    <!-- RIGHT CONTEXT PANEL -->
+    <aside class="context-panel" id="context-panel" aria-label="Safety tips and resources">
+      <div class="context-card stay-safe-card">
+        <div class="stay-safe-header">
+          <svg class="context-shield-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+          <strong data-t-key="stay_safe_title">Stay safe online</strong>
+        </div>
+        <p data-t-key="stay_safe_desc">Toroka checks available evidence and known patterns. It cannot guarantee that a shop, message, or transaction is safe.</p>
+        <button type="button" id="learn-more-btn" class="learn-more-btn" data-t-key="learn_more">Learn more -></button>
+      </div>
+
+      <div class="context-section">
+        <div class="context-section-title" data-t-key="common_scams_title">COMMON SCAMS</div>
+        
+        <button type="button" class="scam-topic-card" data-topic="shops">
+          <strong class="topic-title" data-t-key="scam_shops_title">Fake online shops</strong>
+          <span class="topic-desc" data-t-key="scam_shops_desc">Low prices, upfront payment demands, fake delivery fees</span>
+        </button>
+        
+        <button type="button" class="scam-topic-card" data-topic="mpesa">
+          <strong class="topic-title" data-t-key="scam_mpesa_title">M-Pesa fraud</strong>
+          <span class="topic-desc" data-t-key="scam_mpesa_desc">Fake reversal SMS, 'wrong recipient' calls, PIN requests</span>
+        </button>
+        
+        <button type="button" class="scam-topic-card" data-topic="impersonation">
+          <strong class="topic-title" data-t-key="scam_impersonation_title">Impersonation</strong>
+          <span class="topic-desc" data-t-key="scam_impersonation_desc">Scammers posing as banks, Telcos, or government agencies</span>
+        </button>
+        
+        <button type="button" class="scam-topic-card" data-topic="jobs">
+          <strong class="topic-title" data-t-key="scam_jobs_title">Job scams</strong>
+          <span class="topic-desc" data-t-key="scam_jobs_desc">Registration or medical fees required before employment</span>
+        </button>
+      </div>
+
+      <div class="context-card quick-tip-card">
+        <div class="quick-tip-header">
+          <svg class="quick-tip-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+          <strong data-t-key="quick_tip_title">Quick tip</strong>
+        </div>
+        <p data-t-key="quick_tip_desc">Legitimate businesses never ask for your M-Pesa PIN, OTP, or ask you to dial *334# to receive a payment.</p>
+      </div>
+    </aside>
+  </div>
+
+  <!-- SETTINGS MODAL DIALOG -->
+  <dialog id="settings-dialog" class="app-dialog" aria-labelledby="settings-dialog-title">
+    <div class="dialog-content">
+      <div class="dialog-header">
+        <h2 id="settings-dialog-title" data-t-key="settings_title">Settings</h2>
+        <button type="button" class="dialog-close-btn" id="close-settings-btn" aria-label="Close">
+          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M18 6L6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <div class="dialog-body">
+        <div class="setting-group">
+          <label class="setting-label" data-t-key="settings_theme_label">Theme</label>
+          <div class="theme-select-row" role="radiogroup" aria-label="Theme selection">
+            <button type="button" class="setting-chip-btn active" id="theme-light-btn" data-theme-val="light" data-t-key="theme_light">Light</button>
+            <button type="button" class="setting-chip-btn" id="theme-dark-btn" data-theme-val="dark" data-t-key="theme_dark">Dark</button>
+            <button type="button" class="setting-chip-btn" id="theme-system-btn" data-theme-val="system" data-t-key="theme_system">System</button>
+          </div>
+        </div>
+
+        <div class="setting-group">
+          <label class="setting-label" data-t-key="settings_lang_label">Language</label>
+          <div class="lang-select-row">
+            <button type="button" class="setting-chip-btn" id="set-lang-en">English (EN)</button>
+            <button type="button" class="setting-chip-btn" id="set-lang-sw">Kiswahili (SW)</button>
+          </div>
+        </div>
+
+        <div class="setting-group">
+          <label class="setting-label" data-t-key="settings_history_label">Investigation history</label>
+          <p class="setting-subtext" data-t-key="settings_history_desc">Conversations are saved locally on your device only.</p>
+          <div class="setting-action-row">
+            <button type="button" class="btn-secondary" id="export-history-btn" data-t-key="btn_export_history">Export conversations (.json)</button>
+            <button type="button" class="btn-danger" id="clear-history-btn" data-t-key="btn_clear_history">Clear all history</button>
+          </div>
+        </div>
+
+        <div class="setting-group">
+          <label class="setting-label" data-t-key="settings_privacy_label">Privacy & Security</label>
+          <p class="setting-subtext" data-t-key="settings_privacy_desc">Toroka requires no account and stores no PINs or sensitive credentials. All checks are private.</p>
+        </div>
+      </div>
+      <div class="dialog-footer">
+        <button type="button" class="btn-primary" id="done-settings-btn" data-t-key="btn_close">Close</button>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- SAFETY MODAL DIALOG -->
+  <dialog id="safety-dialog" class="app-dialog" aria-labelledby="safety-dialog-title">
+    <div class="dialog-content">
+      <div class="dialog-header">
+        <h2 id="safety-dialog-title" data-t-key="safety_modal_title">Digital Safety in Kenya</h2>
+        <button type="button" class="dialog-close-btn" id="close-safety-btn" aria-label="Close">
+          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M18 6L6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <div class="dialog-body safety-body">
+        <p data-t-key="safety_intro">Key safety rules to remember when transacting or communicating online in Kenya:</p>
+        <ul class="safety-points">
+          <li data-t-key="safety_rule_1">Never share your M-Pesa PIN, SIM card details, or one-time verification SMS (OTP) with anyone, including Safaricom customer care.</li>
+          <li data-t-key="safety_rule_2">Official Safaricom communication only comes from official SMS sender IDs or phone number 0722 000 000.</li>
+          <li data-t-key="safety_rule_3">Before paying a social-media seller, independently verify the seller and recipient, agree written delivery/refund terms, and understand any buyer protection. Be cautious of pressure or unexplained upfront fees; a deposit alone does not prove fraud.</li>
+          <li data-t-key="safety_rule_4">If you accidentally sent money to a wrong number, immediately forward the transaction SMS to 456 to trigger an M-Pesa reversal.</li>
+        </ul>
+        <h3 class="safety-subheading" data-t-key="safety_contacts_title">Emergency & Fraud Reporting Contacts</h3>
+        <ul class="safety-contacts-list">
+          <li><strong data-t-key="safety_contact_safaricom">Safaricom Fraud: Forward suspicious SMS to 333 (free) or call 100/200.</strong></li>
+          <li><strong data-t-key="safety_contact_dci">DCI Kenya / Cyber Crime: Report online fraud at cyber@dci.go.ke or call 0800 722 203.</strong></li>
+          <li><strong data-t-key="safety_contact_cak">Communications Authority of Kenya (CAK / NC4): incidence@ke-cirt.go.ke.</strong></li>
+        </ul>
+      </div>
+      <div class="dialog-footer">
+        <button type="button" class="btn-primary" id="done-safety-btn" data-t-key="btn_close">Close</button>
+      </div>
+    </div>
+  </dialog>
+
+  <script src="/static/i18n.js"></script>
+  <script src="/static/i18n-chat.js"></script>
+  <script src="/static/app.js" defer></script>
+</body>
+</html>
