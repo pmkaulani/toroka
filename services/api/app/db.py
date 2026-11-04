@@ -231,6 +231,75 @@ class VerifiedRecord(Base):
     created_at: Mapped[str] = col(String(32), default=now_iso)
 
 
+class NEARegistrySnapshot(Base):
+    """Moderator-imported snapshots of the public NEA agency register."""
+    __tablename__ = "nea_registry_snapshots"
+    id: Mapped[str] = col(String(36), primary_key=True, default=uid)
+    source_url: Mapped[str] = col(String(300))
+    data_as_of: Mapped[str] = col(String(10))
+    retrieved_at: Mapped[str] = col(String(32), default=now_iso)
+    content_sha256: Mapped[str] = col(String(64))
+    record_count: Mapped[int] = col(Integer)
+    invalid_rows: Mapped[int] = col(Integer, default=0)
+    imported_by: Mapped[str] = col(ForeignKey("users.id", ondelete="RESTRICT"))
+    status: Mapped[str] = col(String(16), default="active")  # active | superseded
+
+
+class NEARegistryEntry(Base):
+    """Only business-register fields and email domains are stored; no personal identifiers."""
+    __tablename__ = "nea_registry_entries"
+    __table_args__ = (UniqueConstraint("snapshot_id", "registration_number"),)
+    id: Mapped[str] = col(String(36), primary_key=True, default=uid)
+    snapshot_id: Mapped[str] = col(ForeignKey("nea_registry_snapshots.id", ondelete="CASCADE"), index=True)
+    registration_number: Mapped[str] = col(String(40), index=True)
+    agency_name: Mapped[str] = col(String(180))
+    normalized_name: Mapped[str] = col(String(180), index=True)
+    service_type: Mapped[str] = col(String(100), default="")
+    email_domains: Mapped[list] = col(JSON, default=list)
+    website_domains: Mapped[list] = col(JSON, default=list)
+    licence_status: Mapped[str] = col(String(16), default="unknown")
+    valid_from: Mapped[str | None] = col(String(10), nullable=True)
+    expires_on: Mapped[str | None] = col(String(10), nullable=True)
+    row_sha256: Mapped[str] = col(String(64))
+
+
+class BRSBusinessRecord(Base):
+    """Minimised moderator-reviewed BRS result; never stores CR12 shareholder/director data."""
+    __tablename__ = "brs_business_records"
+    __table_args__ = (UniqueConstraint("registration_type", "registration_hmac"),)
+    id: Mapped[str] = col(String(36), primary_key=True, default=uid)
+    registration_type: Mapped[str] = col(String(24))
+    registration_hmac: Mapped[str] = col(String(64), index=True)
+    registration_masked: Mapped[str] = col(String(48))
+    registered_name: Mapped[str] = col(String(180))
+    normalized_name: Mapped[str] = col(String(180), index=True)
+    source_url: Mapped[str] = col(String(300))
+    evidence_sha256: Mapped[str] = col(String(64))
+    checked_at: Mapped[str] = col(String(10))
+    review_due: Mapped[str] = col(String(10))
+    reviewer_id: Mapped[str] = col(ForeignKey("users.id", ondelete="RESTRICT"))
+    status: Mapped[str] = col(String(16), default="active")  # active | revoked
+    created_at: Mapped[str] = col(String(32), default=now_iso)
+
+
+class BRSBusinessAssociation(Base):
+    """Separately reviewed link between a BRS entity and its public digital presence."""
+    __tablename__ = "brs_business_associations"
+    __table_args__ = (UniqueConstraint("business_record_id", "association_type", "normalized_value"),)
+    id: Mapped[str] = col(String(36), primary_key=True, default=uid)
+    business_record_id: Mapped[str] = col(ForeignKey("brs_business_records.id", ondelete="CASCADE"), index=True)
+    association_type: Mapped[str] = col(String(24))  # website_domain | social_profile | contact_email_domain
+    value: Mapped[str] = col(String(255))
+    normalized_value: Mapped[str] = col(String(255), index=True)
+    source_url: Mapped[str] = col(String(500))
+    evidence_sha256: Mapped[str] = col(String(64))
+    reviewed_at: Mapped[str] = col(String(10))
+    review_due: Mapped[str] = col(String(10))
+    reviewer_id: Mapped[str] = col(ForeignKey("users.id", ondelete="RESTRICT"))
+    status: Mapped[str] = col(String(16), default="active")  # active | revoked
+    created_at: Mapped[str] = col(String(32), default=now_iso)
+
+
 class SourceObservation(Base):
     __tablename__ = "source_observations"
     id: Mapped[str] = col(String(36), primary_key=True, default=uid)

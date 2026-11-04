@@ -642,7 +642,7 @@ function evidenceSourceNode(source) {
   );
 }
 function intelligencePanels(parent, assessment) {
-  parent.querySelectorAll(".det-intel-evidence, .det-shop-discovery, .det-domain-infrastructure, .det-official-registry, .det-evidence-graph").forEach(node => node.remove());
+  parent.querySelectorAll(".det-intel-evidence, .det-shop-discovery, .det-domain-infrastructure, .det-official-registry, .det-build3-entity-verification, .det-evidence-graph").forEach(node => node.remove());
   const intel = assessment && assessment.investigation_intelligence;
   if (!intel) return;
   const explanation = intel.evidence_explanation;
@@ -790,6 +790,71 @@ function intelligencePanels(parent, assessment) {
       h("summary", { text: t("registry_h") }),
       h("p", { class: "evidence-intro", text: t("registry_note") }),
       h("ul", { class: "location-list" }, registryRows)
+    ));
+  }
+
+  const entityVerification = intel.entity_verification;
+  if (entityVerification && (entityVerification.nea || entityVerification.brs)) {
+    const sections = [];
+    const addRegistrySection = (item, kind) => {
+      if (!item) return;
+      const list = [];
+      list.push(h("span", { class: "evidence-tag", text: String(item.status || "review_required").replaceAll("_", " ") }));
+      if (item.snapshot) {
+        list.push(h("small", { class: "evidence-meta", text: `${t("entity_snapshot_date")}: ${item.snapshot.data_as_of || "unknown"} · ${item.snapshot.freshness || "unknown"}` }));
+      }
+      if (item.candidates && item.candidates.length) {
+        for (const candidate of item.candidates.slice(0, 4)) {
+          list.push(h("div", { class: "location-claim" },
+            h("strong", { text: candidate.agency_name || t("entity_candidate") }),
+            h("small", { class: "evidence-meta", text: `${candidate.registration_number || ""} · ${candidate.service_type || ""}` }),
+            h("span", { class: "evidence-tag", text: String(candidate.display_status || candidate.licence_status_in_source || "unknown").replaceAll("_", " ") }),
+            candidate.expires_on ? h("small", { class: "evidence-meta", text: `${t("entity_expiry")}: ${candidate.expires_on}` }) : null,
+            h("small", { class: "evidence-meta", text: `${t("entity_match_basis")}: ${String(candidate.match_basis || "").replaceAll("_", " ")}` }),
+            safeEvidenceUrl(candidate.record_source_url) ? h("a", { href: safeEvidenceUrl(candidate.record_source_url), rel: "noopener noreferrer", target: "_blank", text: t("open_source") }) : null
+          ));
+        }
+      }
+      if (item.record) {
+        const r = item.record;
+        list.push(h("div", { class: "location-claim" },
+          h("strong", { text: r.registered_name || t("entity_brs_record") }),
+          h("small", { class: "evidence-meta", text: `${r.registration_type || ""} · ${r.registration_number_masked || ""}` }),
+          h("span", { class: "evidence-tag", text: String(item.status || "review_required").replaceAll("_", " ") }),
+          h("small", { class: "evidence-meta", text: `${t("entity_checked")}: ${r.source_checked_at || "unknown"} · ${t("entity_review_due")}: ${r.review_due || "unknown"}` }),
+          safeEvidenceUrl(r.source_url) ? h("a", { href: safeEvidenceUrl(r.source_url), rel: "noopener noreferrer", target: "_blank", text: t("open_source") }) : null
+        ));
+      }
+      if (item.name_candidates && item.name_candidates.length) {
+        list.push(h("h4", { text: t("entity_name_candidates") }));
+        for (const candidate of item.name_candidates.slice(0, 4)) list.push(h("div", { class: "location-claim" },
+          h("strong", { text: candidate.registered_name }),
+          h("small", { class: "evidence-meta", text: candidate.registration_number_masked || "" }),
+          safeEvidenceUrl(candidate.source_url) ? h("a", { href: safeEvidenceUrl(candidate.source_url), rel: "noopener noreferrer", target: "_blank", text: t("open_source") }) : null
+        ));
+      }
+      if (item.verified_associations && item.verified_associations.length) {
+        list.push(h("h4", { text: t("entity_linked_presence") }));
+        for (const association of item.verified_associations.slice(0, 8)) list.push(h("div", { class: "location-claim" },
+          h("strong", { text: association.value || association.type }),
+          h("span", { class: "evidence-tag", text: String(association.type || "").replaceAll("_", " ") }),
+          h("small", { class: "evidence-meta", text: `${t("entity_checked")}: ${association.reviewed_at || "unknown"} · ${t("entity_review_due")}: ${association.review_due || "unknown"}` }),
+          safeEvidenceUrl(association.source_url) ? h("a", { href: safeEvidenceUrl(association.source_url), rel: "noopener noreferrer", target: "_blank", text: t("open_source") }) : null
+        ));
+      }
+      if (item.what_to_verify && item.what_to_verify.length) list.push(h("ul", { class: "evidence-source-list" }, item.what_to_verify.slice(0, 5).map(step => h("li", { text: step }))));
+      if (item.interpretation_note) list.push(h("p", { class: "evidence-intro", text: item.interpretation_note }));
+      const portal = safeEvidenceUrl(item.official_portal_url);
+      if (portal) list.push(h("a", { href: portal, rel: "noopener noreferrer", target: "_blank", text: t("registry_open") }));
+      sections.push(h("div", { class: "location-list-wrap" }, h("h4", { text: item.registry || (kind === "nea" ? "NEA" : "BRS") }), ...list));
+    };
+    addRegistrySection(entityVerification.nea, "nea");
+    addRegistrySection(entityVerification.brs, "brs");
+    parent.append(h("details", { class: "det-build3-entity-verification", open: true },
+      h("summary", { text: t("entity_verify_h") }),
+      h("p", { class: "evidence-intro", text: entityVerification.interpretation_note || t("entity_verify_note") }),
+      ...sections,
+      entityVerification.limitations && entityVerification.limitations.length ? h("div", { class: "evidence-caveats" }, h("strong", { text: t("ev_limits") }), h("ul", {}, entityVerification.limitations.map(x => h("li", { text: x })))) : null
     ));
   }
 

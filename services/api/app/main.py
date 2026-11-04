@@ -78,6 +78,12 @@ def create_app(settings: Settings | None = None, *, deps: pipeline.Deps | None =
     except Exception as e:
         logging.getLogger("toroka.phase7").warning(f"Could not initialize phase 7 router: {e}")
 
+    try:
+        from .routes_build3 import router as build3_router
+        app.include_router(build3_router)
+    except Exception as e:
+        logging.getLogger("toroka.build3").warning(f"Could not initialize Build 3 registry router: {e}")
+
     # Autonomous ML Worker Daemon
     if os.environ.get("SSI_NO_WORKER") != "1":
         try:

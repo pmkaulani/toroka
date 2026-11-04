@@ -845,6 +845,23 @@ def run_check(db: Session, c: Ctx, chk: m.Check) -> None:
                 "blocking": False,
             })
 
+    # Build 3: official Kenyan registry and cross-platform entity context.
+    # This is an additive evidence panel; it never overrides the deterministic risk label.
+    try:
+        from toroka_build3.check_integration import build3_case_entity_context
+        entity_context = build3_case_entity_context(db, c.crypto, combined)
+        if entity_context:
+            res_dict.setdefault("investigation_intelligence", {})["entity_verification"] = entity_context
+            for limitation in entity_context.get("limitations", []):
+                if limitation not in res_dict.setdefault("limitations", []):
+                    res_dict["limitations"].append(limitation)
+    except Exception as exc:
+        logger.warning("Build 3 entity verification failed safely: %s", type(exc).__name__)
+        res_dict.setdefault("coverage", []).append({
+            "id": "build3_entity_verification", "name": "Official entity verification",
+            "status": "failed", "detail": "The registry comparison could not complete. Existing checks were preserved.", "blocking": False,
+        })
+
     chk.result_json = res_dict
     if len(combined.strip()) < MIN_CHARS:
         chk.status = "needs_more_information"
