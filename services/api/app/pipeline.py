@@ -124,18 +124,48 @@ def match_verified(db: Session, text: str, finals: list[str]) -> list[VerifiedEn
 
 
 def image_leads(db: Session, check_id: str, evidence: list[tuple[str, str, int]], max_distance: int = 6) -> list[Finding]:
-    """Similar imagery in OTHER checks: a lead only. Text-heavy screenshots are skipped (they hash alike)."""
+    """Cross-case similar-image lead. Both current and prior checks must explicitly opt in."""
     from ssi_connectors.images import hamming
-    out, seen = [], 0
-    others = db.execute(select(m.EvidenceFile.dhash, m.EvidenceFile.check_id).where(m.EvidenceFile.check_id != check_id)).all()
-    for dh, _, text_len in evidence:
-        if text_len >= 40:
-            continue
-        seen += len({cid for h, cid in others if hamming(dh, h) <= max_distance})
-    if seen:
+    out = []
+    now_iso = m.now_iso()
+    current_opted_in = set(db.execute(
+        select(m.EvidenceFile.dhash).where(
+            m.EvidenceFile.check_id == check_id,
+            m.EvidenceFile.consent_scope == "cross_case_campaign",
+            m.EvidenceFile.retention_until > now_iso,
+        )
+    ).scalars().all())
+    current_hashes = [dh for dh, _, text_len in evidence if text_len < 40 and dh in current_opted_in]
+    if not current_hashes:
+        return out
+
+    stmt = (
+        select(m.EvidenceFile.dhash, m.EvidenceFile.check_id)
+        .join(m.Check, m.Check.id == m.EvidenceFile.check_id)
+        .where(m.EvidenceFile.check_id != check_id)
+        .where(m.EvidenceFile.consent_scope == "cross_case_campaign")
+        .where(m.EvidenceFile.retention_until > now_iso)
+        .where(m.Check.expires_at > now_iso)
+        .order_by(m.EvidenceFile.created_at.desc())
+        .limit(600)
+    )
+    current_check = db.get(m.Check, check_id)
+    if current_check and current_check.user_id:
+        stmt = stmt.where(m.Check.user_id != current_check.user_id)
+    others = db.execute(stmt).all()
+    matching_checks = set()
+    for dh in current_hashes:
+        for other_hash, other_check_id in others:
+            try:
+                if hamming(dh, other_hash) <= max_distance:
+                    matching_checks.add(other_check_id)
+            except (TypeError, ValueError):
+                continue
+    if matching_checks:
+        seen = len(matching_checks)
         out.append(Finding("SIMILAR_IMAGE_SEEN_ELSEWHERE", EvidenceType.UNRESOLVED_CLAIM, Strength.WEAK,
-                           f"A very similar image appears in {seen} other {'check' if seen == 1 else 'checks'}.",
-                           "Sellers often use supplier or stock photos, so this is a lead to look into, not proof of a problem.", None, None, None,
+                           f"A very similar image appears in {seen} other opted-in {'check' if seen == 1 else 'checks'}.",
+                           "Both contributors opted into cross-case image-fingerprint comparison. Sellers often use supplier, catalogue or stock photos, so this is a lead to review, not proof of a problem or common ownership.", None, None, None,
                            needs_external_verification=True))
     return out
 

@@ -412,3 +412,17 @@ def make_engine(url: str):
 
 def make_sessionmaker(engine) -> sessionmaker[Session]:
     return sessionmaker(engine, expire_on_commit=False)
+
+
+class CampaignReview(Base):
+    """Moderator disposition for a derived campaign candidate; never a public accusation."""
+    __tablename__ = "campaign_reviews"
+    id: Mapped[str] = col(String(36), primary_key=True, default=uid)
+    campaign_id: Mapped[str] = col(String(40), unique=True, index=True)
+    campaign_type: Mapped[str] = col(String(40))
+    status: Mapped[str] = col(String(32), default="candidate")  # under_review|confirmed_coordinated|not_coordinated|insufficient_evidence
+    reason_code: Mapped[str | None] = col(String(40), nullable=True)
+    notes_encrypted: Mapped[str | None] = col(Text, nullable=True)
+    reviewer_id: Mapped[str] = col(ForeignKey("users.id", ondelete="RESTRICT"))
+    reviewed_at: Mapped[str] = col(String(32), default=now_iso)
+    created_at: Mapped[str] = col(String(32), default=now_iso)

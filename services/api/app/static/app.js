@@ -532,7 +532,7 @@ function think() {
 function ask(text, handler, chips, tKey = null) { pending = handler; return botSay(text, chips, tKey).then(m => { $("#text").focus(); return m; }); }
 
 /* ---------- Checks ---------- */
-async function doCheck(text, fl, bubble) {
+async function doCheck(text, fl, bubble, crossCaseImageConsent = false) {
   // A new evidence check starts a new context. Keep older messages visually in history,
   // but don't pass them as AI conversational memory for this unrelated investigation.
   chatHistory = [];
@@ -542,6 +542,7 @@ async function doCheck(text, fl, bubble) {
     sessionStorage.setItem("ssi.t." + data.check_id, data.guest_token); current = { id: data.check_id, token: data.guest_token, text };
     for (const f of fl) {
       const fd = new FormData(); fd.append("file", f); fd.append("lang", lang);
+      fd.append("consent_scope", crossCaseImageConsent ? "cross_case_campaign" : "this_check_only");
       try { data = await api(`/v1/checks/${data.check_id}/evidence`, { method: "POST", headers: { "X-Guest-Token": current.token }, form: fd }); } catch (e) { fileErr.push(e.message); }
     }
   } catch (e) { th.stop(); await fail(e, text); return; }
@@ -642,7 +643,7 @@ function evidenceSourceNode(source) {
   );
 }
 function intelligencePanels(parent, assessment) {
-  parent.querySelectorAll(".det-intel-evidence, .det-shop-discovery, .det-domain-infrastructure, .det-official-registry, .det-build3-entity-verification, .det-evidence-graph").forEach(node => node.remove());
+  parent.querySelectorAll(".det-intel-evidence, .det-shop-discovery, .det-domain-infrastructure, .det-official-registry, .det-build3-entity-verification, .det-build4-campaign-intelligence, .det-evidence-graph").forEach(node => node.remove());
   const intel = assessment && assessment.investigation_intelligence;
   if (!intel) return;
   const explanation = intel.evidence_explanation;
@@ -855,6 +856,43 @@ function intelligencePanels(parent, assessment) {
       h("p", { class: "evidence-intro", text: entityVerification.interpretation_note || t("entity_verify_note") }),
       ...sections,
       entityVerification.limitations && entityVerification.limitations.length ? h("div", { class: "evidence-caveats" }, h("strong", { text: t("ev_limits") }), h("ul", {}, entityVerification.limitations.map(x => h("li", { text: x })))) : null
+    ));
+  }
+
+  const campaign = intel.campaign_intelligence;
+  if (campaign && campaign.status === "context_found") {
+    const rows = [];
+    for (const item of (campaign.matched_published_indicators || []).slice(0, 8)) {
+      rows.push(h("li", { class: "evidence-source" },
+        h("strong", { text: `${item.kind || "Identifier"}: ${item.masked_value || "••••"}` }),
+        h("span", { class: "evidence-tag", text: `${item.independent_reports || 0} ${t("campaign_independent_reports")}` }),
+        h("small", { class: "evidence-meta", text: `${t("campaign_last_reported")}: ${item.last_reported || t("campaign_unknown")}` }),
+        h("p", { class: "evidence-why", text: item.interpretation || t("campaign_indicator_note") })
+      ));
+    }
+    for (const item of (campaign.related_public_identifiers || []).slice(0, 8)) {
+      rows.push(h("li", { class: "evidence-source" },
+        h("strong", { text: `${item.kind || "Identifier"}: ${item.masked_value || "••••"}` }),
+        h("span", { class: "evidence-tag", text: `${item.independent_reports || 0} ${t("campaign_independent_reports")}` }),
+        h("small", { class: "evidence-meta", text: `${t("campaign_seen_range")}: ${item.first_seen || "?"} — ${item.last_seen || "?"}` }),
+        h("p", { class: "evidence-why", text: t("campaign_relationship_note") })
+      ));
+    }
+    const img = campaign.image_reuse;
+    const imageNode = img ? h("div", { class: "location-list-wrap" },
+      h("strong", { text: t("campaign_image_title") }),
+      h("p", { class: "evidence-intro", text: img.status === "matches_found"
+        ? `${img.matching_opted_in_checks || 0} ${t("campaign_opted_checks")}; ${img.exact_file_matches || 0} ${t("campaign_exact_matches")}; ${img.perceptual_similarity_matches || 0} ${t("campaign_visual_matches")}.`
+        : t("campaign_no_image_match") }),
+      h("p", { class: "evidence-why", text: img.interpretation_note || "" })
+    ) : null;
+    const limits = campaign.limitations || [];
+    parent.append(h("details", { class: "det-build4-campaign-intelligence", open: true },
+      h("summary", { text: t("campaign_intelligence_title") }),
+      h("p", { class: "evidence-intro", text: campaign.interpretation_note || t("campaign_intelligence_note") }),
+      rows.length ? h("ul", { class: "evidence-source-list" }, rows) : h("p", { class: "evidence-empty", text: t("campaign_no_public_links") }),
+      imageNode,
+      limits.length ? h("div", { class: "evidence-caveats" }, h("strong", { text: t("ev_limits") }), h("ul", {}, limits.map(x => h("li", { text: x })))) : null
     ));
   }
 
@@ -1200,6 +1238,9 @@ function fit() { const e = box(); e.style.height = "auto"; e.style.height = (!e.
 function syncSend() { $("#send").disabled = busy || (!box().value.trim() && !files.length); }
 function renderFiles() {
   const ul = $("#attachments"); ul.replaceChildren(); ul.hidden = !files.length;
+  const consentWrap = $("#campaign-image-consent");
+  if (consentWrap) consentWrap.hidden = !files.length;
+  if (!files.length) { const toggle = $("#campaign-image-consent-toggle"); if (toggle) toggle.checked = false; }
   files.forEach((f, i) => { const b = h("button", { type: "button", "aria-label": t("remove_file") }, h("span", { text: "×", "aria-hidden": "true" })); b.addEventListener("click", () => { files.splice(i, 1); renderFiles(); syncSend(); box().focus(); });
     ul.append(h("li", {}, h("img", { src: f.__url, alt: f.name }), b)); });
 }
@@ -1372,12 +1413,13 @@ async function doChat(text) {
 async function submit(ev) {
   ev && ev.preventDefault(); if (busy) return; clearError();
   const text = box().value.trim(), fl = files.slice(); if (!text && !fl.length) return;
+  const crossCaseImageConsent = fl.length > 0 && $("#campaign-image-consent-toggle")?.checked === true;
   box().value = ""; files = []; fit(); renderFiles(); busy = true; syncSend();
   const u = userMsg(text || t("count_shots"), fl.map(f => f.__url), text ? null : "count_shots", fl.map(f => f.name));
   try {
     if (fl.length > 0 || looksLikeEvidence(text, fl)) {
       pending = null;
-      await doCheck(text, fl, u.bubble);
+      await doCheck(text, fl, u.bubble, crossCaseImageConsent);
     } else if (pending) {
       const fn = pending; pending = null; await fn(text);
     } else {
@@ -1457,6 +1499,7 @@ function newChat() {
   $("#app-layout")?.classList.remove("chat-active");
   thread().replaceChildren(); thread().hidden = true; $("#welcome").hidden = false;
   activeConversationId = null; current = null; pending = null; files = []; chatHistory = []; convMessages = [];
+  const imageConsent = $("#campaign-image-consent-toggle"); if (imageConsent) imageConsent.checked = false;
   sidebarView = "recent"; sidebarSearchQuery = "";
   const sideSearch = $("#sidebar-search-input"); if (sideSearch) sideSearch.value = "";
   const sideSearchField = $("#sidebar-search-field"); if (sideSearchField) sideSearchField.hidden = true;

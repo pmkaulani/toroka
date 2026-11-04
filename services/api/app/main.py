@@ -84,6 +84,12 @@ def create_app(settings: Settings | None = None, *, deps: pipeline.Deps | None =
     except Exception as e:
         logging.getLogger("toroka.build3").warning(f"Could not initialize Build 3 registry router: {e}")
 
+    try:
+        from .routes_build4 import router as build4_router
+        app.include_router(build4_router)
+    except Exception as e:
+        logging.getLogger("toroka.build4").warning(f"Could not initialize Build 4 campaign router: {e}")
+
     # Autonomous ML Worker Daemon
     if os.environ.get("SSI_NO_WORKER") != "1":
         try:

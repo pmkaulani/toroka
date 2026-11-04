@@ -177,6 +177,13 @@
       <!-- COMPOSER -->
       <form id="composer" class="composer" aria-label="Message Toroka" novalidate>
         <ul id="attachments" class="attachments" aria-label="Attached screenshots" hidden></ul>
+        <div id="campaign-image-consent" class="campaign-image-consent" hidden>
+          <label for="campaign-image-consent-toggle">
+            <input id="campaign-image-consent-toggle" type="checkbox" value="cross_case_campaign">
+            <span data-t-key="campaign_image_optin_label">Allow Toroka to compare this image's fingerprint across opted-in investigations</span>
+          </label>
+          <p data-t-key="campaign_image_optin_note">Optional. Toroka stores and compares an image fingerprint, not your screenshot or case details. This can help identify reused product or scam images. You can leave this unchecked.</p>
+        </div>
         <div id="url-preview-bar" class="url-preview-bar" hidden aria-live="polite">
           <span class="url-preview-icon" aria-hidden="true">
             <svg viewBox="0 0 24 24" class="url-svg"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" fill="none" stroke="currentColor" stroke-width="2"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" fill="none" stroke="currentColor" stroke-width="2"/></svg>

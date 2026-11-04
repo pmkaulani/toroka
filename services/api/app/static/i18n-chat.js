@@ -65,7 +65,24 @@ Object.assign(T.en, {
   time_just_now: "Just now", time_m_ago: "m ago", time_h_ago: "h ago", time_d_ago: "d ago",
   prompt_mpesa_check: "Paste the SMS message or reversal request below, or upload a screenshot.",
   prompt_impersonation_check: "Paste what they sent you or tell me what happened.",
-  prompt_jobs_check: "Paste the job posting or interview details."
+  prompt_jobs_check: "Paste the job posting or interview details.",
+  campaign_image_optin_label: "Allow Toroka to compare this image's fingerprint across opted-in investigations",
+  campaign_image_optin_note: "Optional. Toroka compares an image fingerprint, not your screenshot or case details, to look for reused images. Leave this unchecked to keep the image limited to this check.",
+  campaign_intelligence_title: "Campaign and reuse intelligence",
+  campaign_intelligence_note: "Toroka found contextual links to previously reviewed reports or opted-in image fingerprints. These links do not prove common ownership or wrongdoing.",
+  campaign_independent_reports: "independent reports",
+  campaign_last_reported: "Last reported",
+  campaign_unknown: "unknown",
+  campaign_indicator_note: "This exact identifier has a moderated public indicator. It is not a conclusion about every account or business using it.",
+  campaign_relationship_note: "This identifier appeared with another published indicator in multiple independently reported, moderator-approved cases. This is a contextual relationship, not proof of control or fraud.",
+  campaign_seen_range: "Observed",
+  campaign_image_title: "Reused-image comparison",
+  campaign_opted_checks: "other opted-in checks",
+  campaign_exact_matches: "exact image matches",
+  campaign_visual_matches: "visually similar matches",
+  campaign_no_image_match: "No similar fingerprint was found in currently retained opted-in checks. This does not prove the image is original.",
+  campaign_no_public_links: "No published related identifiers were found in the current evidence set. Private or pending reports are not shown here."
+
 });
 Object.assign(T.sw, {
   local_note: "Huhitaji akaunti. Historia ya mazungumzo hubaki kwenye kifaa hiki.", open_safety: "Mwongozo wa usalama",
@@ -132,5 +149,23 @@ Object.assign(T.sw, {
   time_just_now: "Sasa hivi", time_m_ago: "d iliyopita", time_h_ago: "s iliyopita", time_d_ago: "siku zilizopita",
   prompt_mpesa_check: "Bandika ujumbe wa SMS au ombi la urejeshaji hapa chini, au pakia picha ya skrini.",
   prompt_impersonation_check: "Bandika walichokutumia au nieleze kilichotokea.",
-  prompt_jobs_check: "Bandika tangazo la kazi au maelezo ya usaili."
+  prompt_jobs_check: "Bandika tangazo la kazi au maelezo ya usaili.",
+  campaign_image_optin_label: "Ruhusu Toroka kulinganisha alama ya picha hii na uchunguzi mwingine ulioruhusu matumizi hayo",
+  campaign_image_optin_note: "Si lazima. Toroka hulinganisha alama ya picha pekee, si picha ya skrini wala maelezo ya kesi. Acha bila kuchagua ili picha itumike kwenye ukaguzi huu pekee.",
+  campaign_intelligence_title: "Taarifa za kampeni na matumizi ya picha",
+  campaign_intelligence_note: "Toroka imepata uhusiano wa kimuktadha na ripoti zilizokaguliwa awali au alama za picha zilizoruhusiwa. Uhusiano huu si uthibitisho wa umiliki wa pamoja au ulaghai.",
+  campaign_independent_reports: "ripoti huru",
+  campaign_last_reported: "Mara ya mwisho kuripotiwa",
+  campaign_unknown: "haijulikani",
+  campaign_indicator_note: "Kitambulisho hiki kina rekodi ya umma iliyokaguliwa na msimamizi. Hii si hitimisho kuhusu kila akaunti au biashara inayokitumia.",
+  campaign_relationship_note: "Kitambulisho hiki kilionekana pamoja na rekodi nyingine zilizochapishwa katika kesi nyingi zilizoidhinishwa na msimamizi na kuripotiwa kwa kujitegemea. Huu ni uhusiano wa kimuktadha, si uthibitisho wa udhibiti au ulaghai.",
+  campaign_seen_range: "Kilionekana",
+  campaign_image_title: "Ulinganisho wa picha zilizotumika tena",
+  campaign_opted_checks: "ukaguzi mwingine ulioruhusiwa",
+  campaign_exact_matches: "picha zinazolingana kabisa",
+  campaign_visual_matches: "picha zinazofanana kwa mwonekano",
+  campaign_no_image_match: "Hakuna alama ya picha inayofanana iliyopatikana katika ukaguzi ulioruhusu matumizi hayo na ambao bado umehifadhiwa. Hii haithibitishi kuwa picha ni ya awali.",
+  campaign_no_public_links: "Hakuna vitambulisho vingine vilivyochapishwa vilivyopatikana katika ushahidi wa sasa. Ripoti za faragha au zinazosubiri ukaguzi hazionyeshwi hapa."
+
 });
+

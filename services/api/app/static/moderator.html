@@ -24,6 +24,8 @@
     .form-group { margin-bottom: 16px; }
     .form-group label { display: block; margin-bottom: 6px; font-weight: 500; }
     .form-group input { width: 100%; padding: 8px; border: 1px solid var(--border); border-radius: 6px; box-sizing: border-box; }
+    .form-group select, .form-group textarea { width: 100%; padding: 8px; border: 1px solid var(--border); border-radius: 6px; box-sizing: border-box; font: inherit; }
+    .form-group textarea { resize: vertical; min-height: 64px; }
   </style>
 </head>
 <body>
@@ -57,7 +59,7 @@
       <nav class="mod-tabs" role="tablist">
         <button class="mod-tab active" data-tab="queue">Reports Queue (<span id="queue-count">0</span>)</button>
         <button class="mod-tab" data-tab="appeals">Appeals (<span id="appeals-count">0</span>)</button>
-        <button class="mod-tab" data-tab="campaigns">Linked Campaigns</button>
+        <button class="mod-tab" data-tab="campaigns">Campaign Intelligence</button>
       </nav>
 
       <main id="tab-content">
@@ -226,23 +228,110 @@
       }
     }
 
+    function modNode(tag, text, className) {
+      const el = document.createElement(tag);
+      if (className) el.className = className;
+      if (text !== undefined && text !== null) el.textContent = String(text);
+      return el;
+    }
+
     async function loadCampaigns() {
       const container = document.getElementById("tab-content");
-      container.innerHTML = "<p>Loading linked campaigns...</p>";
+      container.replaceChildren(modNode("p", "Loading campaign candidates..."));
       try {
-        const data = await api("/v1/moderation/campaigns");
+        const data = await api("/v1/moderation/build4/campaigns?limit=100");
+        container.replaceChildren();
+        container.append(modNode("p", data.interpretation_note || "These are investigative candidates, not findings of wrongdoing."));
         if (!data.campaigns.length) {
-          container.innerHTML = "<div class='card'><p>No cross-report recurring campaigns detected.</p></div>";
+          container.append(modNode("div", "No cross-report campaign candidates are currently available.", "card"));
           return;
         }
-        container.innerHTML = data.campaigns.map(c => `
-          <div class="card">
-            <strong>Campaign cluster (${c.reports_count} linked reports)</strong>
-            <p>Primary indicators: ${c.identifiers.join(", ")}</p>
-          </div>
-        `).join("");
+        for (const candidate of data.campaigns) {
+          const card = modNode("section", null, "card");
+          const title = candidate.campaign_type.replaceAll("_", " ");
+          card.append(modNode("h3", title));
+          card.append(modNode("p", `Evidence basis: ${candidate.evidence_basis || "not specified"}`));
+          card.append(modNode("p", `Reports: ${candidate.reports ?? candidate.images ?? "—"} · Independent reporters: ${candidate.distinct_reporters ?? "not applicable"} · Checks: ${candidate.distinct_checks ?? "not applicable"}`));
+          if (candidate.identifier) card.append(modNode("p", `Shared identifier: ${candidate.identifier.kind} ${candidate.identifier.masked_value}`));
+          if (Array.isArray(candidate.identifiers) && candidate.identifiers.length) {
+            card.append(modNode("p", "Related identifiers: " + candidate.identifiers.map(i => `${i.kind}: ${i.masked_value}`).join(", ")));
+          }
+          card.append(modNode("p", `Observed: ${candidate.first_seen || "?"} — ${candidate.last_seen || "?"}`));
+          if (candidate.report_ids && candidate.report_ids.length) {
+            card.append(modNode("p", `Report references: ${candidate.report_ids.length}`));
+            for (const reportId of candidate.report_ids.slice(0, 12)) {
+              const details = document.createElement("details");
+              const summary = modNode("summary", `Inspect report ${reportId.slice(0, 8)}`);
+              const inspect = modNode("button", "Load private report details", "btn btn-neutral");
+              inspect.type = "button";
+              inspect.addEventListener("click", async () => {
+                inspect.disabled = true;
+                try {
+                  const report = await api(`/v1/moderation/build4/reports/${encodeURIComponent(reportId)}`);
+                  details.replaceChildren(summary, modNode("p", `Category: ${report.category} · Status: ${report.moderation_status} · Incident date: ${report.incident_date || "not supplied"}`));
+                  details.append(modNode("p", "Identifiers: " + report.identifiers.map(i => `${i.kind}: ${i.masked_value}`).join(", ")));
+                  details.append(modNode("blockquote", report.narrative));
+                  details.append(modNode("p", report.note));
+                } catch (err) {
+                  details.append(modNode("p", `Could not load report: ${err.message}`));
+                  inspect.disabled = false;
+                }
+              });
+              details.append(summary, inspect); card.append(details);
+            }
+          }
+          if (candidate.check_ids && candidate.check_ids.length) {
+            card.append(modNode("p", `Opted-in check references: ${candidate.check_ids.join(", ")}`));
+          }
+          if (candidate.interpretation_note) card.append(modNode("p", candidate.interpretation_note));
+          const review = candidate.review || {};
+          const state = modNode("p", `Review status: ${review.status || "candidate"}`);
+          state.className = "badge";
+          card.append(state);
+          if (review.notes) card.append(modNode("p", `Previous reviewer notes: ${review.notes}`));
+
+          const form = modNode("div", null, "form-group");
+          const statusLabel = modNode("label", "Disposition");
+          const status = document.createElement("select");
+          status.id = `campaign-status-${candidate.campaign_id}`; statusLabel.htmlFor = status.id;
+          status.className = "form-control";
+          for (const [value, label] of [
+            ["under_review", "Under review"],
+            ["confirmed_coordinated", "Confirmed coordinated activity"],
+            ["not_coordinated", "Not coordinated / legitimate explanation"],
+            ["insufficient_evidence", "Insufficient evidence"]
+          ]) {
+            const option = document.createElement("option"); option.value = value; option.textContent = label; status.append(option);
+          }
+          if (review.status && review.status !== "candidate") status.value = review.status;
+          form.append(statusLabel, status);
+
+          const reasonLabel = modNode("label", "Reason code");
+          const reason = document.createElement("input"); reason.id = `campaign-reason-${candidate.campaign_id}`; reasonLabel.htmlFor = reason.id; reason.type = "text"; reason.maxLength = 40; reason.value = review.reason_code || "pattern_reviewed";
+          form.append(reasonLabel, reason);
+          const noteLabel = modNode("label", "Moderator notes (stored encrypted)");
+          const notes = document.createElement("textarea"); notes.id = `campaign-notes-${candidate.campaign_id}`; noteLabel.htmlFor = notes.id; notes.maxLength = 1200; notes.rows = 3; notes.placeholder = "Record the evidence reviewed and any legitimate alternative explanation.";
+          form.append(noteLabel, notes);
+          const save = modNode("button", "Save disposition", "btn btn-approve"); save.type = "button";
+          save.addEventListener("click", async () => {
+            save.disabled = true;
+            try {
+              await api(`/v1/moderation/build4/campaigns/${encodeURIComponent(candidate.campaign_id)}/review`, {
+                method: "POST",
+                body: { status: status.value, reason_code: reason.value.trim(), notes: notes.value.trim() || null }
+              });
+              await loadCampaigns();
+            } catch (err) {
+              alert("Could not save campaign review: " + err.message);
+              save.disabled = false;
+            }
+          });
+          form.append(save);
+          card.append(form);
+          container.append(card);
+        }
       } catch (err) {
-        container.innerHTML = `<p style="color: red;">Error: ${err.message}</p>`;
+        container.replaceChildren(modNode("p", `Error: ${err.message}`));
       }
     }
 

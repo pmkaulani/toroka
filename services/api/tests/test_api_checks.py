@@ -175,9 +175,9 @@ def test_conflicting_places_across_pieces_are_noted_not_accused(env):
 def test_similar_photo_in_another_check_is_only_a_weak_lead(env):
     img = photo_like(7)
     a = env.check("Selling a phone, photo attached for you to see.")
-    env.client.post(f"/v1/checks/{a['check_id']}/evidence", files={"file": ("p.png", img, "image/png")}, headers={"X-Guest-Token": a["guest_token"]})
+    env.client.post(f"/v1/checks/{a['check_id']}/evidence", files={"file": ("p.png", img, "image/png")}, data={"consent_scope": "cross_case_campaign"}, headers={"X-Guest-Token": a["guest_token"]})
     b = env.check("Brand new phone for sale, photo attached for you.")
-    r = env.client.post(f"/v1/checks/{b['check_id']}/evidence", files={"file": ("p.png", img, "image/png")}, headers={"X-Guest-Token": b["guest_token"]}).json()
+    r = env.client.post(f"/v1/checks/{b['check_id']}/evidence", files={"file": ("p.png", img, "image/png")}, data={"consent_scope": "cross_case_campaign"}, headers={"X-Guest-Token": b["guest_token"]}).json()
     f = next(x for x in r["assessment"]["findings"] if x["code"] == "SIMILAR_IMAGE_SEEN_ELSEWHERE")
     assert f["strength"] == "weak" and "lead" in f["why_it_matters"]
     assert r["assessment"]["label"] != "high_risk"

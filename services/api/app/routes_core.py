@@ -862,6 +862,28 @@ def run_check(db: Session, c: Ctx, chk: m.Check) -> None:
             "status": "failed", "detail": "The registry comparison could not complete. Existing checks were preserved.", "blocking": False,
         })
 
+    # Build 4: cross-case campaign context. Image fingerprints are compared only
+    # when the contributor explicitly opted into cross-case matching at upload time.
+    # This is contextual intelligence and never changes the underlying assessment.
+    try:
+        from toroka_build4.campaigns import build4_case_context
+        campaign_context = build4_case_context(
+            db, c.crypto, chk, combined,
+            image_hashes=[item[0] for item in leads_in if item and item[0]],
+        )
+        if campaign_context:
+            res_dict.setdefault("investigation_intelligence", {})["campaign_intelligence"] = campaign_context
+            for limitation in campaign_context.get("limitations", []):
+                if limitation not in res_dict.setdefault("limitations", []):
+                    res_dict["limitations"].append(limitation)
+    except Exception as exc:
+        logger.warning("Build 4 campaign intelligence failed safely: %s", type(exc).__name__)
+        res_dict.setdefault("coverage", []).append({
+            "id": "build4_campaign_intelligence", "name": "Campaign relationship intelligence",
+            "status": "failed", "detail": "Cross-case campaign context could not be checked. Existing findings were preserved.",
+            "blocking": False,
+        })
+
     chk.result_json = res_dict
     if len(combined.strip()) < MIN_CHARS:
         chk.status = "needs_more_information"
@@ -1757,6 +1779,8 @@ def export_check(check_id: str, request: Request, db: Session = Depends(get_db),
 @router.post("/v1/checks/{check_id}/evidence", status_code=201, response_model=CheckResponse, response_model_exclude_none=True, tags=["checks"])
 async def upload_evidence(check_id: str, request: Request, file: UploadFile = File(...), consent_scope: str = Form("this_check_only"), lang: str = Form("en"),
                           db: Session = Depends(get_db), c: Ctx = Depends(ctx), user=Depends(current_user), x_guest_token: str | None = Header(default=None)):
+    if consent_scope not in {"this_check_only", "cross_case_campaign"}:
+        raise HTTPException(422, "consent_scope must be this_check_only or cross_case_campaign.")
     chk = _owner_check(db, c, request, check_id, user, x_guest_token)
     throttle(request, c, "evidence", c.settings.rl_evidence, chk.id)
     if len(db.execute(select(m.EvidenceFile).where(m.EvidenceFile.check_id == chk.id)).scalars().all()) >= c.settings.max_evidence_per_check:
@@ -1782,7 +1806,10 @@ async def upload_evidence(check_id: str, request: Request, file: UploadFile = Fi
         run_check(db, c, chk)
     except Exception:
         chk.status = "failed_safely"
-    audit(db, request, user.id if user else None, "evidence.upload", "check", chk.id, {"sha256": clean.sha256_clean})
+    audit(db, request, user.id if user else None, "evidence.upload", "check", chk.id, {
+        "sha256": clean.sha256_clean,
+        "cross_case_image_matching_opt_in": consent_scope == "cross_case_campaign",
+    })
     db.commit()
     return _render(db, c, request, chk, lang)
 
