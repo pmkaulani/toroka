@@ -23,6 +23,7 @@ from .public_search import public_search, filter_public_search_results, manual_s
 from .evidence_graph import build_evidence_graph
 from ssi_connectors.places import search_places
 from ssi_connectors.urlscan import normalize_domain, search_historical_domain
+from ssi_connectors.domain_intelligence import investigate_domain_infrastructure
 
 logger = logging.getLogger("toroka.investigation_intelligence")
 
@@ -91,7 +92,8 @@ def _cache_get(key: str, ttl: int) -> dict[str, Any] | None:
         # Provider outputs are JSON-shaped; shallow copy all mutable collections.
         return {**value, "evidence": [dict(x) for x in value.get("evidence", [])],
                 "providers": [dict(x) for x in value.get("providers", [])],
-                "map_candidates": [dict(x) for x in value.get("map_candidates", [])]}
+                "map_candidates": [dict(x) for x in value.get("map_candidates", [])],
+                "domain_infrastructure": [dict(x) for x in value.get("domain_infrastructure", [])]}
 
 
 def _cache_set(key: str, value: dict[str, Any], ttl: int) -> None:
@@ -1207,6 +1209,7 @@ def investigate_public_targets(
         "category": category if category in {"message", "job", "grant", "payment", "shop", "website"} else "message",
         "targets": [{"kind": t.get("kind"), "identifier": _clean_text(t.get("identifier"), 120), "platform": _clean_text(t.get("platform"), 24)} for t in safe_targets],
         "providers": [], "evidence": [], "red_flags": [], "advice": [], "limitations": [], "manual_searches": [],
+        "domain_infrastructure": [], "official_registry_checks": [],
         "checked_at": _now(), "version": "toroka-intelligence-v1",
     }
     result["red_flags"].extend(analyse_submitted_content(submitted_text, result["category"]))
@@ -1218,21 +1221,28 @@ def investigate_public_targets(
     scrape_key = getattr(settings, "scrape_creators_api_key", "") or ""
     places_key = getattr(settings, "google_places_api_key", "") or ""
     urlscan_key = getattr(settings, "urlscan_api_key", "") or ""
+    domain_intel_enabled = bool(getattr(settings, "enable_domain_intelligence", False))
+    certspotter_key = getattr(settings, "certspotter_api_key", "") or ""
+    domain_intel_subdomains = bool(getattr(settings, "domain_intel_include_subdomains", False))
     ttl = int(getattr(settings, "intelligence_cache_ttl_seconds", 900) or 0)
     all_evidence: list[dict[str, Any]] = []
     all_map_candidates: list[dict[str, Any]] = []
     map_statuses: list[str] = []
+    processed_infrastructure_domains: set[str] = set()
     search_fn = web_search_fn or public_search
 
     for target in safe_targets:
         # Cache identity includes provider availability. Otherwise a no-key result
         # could be served later after the operator configures a provider (or vice versa).
-        provider_profile = f"tavily:{bool(tavily_key)}|weir:{bool(weir_key)}|scrape:{bool(scrape_key)}|places:{bool(places_key)}|urlscan:{bool(urlscan_key)}"
-        cache_key = hashlib.sha256((_target_key(target) + "|" + result["category"] + "|" + provider_profile + "|v5").encode()).hexdigest()
+        provider_profile = (f"tavily:{bool(tavily_key)}|weir:{bool(weir_key)}|scrape:{bool(scrape_key)}|"
+                            f"places:{bool(places_key)}|urlscan:{bool(urlscan_key)}|domainintel:{domain_intel_enabled}|"
+                            f"certspotter:{bool(certspotter_key)}|ct_subdomains:{domain_intel_subdomains}")
+        cache_key = hashlib.sha256((_target_key(target) + "|" + result["category"] + "|" + provider_profile + "|v6").encode()).hexdigest()
         cached = _cache_get(cache_key, ttl)
         if cached:
             all_evidence.extend(cached.get("evidence", []))
             all_map_candidates.extend(cached.get("map_candidates", []))
+            result["domain_infrastructure"].extend(cached.get("domain_infrastructure", []))
             result["providers"].extend(cached.get("providers", []))
             if result["category"] == "shop":
                 places_status = next((p.get("status") for p in cached.get("providers", []) if p.get("provider") == "Google Places"), None)
@@ -1242,6 +1252,7 @@ def investigate_public_targets(
 
         local_evidence: list[dict[str, Any]] = []
         local_providers: list[dict[str, Any]] = []
+        local_domain_infrastructure: list[dict[str, Any]] = []
         # Run independent providers concurrently to keep the synchronous chat endpoint bounded.
         queries = _query_terms(target, result["category"])[:max(1, min(max_queries_per_target, 2))]
 
@@ -1469,6 +1480,45 @@ def investigate_public_targets(
                 if len(domain_sources) >= 2:
                     break
 
+        # Build 2: bounded passive domain/infrastructure investigation. A domain is
+        # queried only when it is the submitted target or an explicit outbound link
+        # from a target-controlled public profile/page. Never derive this list from
+        # arbitrary third-party search-result domains.
+        if domain_intel_enabled:
+            for infra_domain, parent_evidence_id in list(domain_sources.items())[:2]:
+                if len(result["domain_infrastructure"]) + len(local_domain_infrastructure) >= 2:
+                    break
+                if infra_domain in processed_infrastructure_domains:
+                    continue
+                processed_infrastructure_domains.add(infra_domain)
+                try:
+                    infra = investigate_domain_infrastructure(
+                        infra_domain,
+                        ct_api_key=certspotter_key,
+                        include_subdomains=domain_intel_subdomains,
+                    )
+                    if isinstance(infra, dict):
+                        if parent_evidence_id:
+                            infra["linked_from_evidence_id"] = parent_evidence_id
+                        local_domain_infrastructure.append(infra)
+                        local_evidence.extend([x for x in infra.get("evidence", []) if isinstance(x, dict)])
+                        for provider in infra.get("providers", []):
+                            if not isinstance(provider, dict):
+                                continue
+                            local_providers.append({
+                                **provider,
+                                "query_domain": infra_domain,
+                            })
+                except Exception as exc:
+                    logger.warning("Domain infrastructure lookup failed: %s", type(exc).__name__)
+                    local_providers.append({
+                        "provider": "Toroka domain intelligence", "operation": "passive_infrastructure_lookup",
+                        "status": "failed", "query_domain": infra_domain,
+                        "results_retrieved": 0, "results_relevant": 0,
+                        "failure_reason": type(exc).__name__,
+                        "detail": "Domain infrastructure lookup could not be completed; no conclusion was inferred.",
+                    })
+
         for scanned_domain, parent_evidence_id in list(domain_sources.items())[:2]:
             scan_result = search_historical_domain(urlscan_key, scanned_domain)
             scan_records = scan_result.get("results") if isinstance(scan_result.get("results"), list) else []
@@ -1535,9 +1585,11 @@ def investigate_public_targets(
         # Provider records cached separately by exact public target, never by user/session.
         if local_evidence or local_map_candidates or any(p.get("status") in {"checked", "checked_no_match"} for p in local_providers):
             _cache_set(cache_key, {"evidence": _dedupe_evidence(local_evidence), "providers": local_providers,
-                                   "map_candidates": local_map_candidates}, ttl)
+                                   "map_candidates": local_map_candidates,
+                                   "domain_infrastructure": local_domain_infrastructure}, ttl)
         all_evidence.extend(local_evidence)
         all_map_candidates.extend(local_map_candidates)
+        result["domain_infrastructure"].extend(local_domain_infrastructure)
         result["providers"].extend(local_providers)
 
     result["evidence"] = _dedupe_evidence(all_evidence)
@@ -1547,6 +1599,36 @@ def investigate_public_targets(
     result["evidence_graph"] = build_evidence_graph(safe_targets, result["evidence"], shop_discovery=result.get("shop_discovery"))
     result["red_flags"].extend(detect_evidence_flags(result["category"], result["evidence"]))
     result["red_flags"].extend(detect_cross_source_flags(result["evidence"]))
+
+    # Kenya-specific official verification is linked as a manual, authoritative
+    # workflow. No private registry endpoint is scraped and no registration is
+    # described as checked unless a separate authorized source returns a record.
+    if result["category"] in {"job", "shop"}:
+        result["official_registry_checks"].append({
+            "registry": "Business Registration Service (BRS)",
+            "status": "manual_verification_required",
+            "automated_lookup_performed": False,
+            "official_portal_url": "https://brs.ecitizen.go.ke/",
+            "what_to_verify": [
+                "Search the exact legal or registered business name through the official BRS/eCitizen service.",
+                "Where appropriate, obtain an official search or company record and compare the registration number and current status.",
+                "Compare the record with the seller's claimed legal identity; a similar name is not an identity match.",
+            ],
+            "interpretation_note": "A registration record does not prove that a social account or website is operated by that business, nor that a particular offer is genuine.",
+        })
+    if result["category"] == "job":
+        result["official_registry_checks"].append({
+            "registry": "National Employment Authority (NEA)",
+            "status": "manual_verification_required",
+            "automated_lookup_performed": False,
+            "official_portal_url": "https://www.diaspora.go.ke/verify",
+            "what_to_verify": [
+                "Search the exact recruitment agency name or licence details on the official NEA verification portal.",
+                "Check the displayed licence status and validity period on the date you perform the lookup.",
+                "Independently confirm the vacancy and employer using contact details obtained from the employer's own official website.",
+            ],
+            "interpretation_note": "A listed agency licence does not verify every job advertisement or prove that a person contacting you represents that agency.",
+        })
 
     if result["category"] == "job":
         result["advice"] = [

@@ -642,7 +642,7 @@ function evidenceSourceNode(source) {
   );
 }
 function intelligencePanels(parent, assessment) {
-  parent.querySelectorAll(".det-intel-evidence, .det-shop-discovery, .det-evidence-graph").forEach(node => node.remove());
+  parent.querySelectorAll(".det-intel-evidence, .det-shop-discovery, .det-domain-infrastructure, .det-official-registry, .det-evidence-graph").forEach(node => node.remove());
   const intel = assessment && assessment.investigation_intelligence;
   if (!intel) return;
   const explanation = intel.evidence_explanation;
@@ -711,6 +711,86 @@ function intelligencePanels(parent, assessment) {
     if (shop.map_note) children.push(h("p", { class: "evidence-intro", text: shop.map_note }));
     if (shop.location_note) children.push(h("p", { class: "evidence-intro", text: shop.location_note }));
     parent.append(h("details", { class: "det-shop-discovery", open: locations.length > 0 || storefronts.length > 0 || mapItems.length > 0 }, h("summary", { text: t("r_location") }), ...children));
+  }
+
+  const infrastructure = Array.isArray(intel.domain_infrastructure) ? intel.domain_infrastructure : [];
+  if (infrastructure.length) {
+    const rows = infrastructure.slice(0, 2).map(bundle => {
+      const rdap = bundle.rdap || {};
+      const registration = rdap.events && rdap.events.registration;
+      const dnsRecords = (bundle.dns && bundle.dns.records || []).slice(0, 10);
+      const ipRows = (bundle.ip_observations || []).slice(0, 2);
+      const ctIssues = (bundle.certificate_transparency && bundle.certificate_transparency.issuances || []).slice(0, 5);
+      const providerRows = (bundle.providers || []).map(provider => h("li", { class: "evidence-source" },
+        h("strong", { text: provider.provider || t("domainintel_provider") }),
+        h("span", { class: "evidence-tag", text: String(provider.status || "unknown").replaceAll("_", " ") }),
+        provider.detail ? h("small", { class: "evidence-meta", text: provider.detail }) : null
+      ));
+      const children = [];
+      children.push(h("p", { class: "evidence-intro", text: bundle.interpretation_note || t("domainintel_note") }));
+      if (registration) children.push(h("p", { class: "evidence-meta", text: `${t("domainintel_registration")}: ${registration}` }));
+      if (rdap.registrar) children.push(h("p", { class: "evidence-meta", text: `${t("domainintel_registrar")}: ${rdap.registrar}` }));
+      if (dnsRecords.length) children.push(h("div", { class: "location-list-wrap" },
+        h("h4", { text: t("domainintel_dns") }),
+        h("ul", { class: "location-list" }, dnsRecords.map(record => h("li", { class: "location-claim" },
+          h("span", { class: "evidence-tag", text: record.type || "DNS" }),
+          h("strong", { text: String(record.value || "").slice(0, 180) }),
+          record.priority !== undefined ? h("small", { class: "evidence-meta", text: `Priority: ${record.priority}` }) : null,
+          record.ttl !== undefined && record.ttl !== null ? h("small", { class: "evidence-meta", text: `TTL: ${record.ttl}` }) : null
+        )))));
+      if (ipRows.length) children.push(h("div", { class: "location-list-wrap" },
+        h("h4", { text: t("domainintel_network") }),
+        h("ul", { class: "location-list" }, ipRows.map(row => {
+          const asn = row.asn_lookup || {};
+          const asnRdap = row.asn_rdap || {};
+          const ipRdap = row.rdap || {};
+          const details = [asn.asn ? `AS${asn.asn}` : "", asnRdap.name || "", asn.prefix || "", ipRdap.name || ""].filter(Boolean).join(" · ");
+          return h("li", { class: "location-claim" }, h("strong", { text: row.ip || "IP address" }),
+            details ? h("small", { class: "evidence-meta", text: details }) : null,
+            asn.registry_country ? h("small", { class: "evidence-meta", text: `${t("domainintel_registry_country")}: ${asn.registry_country} (${t("domainintel_not_geo")})` }) : null,
+            safeEvidenceUrl(asnRdap.rdap_url || ipRdap.rdap_url) ? h("a", { href: safeEvidenceUrl(asnRdap.rdap_url || ipRdap.rdap_url), rel: "noopener noreferrer", target: "_blank", text: t("open_source") }) : null
+          );
+        }))));
+      if (ctIssues.length) children.push(h("div", { class: "location-list-wrap" },
+        h("h4", { text: t("domainintel_ct") }),
+        h("ul", { class: "location-list" }, ctIssues.map(issue => h("li", { class: "location-claim" },
+          h("strong", { text: (issue.dns_names || []).slice(0, 6).join(", ") || t("domainintel_ct_record") }),
+          issue.not_before || issue.not_after ? h("small", { class: "evidence-meta", text: `${issue.not_before || "?"} – ${issue.not_after || "?"}` }) : null,
+          issue.issuer ? h("small", { class: "evidence-meta", text: `${t("domainintel_issuer")}: ${issue.issuer}` }) : null,
+          issue.revoked === true ? h("span", { class: "evidence-tag", text: t("domainintel_revoked") }) : null
+        )))));
+      if (providerRows.length) children.push(h("div", { class: "location-list-wrap" }, h("h4", { text: t("domainintel_sources") }), h("ul", { class: "evidence-source-list" }, providerRows)));
+      const rdapUrl = safeEvidenceUrl(rdap.rdap_url);
+      const dnsUrl = safeEvidenceUrl(bundle.dns && bundle.dns.source_url);
+      const ctUrl = safeEvidenceUrl(bundle.certificate_transparency && bundle.certificate_transparency.source_url);
+      const links = [rdapUrl, dnsUrl, ctUrl].filter(Boolean);
+      if (links.length) children.push(h("div", { class: "evidence-source-list" }, links.map(url => h("a", { href: url, rel: "noopener noreferrer", target: "_blank", text: t("open_source") }))));
+      return h("li", { class: "location-claim" }, h("strong", { text: bundle.domain || t("domainintel_domain") }),
+        h("span", { class: "evidence-tag", text: String(bundle.status || "unknown").replaceAll("_", " ") }),
+        ...children
+      );
+    });
+    parent.append(h("details", { class: "det-domain-infrastructure", open: true },
+      h("summary", { text: t("domainintel_h") }),
+      h("p", { class: "evidence-intro", text: t("domainintel_note") }),
+      h("ul", { class: "location-list" }, rows)
+    ));
+  }
+
+  const registryChecks = Array.isArray(intel.official_registry_checks) ? intel.official_registry_checks : [];
+  if (registryChecks.length) {
+    const registryRows = registryChecks.slice(0, 3).map(item => h("li", { class: "location-claim" },
+      h("strong", { text: item.registry || t("registry_h") }),
+      h("span", { class: "evidence-tag", text: t("registry_manual") }),
+      h("p", { class: "evidence-snippet", text: item.interpretation_note || t("registry_note") }),
+      item.what_to_verify && item.what_to_verify.length ? h("ul", { class: "evidence-source-list" }, item.what_to_verify.slice(0, 5).map(step => h("li", { text: step }))) : null,
+      safeEvidenceUrl(item.official_portal_url) ? h("a", { href: safeEvidenceUrl(item.official_portal_url), rel: "noopener noreferrer", target: "_blank", text: t("registry_open") }) : null
+    ));
+    parent.append(h("details", { class: "det-official-registry", open: true },
+      h("summary", { text: t("registry_h") }),
+      h("p", { class: "evidence-intro", text: t("registry_note") }),
+      h("ul", { class: "location-list" }, registryRows)
+    ));
   }
 
   const graph = intel.evidence_graph;

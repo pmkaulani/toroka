@@ -7,9 +7,12 @@ and intentionally excludes phone numbers, payment identifiers and private narrat
 from __future__ import annotations
 
 import hashlib
+import ipaddress
 import re
 from typing import Any
 from urllib.parse import urlsplit
+
+from ssi_connectors.domain_intelligence import normalize_domain
 
 
 def _stable_id(prefix: str, value: str) -> str:
@@ -158,6 +161,72 @@ def build_evidence_graph(
             out_node = add_node(_stable_id("domain", out_host), "domain", out_host)
             add_edge(e_node, out_node, "profile_links_to", eid, "explicit_outbound_profile_link", "context")
 
+    # Passive infrastructure observations are represented as contextual links.
+    # Shared IPs, nameservers, ASNs or certificate names are not ownership evidence.
+    allowed_infrastructure = {
+        "ip_address": {"resolves_to_ip", "domain_address_observed", "network_allocation_for"},
+        "autonomous_system": {"announced_by_asn", "network_allocation_for"},
+        "network_prefix": {"announced_prefix"},
+        "nameserver": {"uses_nameserver"},
+        "mail_exchange": {"uses_mail_exchange"},
+        "subdomain": {"certificate_covers_hostname"},
+    }
+    for item in (evidence or [])[:30]:
+        if not isinstance(item, dict):
+            continue
+        eid = str(item.get("evidence_id") or "")[:80]
+        evidence_node = evidence_node_by_id.get(eid)
+        subject = normalize_domain(item.get("subject_domain"))
+        if not eid or not evidence_node or not subject:
+            continue
+        domain_node = add_node(_stable_id("domain", subject), "domain", subject,
+                               observation_scope="infrastructure_subject_not_owner_identity")
+        add_edge(evidence_node, domain_node, "infrastructure_observation_for", eid,
+                 "explicit_rdns_dns_rdap_ct_subject", "context")
+        parent_eid = str(item.get("linked_from_evidence_id") or "")[:80]
+        parent_node = evidence_node_by_id.get(parent_eid)
+        if parent_node:
+            add_edge(parent_node, domain_node, "explicit_profile_link_domain_investigated", eid,
+                     "seller_controlled_public_link_then_passive_lookup", "context")
+        for raw_link in (item.get("infrastructure_links") or [])[:30]:
+            if not isinstance(raw_link, dict):
+                continue
+            kind = str(raw_link.get("kind") or "")
+            relation = str(raw_link.get("relation") or "")
+            value = str(raw_link.get("value") or "").strip()
+            if kind not in allowed_infrastructure or relation not in allowed_infrastructure[kind] or not value:
+                continue
+            label = value[:180]
+            if kind == "ip_address":
+                try:
+                    parsed_ip = ipaddress.ip_address(value)
+                    if not parsed_ip.is_global:
+                        continue
+                    label = str(parsed_ip)
+                except ValueError:
+                    continue
+            elif kind == "autonomous_system":
+                if not re.fullmatch(r"AS[1-9][0-9]{0,9}", value.upper()):
+                    continue
+                label = value.upper()
+            elif kind == "network_prefix":
+                try:
+                    network = ipaddress.ip_network(value, strict=False)
+                    if not network.is_global:
+                        continue
+                    label = str(network)
+                except ValueError:
+                    continue
+            else:
+                clean_domain = normalize_domain(value)
+                if not clean_domain:
+                    continue
+                label = clean_domain
+            infra_node = add_node(_stable_id(kind, label), kind, label,
+                                  observation_scope="public_infrastructure_context_not_owner_identity")
+            basis = str(raw_link.get("basis") or "provider_observation")[:100]
+            add_edge(domain_node, infra_node, relation, eid, basis, "context")
+
     # Preserve the provenance chain when a social profile explicitly links a domain
     # that urlscan.io has seen before. This is a contextual relationship, not proof
     # that the profile and domain share an owner or that the historical scan is current.
@@ -199,7 +268,7 @@ def build_evidence_graph(
                 add_edge(tid, pid, "possible_same_business_as", None, "directory_name_search_candidate_only", "weak")
 
     return {
-        "version": "evidence-graph-v1",
+        "version": "evidence-graph-v2",
         "scope": "this_investigation_only",
         "nodes": list(nodes.values())[:60],
         "edges": edges[:100],
@@ -210,5 +279,5 @@ def build_evidence_graph(
             "relationships": min(len(edges), 100),
             "map_listing_candidates": min(len(places or []), 5),
         },
-        "interpretation_note": "Relationships show where information came from, not that two entities share an owner. Map listings and third-party claims are candidates until independently verified.",
+        "interpretation_note": "Relationships show where information came from, not that two entities share an owner. Shared IPs, nameservers, ASNs and certificate names are infrastructure context, not common-ownership evidence. Map listings and third-party claims are candidates until independently verified.",
     }

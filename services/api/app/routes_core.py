@@ -818,6 +818,8 @@ def run_check(db: Session, c: Ctx, chk: m.Check) -> None:
                 "evidence_explanation": verdict_explanation,
                 "shop_discovery": intelligence_result.get("shop_discovery"),
                 "evidence_graph": intelligence_result.get("evidence_graph"),
+                "domain_infrastructure": intelligence_result.get("domain_infrastructure", []),
+                "official_registry_checks": intelligence_result.get("official_registry_checks", []),
                 "summary": intelligence_result.get("summary", ""),
                 "checked_at": intelligence_result.get("checked_at"),
             }
@@ -1314,6 +1316,9 @@ def general_chat(body: ChatRequest, request: Request, db: Session = Depends(get_
                 "evidence": intelligence_result.get("evidence", [])[:30],
                 "evidence_explanation": direct_evidence_explanation,
                 "shop_discovery": intelligence_result.get("shop_discovery"),
+                "evidence_graph": intelligence_result.get("evidence_graph"),
+                "domain_infrastructure": intelligence_result.get("domain_infrastructure", []),
+                "official_registry_checks": intelligence_result.get("official_registry_checks", []),
                 "advice": list(dict.fromkeys(investigation_advice))[:10],
                 "limitations": direct_limitations,
             }

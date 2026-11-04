@@ -32,6 +32,11 @@ class Settings:
     blocklist_path: str = ""
     enable_link_fetch: bool = False
     enable_rdap: bool = False
+    # Build 2 passive infrastructure intelligence is opt-in to avoid unexpected
+    # third-party lookups. CT expansion is separately opt-in because it can be rate-limited.
+    enable_domain_intelligence: bool = False
+    certspotter_api_key: str = ""
+    domain_intel_include_subdomains: bool = False
     geocoder_user_agent: str = ""
     # rate limits: (requests, window seconds)
     rl_checks: tuple = (20, 3600)
@@ -99,7 +104,9 @@ class Settings:
                 hmac_key=g("HMAC_KEY", ""), diagnostics_api_key=g("DIAGNOSTICS_API_KEY", ""), storage_dir=g("STORAGE_DIR", cls.storage_dir), public_base_url=g("PUBLIC_BASE_URL", cls.public_base_url),
                 retention_days=int(g("RETENTION_DAYS", 7)), trust_proxy_headers=g("TRUST_PROXY_HEADERS") == "1",
                 webrisk_api_key=g("WEBRISK_API_KEY", ""), tavily_api_key=g("TAVILY_API_KEY", ""), weir_api_key=g("WEIR_API_KEY", ""), scrape_creators_api_key=g("SCRAPE_CREATORS_API_KEY", ""), intelligence_cache_ttl_seconds=max(0, min(int(g("INTELLIGENCE_CACHE_TTL_SECONDS", 900)), 86400)), google_places_api_key=g("GOOGLE_PLACES_API_KEY", ""), urlscan_api_key=g("URLSCAN_API_KEY", ""), blocklist_path=g("BLOCKLIST_PATH", ""), enable_link_fetch=g("ENABLE_LINK_FETCH") == "1",
-                enable_rdap=g("ENABLE_RDAP") == "1", geocoder_user_agent=g("GEOCODER_USER_AGENT", ""), dev_echo_codes=g("DEV_ECHO_CODES") == "1",
+                enable_rdap=g("ENABLE_RDAP") == "1", enable_domain_intelligence=g("ENABLE_DOMAIN_INTELLIGENCE") == "1",
+                certspotter_api_key=g("CERTSPOTTER_API_KEY", ""), domain_intel_include_subdomains=g("DOMAIN_INTEL_INCLUDE_SUBDOMAINS") == "1",
+                geocoder_user_agent=g("GEOCODER_USER_AGENT", ""), dev_echo_codes=g("DEV_ECHO_CODES") == "1",
                 whatsapp_verify_token=g("WHATSAPP_VERIFY_TOKEN", ""), whatsapp_app_secret=g("WHATSAPP_APP_SECRET", ""), whatsapp_token=g("WHATSAPP_TOKEN", ""),
                 whatsapp_phone_number_id=g("WHATSAPP_PHONE_NUMBER_ID", ""), at_username=g("AT_USERNAME", ""), at_api_key=g("AT_API_KEY", ""),
                 at_shortcode=g("AT_SHORTCODE", ""), at_callback_secret=g("AT_CALLBACK_SECRET", ""),
