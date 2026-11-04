@@ -8,6 +8,9 @@ const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
 const COV = { checked: "cov_checked", not_checked: "cov_not_checked", could_not_check: "cov_could_not_check", not_found: "cov_not_found" };
 const LABEL_PREFIX = /^(High risk|Suspicious\. Verify first|Verified|Hatari kubwa|Una shaka\. Thibitisha kwanza|Imethibitishwa)\.\s*/;
 const MAX_FILES = 5, MAX_BYTES = 5 * 1024 * 1024, OK_TYPES = ["image/png", "image/jpeg", "image/webp"];
+const EMAIL_SOURCE_EXTENSIONS = [".eml", ".headers", ".txt"];
+const isEmailSourceFile = file => !!file && EMAIL_SOURCE_EXTENSIONS.some(ext => String(file.name || "").toLowerCase().endsWith(ext));
+const isImageFile = file => !!file && OK_TYPES.includes(file.type);
 const STORAGE_KEY = "toroka_conversations";
 let current = null, pending = null, files = [], busy = false, activeRecovery = null, chatHistory = [], activeConversationId = null, convMessages = [], isReplaying = false;
 let sidebarView = "recent", sidebarSearchQuery = "", lastSidebarFocus = null;
@@ -410,6 +413,15 @@ function userMsg(text, imgs = [], tKey = null, attachmentNames = []) {
   const b = h("div", { class: "bubble" }, h("span", { class: "sr-only", text: t("you_said") + " " }), said);
   const liveImgs = isReplaying ? imgs.filter(u => typeof u === "string" && !u.startsWith("blob:")) : imgs;
   liveImgs.forEach(u => b.append(h("img", { src: u, alt: t("shot_note") })));
+  if (!isReplaying) {
+    const documentNames = (attachmentNames || []).filter(name => /\.(?:eml|headers|txt)$/i.test(String(name || "")));
+    if (documentNames.length) {
+      const list = h("div", { class: "attachment-history attachment-document-history", "aria-label": "Attached email source" });
+      documentNames.slice(0, MAX_FILES).forEach(name => list.append(h("span", { class: "attachment-history-item" },
+        svg("attachment-file-icon", "M8 3h6l5 5v13H5V3z", "M14 3v6h5"), h("span", { text: name }))));
+      b.append(list);
+    }
+  }
   if (isReplaying && !liveImgs.length && (attachmentNames.length || imgs.length)) {
     const names = attachmentNames.length ? attachmentNames : [t("saved_attachment")];
     const list = h("div", { class: "attachment-history", "aria-label": t("saved_attachments_label") });
@@ -436,13 +448,12 @@ function inlineTokens(str) {
   let last = 0, match;
   while ((match = pattern.exec(str)) !== null) {
     if (match.index > last) tokens.push({ type: "text", value: str.slice(last, match.index) });
-    const raw = match[0];
-    if (raw.startsWith("**")) tokens.push({ type: "strong", value: raw.slice(2, -2) });
+    const token = match[0];
+    if (token.startsWith("**")) tokens.push({ type: "strong", value: token.slice(2, -2) });
     else {
-      const parsed = /^\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)$/.exec(raw);
-      const url = parsed ? safeEvidenceUrl(parsed[2]) : null;
-      if (parsed && url) tokens.push({ type: "link", value: parsed[1], url });
-      else tokens.push({ type: "text", value: raw });
+      const link = /^\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)$/.exec(token);
+      if (link && safeEvidenceUrl(link[2])) tokens.push({ type: "link", value: link[1], url: safeEvidenceUrl(link[2]) });
+      else tokens.push({ type: "text", value: token });
     }
     last = pattern.lastIndex;
   }
@@ -504,22 +515,19 @@ function renderRichContent(container, text) {
 }
 async function typeInlineContent(container, value, totalChars) {
   const tokens = inlineTokens(value);
-  const share = value.length / Math.max(1, totalChars);
-  const ticks = Math.max(2, Math.min(24, Math.round(share * 180)));
+  const budget = Math.max(2, Math.round((value.length / Math.max(1, totalChars)) * 44));
   for (const token of tokens) {
     let target = container;
     if (token.type === "strong") { target = h("strong"); container.append(target); }
-    else if (token.type === "link") {
-      target = h("a", { href: token.url, target: "_blank", rel: "noopener noreferrer" });
-      container.append(target);
-    }
+    else if (token.type === "link") { target = h("a", { href: token.url, target: "_blank", rel: "noopener noreferrer" }); container.append(target); }
+    const valueText = token.value;
     const node = document.createTextNode("");
     target.append(node);
-    if (reduced || token.value.length < 12) { node.textContent = token.value; continue; }
-    const tokenTicks = Math.max(1, Math.round(ticks * token.value.length / Math.max(1, value.length)));
-    for (let i = 1; i <= tokenTicks; i++) {
-      node.textContent = token.value.slice(0, Math.ceil(token.value.length * i / tokenTicks));
-      await new Promise(resolve => setTimeout(resolve, 9));
+    if (reduced || valueText.length < 10) { node.textContent = valueText; continue; }
+    const ticks = Math.max(1, Math.round(budget * (valueText.length / Math.max(1, value.length))));
+    for (let i = 1; i <= ticks; i++) {
+      node.textContent = valueText.slice(0, Math.ceil(valueText.length * i / ticks));
+      await new Promise(resolve => setTimeout(resolve, 8));
     }
   }
 }
@@ -527,18 +535,13 @@ async function renderRichContentStreaming(container, text) {
   if (reduced || isReplaying) { renderRichContent(container, text); return; }
   container.replaceChildren();
   const blocks = parseFormattedBlocks(text);
-  const totalChars = Math.max(1, blocks.reduce((sum, block) => sum + (
-    block.type === "ul" || block.type === "ol"
-      ? block.items.reduce((count, item) => count + item.length, 0)
-      : block.text.length
-  ), 0));
+  const totalChars = Math.max(1, blocks.reduce((sum, block) => sum + (block.type === "ul" || block.type === "ol" ? block.items.reduce((n, item) => n + item.length, 0) : block.text.length), 0));
   for (const block of blocks) {
     if (block.type === "ul" || block.type === "ol") {
       const list = h(block.type, { class: "bot-points" });
       container.append(list);
       for (const item of block.items) {
-        const li = h("li"); list.append(li);
-        await typeInlineContent(li, item, totalChars);
+        const li = h("li"); list.append(li); await typeInlineContent(li, item, totalChars);
       }
     } else {
       const tag = /^h[2-4]$/.test(block.type) ? block.type : "p";
@@ -590,7 +593,7 @@ function thinkingStepKeys(context = "") {
   if (/\b(?:email|e-mail|from:|reply-to:|return-path|dkim|spf|dmarc|\.eml)\b/.test(value)) {
     return ["th_email_1", "th_email_2", "th_email_3", "th_email_4", "th5"];
   }
-  if (/https?:\/\/|www\.|\b(?:[a-z0-9-]+\.)+(?:com|org|net|co\.ke|ke)\b|instagram|tiktok|facebook|@\w+/.test(value)) {
+  if (/https?:\/\/|www\.|\b(?:\w+\.)+(?:com|org|net|co\.ke|ke)\b|instagram|tiktok|facebook|@\w+/.test(value)) {
     return ["th_web_1", "th_web_2", "th_web_3", "th_web_4", "th5"];
   }
   if (/\b(?:m[\s-]?pesa|till|paybill|payment|paid|transaction|receipt|bank details)\b/.test(value)) {
@@ -604,15 +607,17 @@ function thinkingStepKeys(context = "") {
 function think(context = "") {
   const m = botMsg();
   const keys = thinkingStepKeys(context);
-  const line = h("span", { class: "think-copy", "aria-hidden": "true", text: t(keys[0]) });
-  const live = h("span", { class: "sr-only", role: "status", "aria-live": "polite", text: t(keys[0]) });
+  const initial = t(keys[0]);
+  const line = h("span", { class: "think-copy", "aria-hidden": "true", text: initial });
+  // Keep the animated visual text separate from the live region so assistive
+  // technology hears each complete update, not every typed character.
+  const live = h("span", { class: "sr-only", role: "status", "aria-live": "polite", text: initial });
   const row = h("div", { class: "think" },
-    h("span", { class: "think-orbit", "aria-hidden": "true" }),
-    line, h("span", { class: "dots", "aria-hidden": "true" }), live
+    h("span", { class: "think-orbit", "aria-hidden": "true" }), line,
+    h("span", { class: "dots", "aria-hidden": "true" }), live
   );
   m.body.append(row); run(m.avatar.firstChild); say(t("thinking"));
-
-  let index = 0, typeTimer = null, stageTimer = null, stopped = false;
+  let index = 0, typeTimer = null, cycleTimer = null, stopped = false;
   const typeLine = value => {
     if (typeTimer) clearTimeout(typeTimer);
     live.textContent = value;
@@ -621,26 +626,23 @@ function think(context = "") {
     let position = 0;
     const tick = () => {
       if (stopped) return;
-      position = Math.min(value.length, position + (position < 24 ? 2 : 3));
+      position = Math.min(value.length, position + Math.max(1, Math.ceil(value.length / 30)));
       line.textContent = value.slice(0, position);
-      if (position < value.length) typeTimer = setTimeout(tick, 18);
+      if (position < value.length) typeTimer = setTimeout(tick, 14);
     };
     tick();
   };
-  const advance = () => {
-    if (stopped) return;
-    if (index < keys.length - 1) {
-      index += 1;
+  typeLine(initial);
+  if (!reduced) {
+    cycleTimer = setInterval(() => {
+      if (stopped) return;
+      index = (index + 1) % keys.length;
       typeLine(t(keys[index]));
-      stageTimer = setTimeout(advance, 2600);
-    } else {
-      stageTimer = setTimeout(() => typeLine(t("th_wait")), 4200);
-    }
-  };
-  if (!reduced) stageTimer = setTimeout(advance, 2500);
+    }, 1850);
+  }
   return { stop() {
     stopped = true;
-    if (stageTimer) clearTimeout(stageTimer);
+    if (cycleTimer) clearInterval(cycleTimer);
     if (typeTimer) clearTimeout(typeTimer);
     m.li.remove();
   } };
@@ -1092,20 +1094,6 @@ async function sendFeedback(checkId, sampleText, assessment, feedbackType, comme
   }
 }
 
-function responseHighlights(parent, findings, limit = 2) {
-  const items = (findings || []).filter(f => f && f.plain_text && f.why_it_matters).slice(0, limit);
-  if (!items.length) return;
-  const section = h("section", { class: "response-highlights", "aria-label": t("r_highlights") },
-    h("h3", { text: t("r_highlights") }),
-    h("div", { class: "response-highlight-list" }, items.map(item => h("article", { class: "response-highlight" },
-      h("strong", { text: item.plain_text }),
-      h("p", { text: item.why_it_matters }),
-      item.excerpt ? h("blockquote", { text: `“${item.excerpt}”` }) : null
-    )))
-  );
-  parent.append(section);
-}
-
 async function renderCheck(data, text, bubble) {
   const a = data.assessment, m = botMsg();
   if (!a || data.status === "failed_safely") { await stream(m.body.appendChild(h("p")), t("failed_safely")); return; }
@@ -1119,9 +1107,19 @@ async function renderCheck(data, text, bubble) {
   } else {
     await stream(p, strip(a.label, a.summary, !!pay));
   }
-  // Put urgent advice immediately after the answer, before supporting details.
+  const visibleFindings = (a.findings || []).filter(f => f && f.plain_text && f.why_it_matters).slice(0, 2);
+  if (visibleFindings.length) {
+    const highlights = h("section", { class: "response-highlights", "aria-label": t("r_highlights") },
+      h("h3", { text: t("r_highlights") }),
+      h("div", { class: "response-highlight-list" }, visibleFindings.map(f => h("article", { class: "response-highlight" },
+        h("strong", { text: f.plain_text }),
+        h("p", { text: f.why_it_matters }),
+        f.excerpt ? h("blockquote", { text: `“${f.excerpt}”` }) : null
+      )))
+    );
+    m.body.append(highlights);
+  }
   if (pay) m.body.append(h("div", { class: "callout" }, h("strong", { "data-t-key": "before_pay", text: t("before_pay") }), h("span", { class: "callout-text", text: " " + pay.text })));
-  responseHighlights(m.body, a.findings, 2);
   const rest = a.next_steps.filter(n => n !== pay);
   if (rest.length) {
     const nsWrap = h("div", { class: "next-steps-wrap" },
@@ -1203,7 +1201,7 @@ function parseId(s) {
   return null;
 }
 async function lookup(type, value) {
-  const th = think(value);
+  const th = think();
   try {
     const d = await api(`/v1/reports/search?type=${encodeURIComponent(type)}&value=${encodeURIComponent(value)}`); th.stop();
     if (!d.found) {
@@ -1370,11 +1368,18 @@ function fit() { const e = box(); e.style.height = "auto"; e.style.height = (!e.
 function syncSend() { $("#send").disabled = busy || (!box().value.trim() && !files.length); }
 function renderFiles() {
   const ul = $("#attachments"); ul.replaceChildren(); ul.hidden = !files.length;
+  const hasImages = files.some(isImageFile);
   const consentWrap = $("#campaign-image-consent");
-  if (consentWrap) consentWrap.hidden = !files.length;
-  if (!files.length) { const toggle = $("#campaign-image-consent-toggle"); if (toggle) toggle.checked = false; }
-  files.forEach((f, i) => { const b = h("button", { type: "button", "aria-label": t("remove_file") }, h("span", { text: "×", "aria-hidden": "true" })); b.addEventListener("click", () => { files.splice(i, 1); renderFiles(); syncSend(); box().focus(); });
-    ul.append(h("li", {}, h("img", { src: f.__url, alt: f.name }), b)); });
+  if (consentWrap) consentWrap.hidden = !hasImages;
+  if (!hasImages) { const toggle = $("#campaign-image-consent-toggle"); if (toggle) toggle.checked = false; }
+  files.forEach((f, i) => {
+    const remove = h("button", { type: "button", "aria-label": t("remove_file") }, h("span", { text: "×", "aria-hidden": "true" }));
+    remove.addEventListener("click", () => { if (f.__url) URL.revokeObjectURL(f.__url); files.splice(i, 1); renderFiles(); syncSend(); box().focus(); });
+    const preview = isImageFile(f)
+      ? h("img", { src: f.__url, alt: f.name })
+      : h("span", { class: "attachment-file-chip", title: f.name }, svg("attachment-file-icon", "M8 3h6l5 5v13H5V3z", "M14 3v6h5"), h("span", { text: f.name }));
+    ul.append(h("li", { class: isImageFile(f) ? "attachment-image-item" : "attachment-document-item" }, preview, remove));
+  });
 }
 function compressImage(file, maxWidth = 1200) {
   if (!file.type.startsWith("image/") || file.size < 200000) return Promise.resolve(file);
@@ -1396,9 +1401,18 @@ function compressImage(file, maxWidth = 1200) {
 }
 async function addFiles(list) {
   for (const raw of list) {
-    if (!OK_TYPES.includes(raw.type)) { showError(t("err_type")); continue; }
+    const image = isImageFile(raw);
+    const name = String(raw.name || "").toLowerCase();
+    let emailSource = [".eml", ".headers"].some(ext => name.endsWith(ext)) &&
+      ["text/plain", "message/rfc822", "application/octet-stream", ""].includes(raw.type || "");
+    if (!emailSource && name.endsWith(".txt") && (raw.type === "text/plain" || !raw.type)) {
+      try { emailSource = looksLikeRawEmailSource(await raw.slice(0, 128 * 1024).text()); } catch (_) { emailSource = false; }
+    }
+    if (!image && !emailSource) { showError(t("err_type")); continue; }
     if (raw.size > MAX_BYTES || files.length >= MAX_FILES) { showError(t("err_files")); continue; }
-    const f = await compressImage(raw); f.__url = URL.createObjectURL(f); files.push(f);
+    const f = image ? await compressImage(raw) : raw;
+    if (image) f.__url = URL.createObjectURL(f);
+    files.push(f);
   }
   renderFiles(); syncSend();
 }
@@ -1432,8 +1446,6 @@ async function renderUrlInvestigation(inv, replyText, actionChips) {
   } else {
     await stream(pSum, inv.summary);
   }
-
-  responseHighlights(m.body, inv.findings, 3);
 
   if (inv.contradictions && inv.contradictions.length) {
     const cBox = h("div", { class: "contradiction-callout" });
@@ -1544,23 +1556,74 @@ async function doChat(text) {
     saveOrUpdateCurrentConversation(text.slice(0, 32), res.reply);
   } catch (e) { th.stop(); await fail(e); }
 }
+function looksLikeRawEmailSource(text) {
+  if (!text || text.length < 40) return false;
+  const lines = text.split(/\r?\n/).slice(0, 100);
+  const headerNames = ["from", "to", "cc", "subject", "date", "sender", "reply-to", "return-path", "received", "message-id", "authentication-results", "dkim-signature", "mime-version", "content-type"];
+  const found = new Set();
+  for (const line of lines) {
+    const match = /^([A-Za-z][A-Za-z0-9-]{1,40}):\s*/.exec(line);
+    if (match) {
+      const name = match[1].toLowerCase();
+      if (headerNames.includes(name)) found.add(name);
+    }
+  }
+  const hasSender = found.has("from") || found.has("sender");
+  const supporting = ["to", "subject", "date", "received", "return-path", "authentication-results", "dkim-signature", "mime-version"].some(x => found.has(x));
+  return hasSender && supporting && found.size >= 2;
+}
+
+async function doEmailCheck({ file = null, rawText = "", bubble = null, label = "" } = {}) {
+  const context = file ? `email ${file.name || "attachment"}` : rawText.slice(0, 160);
+  const th = think(context || "email investigation");
+  try {
+    const formData = new FormData();
+    if (file) formData.append("file", file, file.name || "original-email.eml");
+    else formData.append("raw_email", rawText);
+    // DNS lookups remain opt-in; the default email analysis is local-first.
+    formData.append("allow_dns_checks", "false");
+    const result = await api("/v1/email/analyze", { method: "POST", form: formData });
+    th.stop();
+    const m = botMsg();
+    const report = h("section", { class: "email-results email-results-chat", "aria-label": "Email investigation findings" });
+    m.body.append(report);
+    renderEmailForensicsResult(result, report);
+    const summary = result.summary || "Email investigation completed.";
+    convMessages.push({ role: "bot", text: summary });
+    saveOrUpdateCurrentConversation(label || "Email investigation", summary);
+    if (bubble && !label) bubble.dataset.emailAnalyzed = "true";
+  } catch (error) {
+    th.stop();
+    await fail(error);
+  }
+}
+
 async function submit(ev) {
   ev && ev.preventDefault(); if (busy) return; clearError();
   const text = box().value.trim(), fl = files.slice(); if (!text && !fl.length) return;
-  const crossCaseImageConsent = fl.length > 0 && $("#campaign-image-consent-toggle")?.checked === true;
+  const emailFile = fl.find(isEmailSourceFile) || null;
+  const imageFiles = fl.filter(isImageFile);
+  const rawEmail = !emailFile && looksLikeRawEmailSource(text);
+  const crossCaseImageConsent = imageFiles.length > 0 && $("#campaign-image-consent-toggle")?.checked === true;
   box().value = ""; files = []; fit(); renderFiles(); busy = true; syncSend();
-  const u = userMsg(text || t("count_shots"), fl.map(f => f.__url), text ? null : "count_shots", fl.map(f => f.name));
+  // Keep the conversation natural: show an attachment label, never dump raw headers into the chat.
+  const displayText = emailFile && !text ? (lang === "sw" ? `Barua pepe asili imeambatishwa: ${emailFile.name}` : `Original email attached: ${emailFile.name}`)
+    : rawEmail ? (lang === "sw" ? "Chanzo cha barua pepe kimetumwa kwa uchunguzi" : "Email source provided for investigation")
+    : (text || (fl.length ? t("count_shots") : ""));
+  const imageUrls = imageFiles.filter(f => f.__url).map(f => f.__url);
+  const u = userMsg(displayText, imageUrls, null, fl.map(f => f.name));
   try {
-    if (fl.length > 0 || looksLikeEvidence(text, fl)) {
-      pending = null;
-      await doCheck(text, fl, u.bubble, crossCaseImageConsent);
+    pending = null;
+    if (emailFile || rawEmail) {
+      await doEmailCheck({ file: emailFile, rawText: rawEmail ? text : "", bubble: u.bubble, label: emailFile?.name || "Email investigation" });
+      // If the user attached screenshots alongside the original email, inspect those in the normal evidence path too.
+      if (imageFiles.length) await doCheck(text || "Screenshots accompanying an email investigation", imageFiles, u.bubble, crossCaseImageConsent);
+    } else if (imageFiles.length > 0 || looksLikeEvidence(text, imageFiles)) {
+      await doCheck(text, imageFiles, u.bubble, crossCaseImageConsent);
     } else if (pending) {
       const fn = pending; pending = null; await fn(text);
     } else {
       const id = parseId(text);
-      // Social handles/profile URLs need the investigation path so Toroka checks public
-      // search leads as well as exact community reports. A bare lookup alone can only say
-      // whether the moderated report database has a match.
       if (id && id[0] !== "domain" && id[0] !== "handle" && text.length < 30 && !fl.length && !current) await lookup(...id);
       else await doChat(text);
     }
@@ -1568,8 +1631,8 @@ async function submit(ev) {
 }
 
 /* ---------- Email forensics: raw .eml/header analysis ---------- */
-function renderEmailForensicsResult(data) {
-  const root = $("#email-forensics-results");
+function renderEmailForensicsResult(data, targetRoot = null) {
+  const root = targetRoot || $("#email-forensics-results");
   if (!root) return;
   root.replaceChildren();
   root.hidden = false;
@@ -1636,55 +1699,6 @@ function renderEmailForensicsResult(data) {
   group(t("email_limits"), (data.limitations || []).map(x => ({ main: x })));
 }
 
-function initEmailForensics() {
-  const dialog = $("#email-forensics-dialog");
-  const form = $("#email-forensics-form");
-  if (!dialog || !form) return;
-  const file = $("#email-raw-file"), pasted = $("#email-raw-text"), status = $("#email-forensics-status");
-  const dns = $("#email-dns-consent"), submitButton = $("#email-forensics-submit"), results = $("#email-forensics-results");
-  $("#email-forensics-open")?.addEventListener("click", () => {
-    closeMobileSidebar(false);
-    dialog.showModal();
-  });
-  $("#email-forensics-close")?.addEventListener("click", () => dialog.close());
-  $("#email-forensics-cancel")?.addEventListener("click", () => dialog.close());
-  file?.addEventListener("change", () => { if (file.files?.length) pasted.value = ""; });
-  pasted?.addEventListener("input", () => { if (pasted.value.trim()) file.value = ""; });
-  form.addEventListener("submit", async ev => {
-    ev.preventDefault();
-    const selected = file.files?.[0] || null;
-    const rawText = pasted.value.trim();
-    if ((!selected && !rawText) || (selected && rawText)) {
-      status.textContent = t("email_no_input");
-      return;
-    }
-    if (selected && selected.size > 5 * 1024 * 1024) {
-      status.textContent = t("err_files");
-      return;
-    }
-    const formData = new FormData();
-    if (selected) formData.append("file", selected, selected.name);
-    else formData.append("raw_email", rawText);
-    formData.append("allow_dns_checks", dns?.checked ? "true" : "false");
-    submitButton.disabled = true;
-    status.textContent = t("email_analyzing");
-    results.hidden = true;
-    results.replaceChildren();
-    try {
-      const result = await api("/v1/email/analyze", { method: "POST", form: formData });
-      renderEmailForensicsResult(result);
-      status.textContent = t("email_done");
-      if (selected) file.value = "";
-      pasted.value = "";
-      dns.checked = false;
-      results.scrollIntoView({ block: "nearest", behavior: reduced ? "auto" : "smooth" });
-    } catch (err) {
-      status.textContent = err?.message || t("sorry");
-    } finally {
-      submitButton.disabled = false;
-    }
-  });
-}
 
 /* ---------- Language & Boot ---------- */
 function applyLang(l) {
@@ -1844,8 +1858,6 @@ function boot() {
     document.body.append(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(u), 1000);
   });
-
-  initEmailForensics();
 
   // Safety Dialog
   const safetyDlg = $("#safety-dialog");

@@ -117,7 +117,15 @@
         <h1 class="sr-only" id="page-h">Toroka: check a message, shop or website</h1>
         
         <section id="welcome" aria-labelledby="welcome-h">
-          <h2 id="welcome-h" data-t-key="welcome_hi">What would you like to investigate?</h2>
+          <div class="welcome-search-mark" aria-hidden="true">
+            <svg viewBox="0 0 96 96" focusable="false">
+              <circle cx="39" cy="36" r="23"></circle>
+              <circle class="lens-highlight" cx="39" cy="36" r="16"></circle>
+              <path d="M56 53 78 76"></path>
+              <path class="lens-glint" d="M29 27c3-4 7-6 12-6"></path>
+            </svg>
+          </div>
+          <h2 id="welcome-h" data-t-key="welcome_hi">What should we look into?</h2>
           <p class="sub" id="welcome-p" data-t-key="welcome_desc">Share a message, link, screenshot or seller profile. I'll examine the available evidence and explain what I can and cannot verify.</p>
           
           <ul class="suggest">
@@ -176,12 +184,8 @@
 
       <!-- COMPOSER -->
       <form id="composer" class="composer" aria-label="Message Toroka" novalidate>
-        <ul id="attachments" class="attachments" aria-label="Attached screenshots" hidden></ul>
-        <div class="email-tool-entry">
-          <button type="button" id="email-forensics-open" class="email-tool-button" data-t-key="email_tool_open">Investigate an email</button>
-          <span data-t-key="email_tool_hint">Upload the original .eml file or paste full headers.</span>
-        </div>
-        <div id="campaign-image-consent" class="campaign-image-consent" hidden>
+        <ul id="attachments" class="attachments" aria-label="Attached files" hidden></ul>
+      <div id="campaign-image-consent" class="campaign-image-consent" hidden>
           <label for="campaign-image-consent-toggle">
             <input id="campaign-image-consent-toggle" type="checkbox" value="cross_case_campaign">
             <span data-t-key="campaign_image_optin_label">Allow Toroka to compare this image's fingerprint across opted-in investigations</span>
@@ -197,7 +201,7 @@
           <button type="button" id="url-preview-remove" class="url-preview-remove" aria-label="Remove link from message" title="Remove link">×</button>
         </div>
         <div class="box">
-          <button type="button" id="attach" class="icon" aria-label="Attach screenshots" title="Attach screenshot or file">
+          <button type="button" id="attach" class="icon" aria-label="Attach image or email file" title="Attach an image or original email">
             <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M21 11.5l-8.600 8.600a5.500 5.500 0 0 1-7.800-7.800l9-9a3.700 3.700 0 0 1 5.200 5.200l-9 9a1.900 1.900 0 0 1-2.600-2.600l8.200-8.200"/></svg>
           </button>
           <button type="button" id="camera-btn" class="icon" aria-label="Take or upload photo" title="Upload image">
@@ -206,8 +210,8 @@
           <button type="button" id="paste-btn" class="icon" aria-label="Paste from clipboard" title="Paste">
             <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/></svg>
           </button>
-          <input type="file" id="file" accept="image/png,image/jpeg,image/webp" multiple hidden>
-          <textarea id="text" rows="1" maxlength="5000" aria-label="Message to Toroka" placeholder="Ask or paste a message, link…" autocomplete="off" enterkeyhint="send"></textarea>
+          <input type="file" id="file" accept="image/png,image/jpeg,image/webp,.eml,.headers,.txt,message/rfc822,text/plain" multiple hidden>
+          <textarea id="text" rows="1" maxlength="5242880" aria-label="Message to Toroka" placeholder="Ask or paste a message, link…" autocomplete="off" enterkeyhint="send"></textarea>
           <button type="submit" id="send" class="icon send" aria-label="Send" disabled>
             <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
           </button>
@@ -341,43 +345,6 @@
     </div>
   </dialog>
 
-  <!-- EMAIL FORENSICS: local-first analysis of original .eml or full raw headers -->
-  <dialog id="email-forensics-dialog" class="app-dialog email-forensics-dialog" aria-labelledby="email-forensics-title">
-    <div class="dialog-content">
-      <div class="dialog-header">
-        <h2 id="email-forensics-title" data-t-key="email_title">Email forensics</h2>
-        <button type="button" class="dialog-close-btn" id="email-forensics-close" aria-label="Close">
-          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M18 6L6 18M6 6l12 12"/></svg>
-        </button>
-      </div>
-      <form id="email-forensics-form">
-        <div class="dialog-body">
-          <p class="email-privacy-note" data-t-key="email_privacy">Toroka processes the email for this check and does not save the raw message or attachments.</p>
-          <div class="setting-group">
-            <label class="setting-label" for="email-raw-file" data-t-key="email_file_label">Original email file (.eml)</label>
-            <input id="email-raw-file" name="file" type="file" accept=".eml,.txt,.headers,message/rfc822,text/plain" class="email-file-input">
-            <p class="setting-subtext" data-t-key="email_file_help">Best option: download the original message or show its original source. Do not forward it first. Maximum 5 MB.</p>
-          </div>
-          <div class="email-or-divider"><span data-t-key="email_or">OR</span></div>
-          <div class="setting-group">
-            <label class="setting-label" for="email-raw-text" data-t-key="email_headers_label">Paste full raw email or headers</label>
-            <textarea id="email-raw-text" class="email-raw-text" rows="7" maxlength="5242880" placeholder="From: ...&#10;Received: ...&#10;Authentication-Results: ..."></textarea>
-            <p class="setting-subtext" data-t-key="email_headers_help">Use “Show original”, “View message source” or download the original .eml. A screenshot cannot prove authentication results.</p>
-          </div>
-          <label class="email-dns-consent" for="email-dns-consent">
-            <input id="email-dns-consent" type="checkbox">
-            <span data-t-key="email_dns_consent">Allow DNS checks for sender domains and DKIM keys. Only domain/selector queries are sent; the email body is not sent to a third party.</span>
-          </label>
-          <p id="email-forensics-status" class="email-status" role="status" aria-live="polite"></p>
-          <section id="email-forensics-results" class="email-results" hidden aria-live="polite"></section>
-        </div>
-        <div class="dialog-footer email-dialog-footer">
-          <button type="button" class="btn-secondary" id="email-forensics-cancel" data-t-key="btn_cancel">Cancel</button>
-          <button type="submit" class="btn-primary" id="email-forensics-submit" data-t-key="email_analyze">Analyze email</button>
-        </div>
-      </form>
-    </div>
-  </dialog>
 
   <script src="/static/i18n.js"></script>
   <script src="/static/i18n-chat.js"></script>

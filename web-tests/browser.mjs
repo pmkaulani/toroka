@@ -85,8 +85,10 @@ async function moderator() {
 
 // ================= first impressions =================
 await test("desktop: Toroka opens clean: one question, four suggestions, a runner logo, no console errors or CSP violations", async () => {
-  const p = await newPage(); has(await p.title(), /Toroka/); has(await p.textContent("#welcome-h"), /What would you like to check/); eq(await p.locator("h1").count(), 1); eq(await p.locator(".suggest button").count(), 4);
-  ok((await p.locator(".logo .runner").count()) === 1 && (await p.locator("#welcome .runner.big").count()) === 1, "runner logos"); ok(await p.locator("#text").evaluate((e) => document.activeElement === e), "composer should have focus");
+  const p = await newPage(); has(await p.title(), /Toroka/); has(await p.textContent("#welcome-h"), /What should we look into\?|What would you like to check/); eq(await p.locator("h1").count(), 1); eq(await p.locator(".suggest button").count(), 4);
+  ok((await p.locator(".logo .runner").count()) === 1 && (await p.locator("#welcome .runner.big").count()) === 1, "runner logos");
+  ok(await p.locator(".welcome-search-mark svg").isVisible(), "welcome magnifying glass should be visible");
+  ok(await p.locator("#text").evaluate((e) => document.activeElement === e), "composer should have focus");
   eq((await csp(p)).length, 0, "CSP violations"); eq(p.problems.length, 0, p.problems.join("; ")); await shot(p, "01-welcome-desktop"); await p.context().close();
 });
 await test("the runner really animates (and stops), and reduced-motion turns the animation off", async () => {
@@ -100,12 +102,39 @@ await test("phone 360px: welcome fits with no sideways scrolling and the compose
   const b = await p.locator("#composer .box").boundingBox(); ok(b.y + b.height <= 740 && b.y > 400, "composer position " + JSON.stringify(b)); await shot(p, "02-welcome-phone"); await p.context().close();
 });
 
+// ================= automatic email recognition =================
+await test("email sources use the normal chat composer: no special email button or dialog", async () => {
+  const p = await newPage();
+  eq(await p.locator("#email-forensics-open").count(), 0, "separate email action must be removed");
+  eq(await p.locator("#email-forensics-dialog").count(), 0, "email modal must be removed");
+  has(await p.getAttribute("#file", "accept"), /\.eml/);
+  let emailCalls = 0, checkCalls = 0;
+  await p.route("**/v1/checks", async (r) => { if (r.request().method() === "POST") checkCalls++; await r.continue(); });
+  await p.route("**/v1/email/analyze", async (r) => {
+    emailCalls++;
+    await r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({
+      attention_level: "review_recommended", summary: "The visible sender and reply address use different domains.",
+      sender_identity: { from: [{ display_name: "Account Security", address: "security@example.com" }], from_domain: "example.com", reply_to: [{ address: "reply@other.example" }] },
+      authentication: { trusted_receiver_results: [], untrusted_header_claims: [], dkim_signature_count: 0 },
+      findings: [{ code: "reply_to_domain_mismatch", title: "Reply address differs", detail: "The reply address uses another domain." }],
+      links: { items: [] }, attachments: { items: [] }, routing: { hops: [] }, limitations: ["A domain mismatch alone does not prove fraud."]
+    }) });
+  });
+  await p.locator("#file").setInputFiles({ name: "notice.eml", mimeType: "message/rfc822", buffer: Buffer.from("From: security@example.com\r\nTo: user@example.net\r\nSubject: Account notice\r\n\r\nPlease review this message.") });
+  ok(await p.locator(".attachment-document-item").isVisible(), "email should appear as a normal composer attachment");
+  await p.press("#text", "Enter");
+  await p.waitForSelector(".email-results-chat .email-attention");
+  eq(emailCalls, 1, "email forensic route should be called once"); eq(checkCalls, 0, "email source must not be sent through image evidence route");
+  has(await p.locator(".email-results-chat").innerText(), /Reply address differs/);
+  await p.context().close();
+});
+
 // ================= the conversation =================
 await test("chat: message sent, Toroka thinks (runner runs), then replies; PIN never shown; flagged words marked in my message", async () => {
   const p = await newPage(); const bodies = []; p.on("response", async (r) => { if (r.url().includes("/v1/")) { try { bodies.push(await r.text()); } catch {} } });
   await p.route("**/v1/checks", async (r) => { if (r.request().method() === "POST") await wait(1200); await r.continue(); });
   await p.fill("#text", SAMPLES.high); await p.press("#text", "Enter"); await p.waitForSelector(".think"); ok(await p.locator(".think").evaluate((e) => e.closest(".msg").querySelector(".runner").classList.contains("run")), "runner should run while thinking");
-  has(await p.textContent(".think"), /Thinking|Reading|Checking|Looking/); eq(await p.inputValue("#text"), "", "composer cleared"); has(await p.textContent("#thread"), /Safaricom: Your M-PESA is locked/);
+  has(await p.textContent(".think"), /Reading|Checking|Looking|Ninasoma|Ninakagua/); eq(await p.inputValue("#text"), "", "composer cleared"); has(await p.textContent("#thread"), /Safaricom: Your M-PESA is locked/);
   await p.waitForFunction(() => document.querySelectorAll(".reply .chips").length > 0 && !document.querySelector(".think"), null, { timeout: 25000 });
   has(await p.textContent(".reply .pill"), /High risk/); const all = await p.innerText("#thread"); ok(!/4821/.test(all), "PIN in thread"); ok(!bodies.some((b) => b.includes("4821")), "PIN in a response"); has(all, /••••/);
   ok((await p.locator(".bubble mark").count()) >= 1, "flagged phrase not marked"); await p.waitForFunction(() => /Toroka replied/.test(document.querySelector("#status").textContent)); ok(await p.evaluate(() => document.activeElement.id === "text"), "focus should return to the box");
@@ -202,7 +231,7 @@ await test("delete and download from the chat: the check is really gone, and the
   await last(p).locator(".chips button", { hasText: "Delete this check" }).click(); await p.waitForFunction(() => /Deleted/.test(document.querySelector("#thread").textContent)); eq((await p.request.get(`${BASE}/v1/checks/${id}`, { headers: { "X-Guest-Token": tok } })).status(), 404); await p.context().close();
 });
 await test("Kiswahili: the page, the placeholder and Toroka's replies switch language (English first, then back)", async () => {
-  const p = await newPage(); await p.click("#lang-sw"); eq(await p.getAttribute("html", "lang"), "sw"); has(await p.textContent("#welcome-h"), /Ungependa kukagua nini/); has(await p.getAttribute("#text", "placeholder"), /Bandika ujumbe/); eq(await p.getAttribute("#lang-sw", "aria-pressed"), "true");
+  const p = await newPage(); await p.click("#lang-sw"); eq(await p.getAttribute("html", "lang"), "sw"); has(await p.textContent("#welcome-h"), /Tuchunguze nini|Ungependa kukagua nini/); has(await p.getAttribute("#text", "placeholder"), /Bandika ujumbe/); eq(await p.getAttribute("#lang-sw", "aria-pressed"), "true");
   await send(p, SAMPLES.suspicious); has(await last(p).locator(".pill").textContent(), /Una shaka/); await send(p, SAMPLES.verified); has(await last(p).locator(".pill").textContent(), /Imethibitishwa/); has(await last(p).innerText(), /jina la mpokeaji|thibitisha muuzaji/i); ok(!(await last(p).innerText()).includes("Usilipe mapema, hata nusu"), "verified site must not receive an unconditional advance-payment warning"); await shot(p, "11-swahili", false);
   await p.click("#lang-en"); has(await p.getAttribute("#text", "placeholder"), /Paste a message/); await p.context().close();
 });
@@ -261,7 +290,7 @@ await test("installable: valid manifest named Toroka, service worker takes contr
 });
 await test("offline: the app still opens; sending explains the problem kindly and keeps the text; reconnecting works", async () => {
   const p = await newPage(); await p.waitForFunction(async () => { const r = await navigator.serviceWorker.getRegistration(); return !!(r && r.active); }, null, { timeout: 15000 }); await p.reload(); await p.waitForFunction(() => !!navigator.serviceWorker.controller);
-  await p.context().setOffline(true); await p.reload(); has(await p.textContent("#welcome-h"), /What would you like to check/); p.expectErrors = true; await p.fill("#text", SAMPLES.suspicious); await p.press("#text", "Enter");
+  await p.context().setOffline(true); await p.reload(); has(await p.textContent("#welcome-h"), /What should we look into\?|What would you like to check/); p.expectErrors = true; await p.fill("#text", SAMPLES.suspicious); await p.press("#text", "Enter");
   await p.waitForFunction(() => /offline/i.test(document.querySelector("#thread").textContent)); eq(await p.inputValue("#text"), SAMPLES.suspicious); await p.context().setOffline(false); await p.press("#text", "Enter"); await p.waitForSelector(".reply .pill", { timeout: 20000 }); await p.context().close();
 });
 await test("a shared result link (#r=…) opens in the chat and the token leaves the address bar; the share target fills the box", async () => {
