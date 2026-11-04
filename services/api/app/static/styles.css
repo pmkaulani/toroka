@@ -715,7 +715,6 @@ textarea::placeholder {
 .campaign-image-consent label { display: flex; align-items: flex-start; gap: 8px; color: var(--ink); font-weight: 600; cursor: pointer; }
 .campaign-image-consent input { width: 16px; height: 16px; margin: 1px 0 0; flex: none; accent-color: var(--action); }
 .campaign-image-consent p { margin: 5px 0 0 24px; line-height: 1.4; }
-
 .attachments { list-style: none; display: flex; gap: 6px; flex-wrap: wrap; padding: 0 6px 4px; margin: 0; }
 .attachments li { position: relative; }
 .attachments img { width: 44px; height: 44px; object-fit: cover; border-radius: 8px; border: 1px solid var(--border-control); display: block; }
@@ -1690,4 +1689,36 @@ body:not(.dark-theme) .msg.user .bubble {
   .email-tool-entry { font-size: .7rem; }
   .email-forensics-dialog { width: 94%; max-width: none; }
   .email-forensics-dialog .dialog-content { max-height: 92dvh; }
+}
+
+
+/* Response-content refinement only: keeps the existing Toroka shell and branding. */
+.reply .bot-content > p:first-child { margin-top: 0; }
+.reply .bot-content > p { max-width: 76ch; line-height: 1.72; }
+.reply .bot-content > h2,
+.reply .bot-content > h3,
+.reply .bot-content > h4 {
+  margin: 18px 0 7px;
+  line-height: 1.32;
+  letter-spacing: -.018em;
+}
+.reply .bot-content > h2:first-child,
+.reply .bot-content > h3:first-child,
+.reply .bot-content > h4:first-child { margin-top: 0; }
+.reply .bot-points { margin: 5px 0 14px; padding-left: 1.25rem; }
+.reply .bot-points li { padding-left: 3px; margin: 5px 0; line-height: 1.62; }
+.reply .bot-content a { overflow-wrap: anywhere; text-decoration-thickness: 1px; text-underline-offset: 2px; }
+.response-highlights { margin: 12px 0 16px; padding: 0; }
+.response-highlights h3 { margin: 0 0 6px; font-size: .88rem; font-weight: 700; }
+.response-highlight { padding: 8px 0; border-top: 1px solid var(--border-subtle); }
+.response-highlight:first-child { border-top: 0; }
+.response-highlight strong { display: block; margin-bottom: 3px; font-size: .88rem; }
+.response-highlight p { margin: 0; color: var(--text-secondary); font-size: .85rem; line-height: 1.58; }
+.response-highlight blockquote { margin-top: 6px; }
+.think { align-items: center; gap: 9px; min-height: 28px; }
+.think-copy { display: inline-block; min-width: 1ch; }
+.think-orbit { width: 13px; height: 13px; flex: none; border: 2px solid var(--border-control); border-top-color: var(--action); border-radius: 50%; animation: toroka-think-spin .85s linear infinite; }
+@keyframes toroka-think-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .think-orbit { animation: none; }
 }

@@ -430,15 +430,31 @@ function botMsg() {
   const av = h("div", { class: "avatar" }, runner()), body = h("div", { class: "reply" }, h("span", { class: "sr-only", text: t("toroka_said") + " " }));
   const li = h("li", { class: "msg bot" }, av, body); thread().append(li); toEnd(li); return { li, body, avatar: av };
 }
-function inlineMarkup(str) {
-  const parts = str.split(/(\*\*[^*]+\*\*)/g);
-  const frag = document.createDocumentFragment();
-  for (const part of parts) {
-    if (part.startsWith("**") && part.endsWith("**")) {
-      frag.appendChild(h("strong", { text: part.slice(2, -2) }));
-    } else if (part) {
-      frag.appendChild(document.createTextNode(part));
+function inlineTokens(str) {
+  const tokens = [];
+  const pattern = /(\*\*[^*]+\*\*|\[[^\]]+\]\(https?:\/\/[^)\s]+\))/g;
+  let last = 0, match;
+  while ((match = pattern.exec(str)) !== null) {
+    if (match.index > last) tokens.push({ type: "text", value: str.slice(last, match.index) });
+    const raw = match[0];
+    if (raw.startsWith("**")) tokens.push({ type: "strong", value: raw.slice(2, -2) });
+    else {
+      const parsed = /^\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)$/.exec(raw);
+      const url = parsed ? safeEvidenceUrl(parsed[2]) : null;
+      if (parsed && url) tokens.push({ type: "link", value: parsed[1], url });
+      else tokens.push({ type: "text", value: raw });
     }
+    last = pattern.lastIndex;
+  }
+  if (last < str.length) tokens.push({ type: "text", value: str.slice(last) });
+  return tokens;
+}
+function inlineMarkup(str) {
+  const frag = document.createDocumentFragment();
+  for (const token of inlineTokens(str)) {
+    if (token.type === "strong") frag.appendChild(h("strong", { text: token.value }));
+    else if (token.type === "link") frag.appendChild(h("a", { href: token.url, target: "_blank", rel: "noopener noreferrer", text: token.value }));
+    else frag.appendChild(document.createTextNode(token.value));
   }
   return frag;
 }
@@ -486,6 +502,52 @@ function renderRichContent(container, text) {
     }
   }
 }
+async function typeInlineContent(container, value, totalChars) {
+  const tokens = inlineTokens(value);
+  const share = value.length / Math.max(1, totalChars);
+  const ticks = Math.max(2, Math.min(24, Math.round(share * 180)));
+  for (const token of tokens) {
+    let target = container;
+    if (token.type === "strong") { target = h("strong"); container.append(target); }
+    else if (token.type === "link") {
+      target = h("a", { href: token.url, target: "_blank", rel: "noopener noreferrer" });
+      container.append(target);
+    }
+    const node = document.createTextNode("");
+    target.append(node);
+    if (reduced || token.value.length < 12) { node.textContent = token.value; continue; }
+    const tokenTicks = Math.max(1, Math.round(ticks * token.value.length / Math.max(1, value.length)));
+    for (let i = 1; i <= tokenTicks; i++) {
+      node.textContent = token.value.slice(0, Math.ceil(token.value.length * i / tokenTicks));
+      await new Promise(resolve => setTimeout(resolve, 9));
+    }
+  }
+}
+async function renderRichContentStreaming(container, text) {
+  if (reduced || isReplaying) { renderRichContent(container, text); return; }
+  container.replaceChildren();
+  const blocks = parseFormattedBlocks(text);
+  const totalChars = Math.max(1, blocks.reduce((sum, block) => sum + (
+    block.type === "ul" || block.type === "ol"
+      ? block.items.reduce((count, item) => count + item.length, 0)
+      : block.text.length
+  ), 0));
+  for (const block of blocks) {
+    if (block.type === "ul" || block.type === "ol") {
+      const list = h(block.type, { class: "bot-points" });
+      container.append(list);
+      for (const item of block.items) {
+        const li = h("li"); list.append(li);
+        await typeInlineContent(li, item, totalChars);
+      }
+    } else {
+      const tag = /^h[2-4]$/.test(block.type) ? block.type : "p";
+      const element = h(tag); container.append(element);
+      await typeInlineContent(element, block.text, totalChars);
+    }
+  }
+}
+
 function stream(p, text) {
   return new Promise(res => {
     const words = text.split(" ");
@@ -499,7 +561,7 @@ async function botSay(text, chips, tKey = null) {
   const m = botMsg(), wrap = h("div", { class: "bot-content" });
   if (tKey) wrap.dataset.tKey = tKey;
   m.body.append(wrap);
-  renderRichContent(wrap, text);
+  await renderRichContentStreaming(wrap, text);
   if (chips) m.body.append(chipsRow(chips));
   if (!isReplaying) {
     toEnd(m.li, text.length > 200 ? "start" : "end");
@@ -523,11 +585,65 @@ function chipsRow(items, single = true) {
   }
   return ul;
 }
-function think() {
-  const m = botMsg(), line = h("span", { text: t("thinking") }), row = h("div", { class: "think", role: "presentation" }, line, h("span", { class: "dots", "aria-hidden": "true" }));
+function thinkingStepKeys(context = "") {
+  const value = String(context || "").toLowerCase();
+  if (/\b(?:email|e-mail|from:|reply-to:|return-path|dkim|spf|dmarc|\.eml)\b/.test(value)) {
+    return ["th_email_1", "th_email_2", "th_email_3", "th_email_4", "th5"];
+  }
+  if (/https?:\/\/|www\.|\b(?:[a-z0-9-]+\.)+(?:com|org|net|co\.ke|ke)\b|instagram|tiktok|facebook|@\w+/.test(value)) {
+    return ["th_web_1", "th_web_2", "th_web_3", "th_web_4", "th5"];
+  }
+  if (/\b(?:m[\s-]?pesa|till|paybill|payment|paid|transaction|receipt|bank details)\b/.test(value)) {
+    return ["th_pay_1", "th_pay_2", "th_pay_3", "th_pay_4", "th5"];
+  }
+  if (/\b(?:image|screenshot|photo|picture|attachment)\b/.test(value)) {
+    return ["th_image_1", "th_image_2", "th_image_3", "th_image_4", "th5"];
+  }
+  return ["th1", "th2", "th3", "th4", "th5"];
+}
+function think(context = "") {
+  const m = botMsg();
+  const keys = thinkingStepKeys(context);
+  const line = h("span", { class: "think-copy", "aria-hidden": "true", text: t(keys[0]) });
+  const live = h("span", { class: "sr-only", role: "status", "aria-live": "polite", text: t(keys[0]) });
+  const row = h("div", { class: "think" },
+    h("span", { class: "think-orbit", "aria-hidden": "true" }),
+    line, h("span", { class: "dots", "aria-hidden": "true" }), live
+  );
   m.body.append(row); run(m.avatar.firstChild); say(t("thinking"));
-  const lines = ["th1", "th2", "th3"]; let i = 0; const iv = setInterval(() => { line.textContent = t(lines[i++ % 3]); }, 1300);
-  return { stop() { clearInterval(iv); m.li.remove(); } };
+
+  let index = 0, typeTimer = null, stageTimer = null, stopped = false;
+  const typeLine = value => {
+    if (typeTimer) clearTimeout(typeTimer);
+    live.textContent = value;
+    line.textContent = "";
+    if (reduced) { line.textContent = value; return; }
+    let position = 0;
+    const tick = () => {
+      if (stopped) return;
+      position = Math.min(value.length, position + (position < 24 ? 2 : 3));
+      line.textContent = value.slice(0, position);
+      if (position < value.length) typeTimer = setTimeout(tick, 18);
+    };
+    tick();
+  };
+  const advance = () => {
+    if (stopped) return;
+    if (index < keys.length - 1) {
+      index += 1;
+      typeLine(t(keys[index]));
+      stageTimer = setTimeout(advance, 2600);
+    } else {
+      stageTimer = setTimeout(() => typeLine(t("th_wait")), 4200);
+    }
+  };
+  if (!reduced) stageTimer = setTimeout(advance, 2500);
+  return { stop() {
+    stopped = true;
+    if (stageTimer) clearTimeout(stageTimer);
+    if (typeTimer) clearTimeout(typeTimer);
+    m.li.remove();
+  } };
 }
 function ask(text, handler, chips, tKey = null) { pending = handler; return botSay(text, chips, tKey).then(m => { $("#text").focus(); return m; }); }
 
@@ -536,7 +652,7 @@ async function doCheck(text, fl, bubble, crossCaseImageConsent = false) {
   // A new evidence check starts a new context. Keep older messages visually in history,
   // but don't pass them as AI conversational memory for this unrelated investigation.
   chatHistory = [];
-  const th = think(); let data, fileErr = [];
+  const th = think(text || (fl.length ? "image screenshot attachment" : "")); let data, fileErr = [];
   try {
     data = await api("/v1/checks", { method: "POST", body: { text: text.trim() || t("shot_note"), language: lang } });
     sessionStorage.setItem("ssi.t." + data.check_id, data.guest_token); current = { id: data.check_id, token: data.guest_token, text };
@@ -976,6 +1092,20 @@ async function sendFeedback(checkId, sampleText, assessment, feedbackType, comme
   }
 }
 
+function responseHighlights(parent, findings, limit = 2) {
+  const items = (findings || []).filter(f => f && f.plain_text && f.why_it_matters).slice(0, limit);
+  if (!items.length) return;
+  const section = h("section", { class: "response-highlights", "aria-label": t("r_highlights") },
+    h("h3", { text: t("r_highlights") }),
+    h("div", { class: "response-highlight-list" }, items.map(item => h("article", { class: "response-highlight" },
+      h("strong", { text: item.plain_text }),
+      h("p", { text: item.why_it_matters }),
+      item.excerpt ? h("blockquote", { text: `“${item.excerpt}”` }) : null
+    )))
+  );
+  parent.append(section);
+}
+
 async function renderCheck(data, text, bubble) {
   const a = data.assessment, m = botMsg();
   if (!a || data.status === "failed_safely") { await stream(m.body.appendChild(h("p")), t("failed_safely")); return; }
@@ -989,7 +1119,9 @@ async function renderCheck(data, text, bubble) {
   } else {
     await stream(p, strip(a.label, a.summary, !!pay));
   }
+  // Put urgent advice immediately after the answer, before supporting details.
   if (pay) m.body.append(h("div", { class: "callout" }, h("strong", { "data-t-key": "before_pay", text: t("before_pay") }), h("span", { class: "callout-text", text: " " + pay.text })));
+  responseHighlights(m.body, a.findings, 2);
   const rest = a.next_steps.filter(n => n !== pay);
   if (rest.length) {
     const nsWrap = h("div", { class: "next-steps-wrap" },
@@ -1071,7 +1203,7 @@ function parseId(s) {
   return null;
 }
 async function lookup(type, value) {
-  const th = think();
+  const th = think(value);
   try {
     const d = await api(`/v1/reports/search?type=${encodeURIComponent(type)}&value=${encodeURIComponent(value)}`); th.stop();
     if (!d.found) {
@@ -1300,6 +1432,8 @@ async function renderUrlInvestigation(inv, replyText, actionChips) {
   } else {
     await stream(pSum, inv.summary);
   }
+
+  responseHighlights(m.body, inv.findings, 3);
 
   if (inv.contradictions && inv.contradictions.length) {
     const cBox = h("div", { class: "contradiction-callout" });

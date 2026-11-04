@@ -75,6 +75,16 @@ OUTPUT DISCIPLINE
   meaningful but non-conclusive indicator; use “weak” for an early clue that needs checking.
 - If no specific risk indicator is supported, return no invented risk finding and say that more checking
   is needed rather than manufacturing a red flag.
+
+RESPONSE STRUCTURE
+- For an investigation, lead with a direct, plain-language answer in one or two sentences.
+- Follow with only the useful sections for this case: “What stands out”, “What to do next”, and “What I could not confirm”.
+- Keep each finding specific: state the observed detail, where it came from, and why it matters. Do not repeat the same fact in multiple sections.
+- Give the most urgent protective action before background explanation when money, account access, identity documents, or safety may be at risk.
+- Keep the first response focused. Leave secondary technical detail and provider status in supporting sections when they help the user make a decision.
+- Use short paragraphs by default. Use lists for distinct findings or steps, not for every sentence.
+- Do not create a section just to fill a template. Omit sections that have no useful, supported content.
+- For a general question or simple follow-up, answer naturally without forcing an investigation-report format.
 """
 
 
@@ -289,7 +299,7 @@ def _local_expert_replies(
     shop_profile: dict[str, Any] | None = None,
     public_sources: list[dict[str, Any]] | None = None,
 ) -> tuple[str, str]:
-    """Evaluates user intent and returns (english_reply, swahili_reply) formatted in point form."""
+    """Evaluate user intent and return natural, evidence-led English and Kiswahili replies."""
     msg_low = user_message.lower().strip()
     msg_norm = re.sub(r"[-_]+", " ", msg_low)
     codes = {f.get("code") for f in findings}
@@ -343,6 +353,8 @@ def _local_expert_replies(
         category = str(investigation_report.get("category") or "message")
         flags = [x for x in (investigation_report.get("red_flags") or []) if isinstance(x, dict)]
         evidence = [x for x in (public_sources or []) if isinstance(x, dict) and x.get("url") and x.get("source_type") != "search_status"]
+        search_status_record = next((x for x in (public_sources or []) if isinstance(x, dict) and x.get("source_type") == "search_status"), None)
+        search_status_detail = re.sub(r"\s+", " ", str((search_status_record or {}).get("detail") or "")).strip()[:260]
         source_lines: list[str] = []
         for item in evidence[:5]:
             title = str(item.get("title") or item.get("url") or "Public source")[:140]
@@ -433,66 +445,83 @@ def _local_expert_replies(
             conclusion = "A domain or search mention alone cannot establish legitimacy. The exact page, its behaviour and the identity behind the offer matter."
             sw_conclusion = "Jina la domain au kutajwa kwenye utafutaji pekee hakuwezi kuthibitisha uhalali. Ukurasa halisi, tabia yake na utambulisho wa mtoa ofa ni muhimu."
 
-        en_parts = [f"**{heading}**", conclusion]
-        sw_parts = [f"**{sw_heading}**", sw_conclusion]
         risk_band = str(investigation_report.get("risk_band") or "").casefold()
         if risk_band == "high_risk":
-            en_parts.insert(0, "**High risk: do not proceed through this link.**")
-            sw_parts.insert(0, "**Hatari kubwa: usiendelee kupitia kiungo hiki.**")
+            opening_en = "**High risk.** I would not proceed with this link or send money based on the evidence available."
+            opening_sw = "**Hatari kubwa.** Sisingependekeza kuendelea na kiungo hiki au kutuma pesa kutokana na ushahidi uliopo."
         elif risk_band == "suspicious_verify_first":
-            en_parts.insert(0, "**Suspicious: verify independently before proceeding.**")
-            sw_parts.insert(0, "**Kina mashaka: thibitisha kwa njia huru kabla ya kuendelea.**")
+            opening_en = "There are warning signs here. Verify the seller or offer independently before taking the next step."
+            opening_sw = "Kuna ishara za tahadhari hapa. Thibitisha muuzaji au ofa kupitia chanzo huru kabla ya kuendelea."
         elif risk_band == "inconclusive":
-            en_parts.insert(0, "**Inconclusive: the available checks did not establish whether this is safe.**")
-            sw_parts.insert(0, "**Haijabainika: ukaguzi uliopatikana haukuthibitisha usalama wa kiungo hiki.**")
+            opening_en = "I could not establish whether this is safe from the checks available in this run."
+            opening_sw = "Sikuweza kuthibitisha usalama wake kutokana na ukaguzi uliopatikana safari hii."
+        elif risk_band == "no_known_threats_found":
+            opening_en = "The checks did not find a known threat, but that is not a guarantee that the offer or seller is safe."
+            opening_sw = "Ukaguzi haukupata tishio linalojulikana, lakini hilo halihakikishi kuwa ofa au muuzaji ni salama."
+        else:
+            opening_en = "Here is what the available information can and cannot establish."
+            opening_sw = "Haya ndiyo ambayo taarifa zilizopo zinaweza na haziwezi kuthibitisha."
+
         if shop_name_target:
-            en_parts.append(f"I understood that you want to investigate the shop name **{shop_name_target.get('identifier')}**. I am treating it as a name search, not assuming it is a specific social-media handle.")
-            sw_parts.append(f"Nimeelewa kuwa unataka kuchunguza jina la duka **{shop_name_target.get('identifier')}**. Ninalichukulia kama utafutaji wa jina, si kudhani kuwa ni akaunti maalum ya mtandao wa kijamii.")
-        elif target_text:
-            en_parts.append(f"**Target identified:** {target_text}.")
-            sw_parts.append(f"**Lengo lililotambuliwa:** {target_text}.")
+            target_sentence_en = f" I understood you want to investigate the shop name **{shop_name_target.get('identifier')}**."
+            target_sentence_sw = f" Nimeelewa unataka kuchunguza jina la duka **{shop_name_target.get('identifier')}**."
+        else:
+            target_sentence_en = f" I checked **{target_text}**." if target_text else ""
+            target_sentence_sw = f" Nimekagua **{target_text}**." if target_text else ""
+        en_parts = [opening_en + target_sentence_en, conclusion]
+        sw_parts = [opening_sw + target_sentence_sw, sw_conclusion]
+
         if existing_record_text:
-            en_parts.append("**Existing Toroka intelligence:** " + existing_record_text)
-            sw_parts.append("**Taarifa zilizopo za Toroka:** " + existing_record_text)
+            en_parts.append(existing_record_text)
+            sw_parts.append("Rekodi inayolingana ya Toroka imepatikana. " + existing_record_text)
+
         if flag_lines:
-            en_parts.append("**What raised concern**\n" + "\n".join(flag_lines))
+            en_parts.append("## What stands out\n" + "\n".join(flag_lines[:3]))
             sw_flag_lines = []
-            for flag in flags[:5]:
-                statement = str(flag.get("statement") or flag.get("label") or "Ishara ya tahadhari inayoweza kuhitaji ukaguzi")
+            for flag in flags[:3]:
+                statement = str(flag.get("statement") or flag.get("label") or "Ishara inayohitaji ukaguzi")
                 why = str(flag.get("why_it_matters") or "")
                 status = str(flag.get("evidence_status") or "")
                 qualifier = ("Imedaiwa kwenye chanzo cha umma" if status == "reported_in_target_matched_public_sources" else
-                             "Imeonekana kwenye ujumbe uliowasilishwa" if status == "directly_observed_in_submission" else
-                             "Imeonekana wakati wa ukaguzi wa lengo" if status == "directly_observed_on_target" else
-                             "Malalamiko kadhaa ya umma ambayo bado hayajathibitishwa" if status == "multiple_unverified_public_allegations" else
+                             "Imeonekana kwenye ulichotuma" if status == "directly_observed_in_submission" else
+                             "Imeonekana wakati wa ukaguzi" if status == "directly_observed_on_target" else
                              "Pengo la uthibitishaji")
                 sw_flag_lines.append(f"- **{qualifier}:** {statement}" + (f" {why}" if why else ""))
-            sw_parts.append("**Kilicholeta wasiwasi**\n" + "\n".join(sw_flag_lines))
+            sw_parts.append("## Kilicho muhimu\n" + "\n".join(sw_flag_lines))
         elif not evidence:
-            en_parts.append("**What I could establish:** No target-matched public evidence was retrieved in this run. That does not establish that the offer or seller is safe.")
-            sw_parts.append("**Nilichoweza kuthibitisha:** Hakuna ushahidi wa umma uliolingana na lengo uliopatikana katika ukaguzi huu. Hilo halimaanishi kuwa ofa au muuzaji ni salama.")
+            en_parts.append("I did not retrieve public evidence matching this exact target in this run. That does not mean it is safe; it means this check did not establish a match.")
+            sw_parts.append("Sikupata ushahidi wa umma unaolingana na lengo hili katika ukaguzi huu. Hilo halimaanishi kuwa ni salama; maana yake ni kwamba ukaguzi huu haukupata uthibitisho unaolingana.")
+
+        if category == "job":
+            en_parts.append("For a Kenyan recruitment claim, verify the exact agency and licence directly with the National Employment Authority before paying or sharing documents.")
+            sw_parts.append("Kwa dai la ajira nchini Kenya, thibitisha wakala na leseni yake moja kwa moja kupitia National Employment Authority kabla ya kulipa au kutuma nyaraka.")
+
+        if advice:
+            en_parts.append("## What to do next\n" + "\n".join(f"{i + 1}. {item}" for i, item in enumerate(advice[:3])))
+            sw_parts.append("## Hatua zinazofuata\n" + "\n".join(f"{i + 1}. {item}" for i, item in enumerate(advice[:3])))
+
+        unknowns = list(limitations[:2])
+        if any(x.get("source_type") == "documented_threat_report" for x in evidence):
+            unknowns.insert(0, "A historical threat report may concern a different URL path on the same domain; it does not establish that the submitted page is identical.")
+        if search_status_detail:
+            unknowns.append(search_status_detail)
+        if unknowns:
+            en_parts.append("## What I could not confirm\n" + " ".join(unknowns[:3]))
+            sw_parts.append("## Ambacho sikuweza kuthibitisha\n" + " ".join(unknowns[:3]))
+        elif unavailable:
+            en_parts.append("## Checks I could not run\n" + "\n".join(unavailable[:2]))
+            sw_parts.append("## Ukaguzi ambao sikuweza kufanya\n" + "\n".join(unavailable[:2]))
+
+        if tavily_search_details:
+            search_detail = " ".join(dict.fromkeys(tavily_search_details))[:260]
+            en_parts.append("**Public search:** " + search_detail + " Search results are leads, not independent proof of the exact seller.")
+            sw_parts.append("**Utafutaji wa umma:** " + search_detail + " Matokeo ni vidokezo vya kuchunguza, si uthibitisho huru wa muuzaji husika.")
 
         if source_lines:
             has_search_leads = any(x.get("source_type") in {"public_search_lead", "social_intelligence_lead"} for x in evidence)
-            source_heading = "Public search leads and other sources" if has_search_leads else "Sources examined or found"
-            sw_source_heading = "Viongozi wa utafutaji wa umma na vyanzo vingine" if has_search_leads else "Vyanzo vilivyokaguliwa au kupatikana"
-            en_parts.append(f"**{source_heading}**\n" + "\n".join(source_lines))
-            sw_parts.append(f"**{sw_source_heading}**\n" + "\n".join(source_lines))
-        if tavily_search_details:
-            en_parts.append("**Public web search**\n" + " ".join(dict.fromkeys(tavily_search_details))[:900])
-            sw_parts.append("**Utafutaji wa wavuti**\n" + "Utafutaji wa umma ulifanyika. Matokeo yanayolingana bado ni vielelezo vinavyohitaji kuthibitishwa. " + " ".join(dict.fromkeys(tavily_search_details))[:500])
-        if attempted:
-            en_parts.append("**Checks attempted:** " + "; ".join(attempted[:6]) + ".")
-            sw_parts.append("**Ukaguzi uliojaribiwa:** " + "; ".join(attempted[:6]) + ".")
-        if unavailable:
-            en_parts.append("**Checks unavailable or not configured:** " + "; ".join(unavailable[:5]) + ".")
-            sw_parts.append("**Ukaguzi ambao haukupatikana au haujawekwa:** " + "; ".join(unavailable[:5]) + ".")
-        if advice:
-            en_parts.append("**What I recommend**\n" + "\n".join(f"{i + 1}. {x}" for i, x in enumerate(advice)))
-            sw_parts.append("**Ninachopendekeza**\n" + "\n".join(f"{i + 1}. {x}" for i, x in enumerate(advice)))
-        if limitations:
-            en_parts.append("**Limitations**\n" + " ".join(limitations))
-            sw_parts.append("**Mipaka ya ukaguzi**\n" + " ".join(limitations))
+            source_heading = "Public search leads and sources" if has_search_leads else "Sources"
+            en_parts.append("## " + source_heading + "\n" + "\n".join(source_lines[:5]))
+            sw_parts.append("## Vyanzo\n" + "\n".join(source_lines[:5]))
         return "\n\n".join(en_parts), "\n\n".join(sw_parts)
 
     # 2. Invoice / redemption checks: use only evidence present in this check.
