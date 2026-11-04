@@ -14,7 +14,7 @@ class VirusTotalProvider:
         # The free Public API is not permitted in commercial products/services.
         # Enable only after a vendor agreement explicitly covers Toroka's product use
         # and the exact downstream display/redistribution of results.
-        licensed = os.getenv("TOROKA_VIRUSTOTAL_DISPLAY_LICENSE_CONFIRMED", "").lower() == "true"
+        licensed = os.getenv("TOROKA_VIRUSTOTAL_DISPLAY_LICENSE_CONFIRMED", "").lower() in ("true", "1")
         self.is_configured = bool(self.api_key and licensed)
 
     def is_applicable(self, request: InvestigationRequest) -> bool:
