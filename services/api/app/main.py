@@ -17,6 +17,7 @@ from .deps import Ctx
 from .ratelimit import RateLimiter
 from .routes_community import router as community
 from .routes_core import router as core
+from .routes_email import router as email_forensics
 from .security import Crypto
 from .seed import seed_opportunities, seed_verified
 
@@ -59,6 +60,7 @@ def create_app(settings: Settings | None = None, *, deps: pipeline.Deps | None =
         return response
 
     app.include_router(core)
+    app.include_router(email_forensics)
     app.include_router(community)
     try:
         from toroka_evidence.api_contract import router as evidence_router

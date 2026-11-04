@@ -81,7 +81,15 @@ Object.assign(T.en, {
   campaign_exact_matches: "exact image matches",
   campaign_visual_matches: "visually similar matches",
   campaign_no_image_match: "No similar fingerprint was found in currently retained opted-in checks. This does not prove the image is original.",
-  campaign_no_public_links: "No published related identifiers were found in the current evidence set. Private or pending reports are not shown here."
+  campaign_no_public_links: "No published related identifiers were found in the current evidence set. Private or pending reports are not shown here.",
+  email_tool_open: "Investigate an email", email_tool_hint: "Upload the original .eml file or paste full headers.",
+  email_title: "Email forensics", email_privacy: "Toroka processes the email for this check and does not save the raw message or attachment contents.",
+  email_file_label: "Original email file (.eml)", email_file_help: "Best option: download the original message or view its original source. Do not forward it first. Maximum 5 MB.",
+  email_or: "OR", email_headers_label: "Paste full raw email or headers", email_headers_help: "Use “Show original”, “View message source” or download the original .eml. A screenshot cannot prove authentication results.",
+  email_dns_consent: "Allow DNS checks for sender domains and DKIM keys. Only domain/selector queries are sent; the email body is not sent to a third party.",
+  email_analyze: "Analyze email", email_analyzing: "Analyzing the email locally…", email_done: "Email analysis complete.", email_no_input: "Choose an .eml file or paste the full raw email or headers.",
+  email_high: "High-priority indicators found", email_review: "Review recommended", email_some: "Some indicators need checking", email_no_major: "No major spoofing indicator observed — this does not mean the email is safe.",
+  email_sender: "Sender identity", email_from: "From", email_reply: "Reply-To", email_return: "Return-Path domain", email_auth: "Authentication", email_trusted: "Trusted receiving-server results", email_untrusted: "Untrusted authentication claims", email_dkim: "DKIM signature verification", email_dns: "Sender-domain DNS posture", email_routing: "Mail routing", email_findings: "Findings", email_links: "Links in the message", email_attachments: "Attachments", email_limits: "Important limitations", email_no_findings: "No specific findings were produced from the available fields.", email_not_checked: "Not checked", btn_cancel: "Cancel"
 
 });
 Object.assign(T.sw, {
@@ -165,7 +173,15 @@ Object.assign(T.sw, {
   campaign_exact_matches: "picha zinazolingana kabisa",
   campaign_visual_matches: "picha zinazofanana kwa mwonekano",
   campaign_no_image_match: "Hakuna alama ya picha inayofanana iliyopatikana katika ukaguzi ulioruhusu matumizi hayo na ambao bado umehifadhiwa. Hii haithibitishi kuwa picha ni ya awali.",
-  campaign_no_public_links: "Hakuna vitambulisho vingine vilivyochapishwa vilivyopatikana katika ushahidi wa sasa. Ripoti za faragha au zinazosubiri ukaguzi hazionyeshwi hapa."
+  campaign_no_public_links: "Hakuna vitambulisho vingine vilivyochapishwa vilivyopatikana katika ushahidi wa sasa. Ripoti za faragha au zinazosubiri ukaguzi hazionyeshwi hapa.",
+  email_tool_open: "Chunguza barua pepe", email_tool_hint: "Pakia faili asili ya .eml au bandika vichwa vyote.",
+  email_title: "Uchunguzi wa barua pepe", email_privacy: "Toroka huchakata barua pepe kwa ukaguzi huu na haihifadhi ujumbe asili wala maudhui ya viambatisho.",
+  email_file_label: "Faili asili ya barua pepe (.eml)", email_file_help: "Njia bora: pakua ujumbe asili au uangalie chanzo chake. Usiusambaze kwanza. Kiwango cha juu ni MB 5.",
+  email_or: "AU", email_headers_label: "Bandika barua pepe asili au vichwa vyote", email_headers_help: "Tumia “Show original”, “View message source” au pakua faili asili ya .eml. Picha ya skrini haiwezi kuthibitisha matokeo ya uthibitishaji.",
+  email_dns_consent: "Ruhusu ukaguzi wa DNS kwa vikoa vya watumaji na funguo za DKIM. Ni hoja za kikoa/selector pekee zinazotumwa; maudhui ya barua pepe hayatumiwi kwa mtu mwingine.",
+  email_analyze: "Chunguza barua pepe", email_analyzing: "Inachunguza barua pepe ndani ya Toroka…", email_done: "Uchunguzi wa barua pepe umekamilika.", email_no_input: "Chagua faili ya .eml au bandika barua pepe asili au vichwa vyake vyote.",
+  email_high: "Ishara muhimu zimepatikana", email_review: "Ukaguzi zaidi unapendekezwa", email_some: "Baadhi ya ishara zinahitaji kuchunguzwa", email_no_major: "Hakuna ishara kuu ya udanganyifu iliyobainika — hii haimaanishi kuwa barua pepe ni salama.",
+  email_sender: "Utambulisho wa mtumaji", email_from: "Imetoka kwa", email_reply: "Jibu kwa", email_return: "Kikoa cha Return-Path", email_auth: "Uthibitishaji", email_trusted: "Matokeo kutoka seva inayoaminika", email_untrusted: "Madai ya uthibitishaji yasiyoaminika", email_dkim: "Uthibitishaji wa saini ya DKIM", email_dns: "Hali ya DNS ya kikoa cha mtumaji", email_routing: "Njia ya barua pepe", email_findings: "Yaliyobainika", email_links: "Viungo kwenye ujumbe", email_attachments: "Viambatisho", email_limits: "Vikwazo muhimu", email_no_findings: "Hakuna jambo maalum lililobainishwa kutoka taarifa zilizopatikana.", email_not_checked: "Haijakaguliwa", btn_cancel: "Ghairi"
 
 });
 

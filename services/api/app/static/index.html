@@ -177,6 +177,10 @@
       <!-- COMPOSER -->
       <form id="composer" class="composer" aria-label="Message Toroka" novalidate>
         <ul id="attachments" class="attachments" aria-label="Attached screenshots" hidden></ul>
+        <div class="email-tool-entry">
+          <button type="button" id="email-forensics-open" class="email-tool-button" data-t-key="email_tool_open">Investigate an email</button>
+          <span data-t-key="email_tool_hint">Upload the original .eml file or paste full headers.</span>
+        </div>
         <div id="campaign-image-consent" class="campaign-image-consent" hidden>
           <label for="campaign-image-consent-toggle">
             <input id="campaign-image-consent-toggle" type="checkbox" value="cross_case_campaign">
@@ -334,6 +338,44 @@
       <div class="dialog-footer">
         <button type="button" class="btn-primary" id="done-safety-btn" data-t-key="btn_close">Close</button>
       </div>
+    </div>
+  </dialog>
+
+  <!-- EMAIL FORENSICS: local-first analysis of original .eml or full raw headers -->
+  <dialog id="email-forensics-dialog" class="app-dialog email-forensics-dialog" aria-labelledby="email-forensics-title">
+    <div class="dialog-content">
+      <div class="dialog-header">
+        <h2 id="email-forensics-title" data-t-key="email_title">Email forensics</h2>
+        <button type="button" class="dialog-close-btn" id="email-forensics-close" aria-label="Close">
+          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M18 6L6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <form id="email-forensics-form">
+        <div class="dialog-body">
+          <p class="email-privacy-note" data-t-key="email_privacy">Toroka processes the email for this check and does not save the raw message or attachments.</p>
+          <div class="setting-group">
+            <label class="setting-label" for="email-raw-file" data-t-key="email_file_label">Original email file (.eml)</label>
+            <input id="email-raw-file" name="file" type="file" accept=".eml,.txt,.headers,message/rfc822,text/plain" class="email-file-input">
+            <p class="setting-subtext" data-t-key="email_file_help">Best option: download the original message or show its original source. Do not forward it first. Maximum 5 MB.</p>
+          </div>
+          <div class="email-or-divider"><span data-t-key="email_or">OR</span></div>
+          <div class="setting-group">
+            <label class="setting-label" for="email-raw-text" data-t-key="email_headers_label">Paste full raw email or headers</label>
+            <textarea id="email-raw-text" class="email-raw-text" rows="7" maxlength="5242880" placeholder="From: ...&#10;Received: ...&#10;Authentication-Results: ..."></textarea>
+            <p class="setting-subtext" data-t-key="email_headers_help">Use “Show original”, “View message source” or download the original .eml. A screenshot cannot prove authentication results.</p>
+          </div>
+          <label class="email-dns-consent" for="email-dns-consent">
+            <input id="email-dns-consent" type="checkbox">
+            <span data-t-key="email_dns_consent">Allow DNS checks for sender domains and DKIM keys. Only domain/selector queries are sent; the email body is not sent to a third party.</span>
+          </label>
+          <p id="email-forensics-status" class="email-status" role="status" aria-live="polite"></p>
+          <section id="email-forensics-results" class="email-results" hidden aria-live="polite"></section>
+        </div>
+        <div class="dialog-footer email-dialog-footer">
+          <button type="button" class="btn-secondary" id="email-forensics-cancel" data-t-key="btn_cancel">Cancel</button>
+          <button type="submit" class="btn-primary" id="email-forensics-submit" data-t-key="email_analyze">Analyze email</button>
+        </div>
+      </form>
     </div>
   </dialog>
 

@@ -37,6 +37,8 @@ class Settings:
     enable_domain_intelligence: bool = False
     certspotter_api_key: str = ""
     domain_intel_include_subdomains: bool = False
+    # Only trust Authentication-Results from explicitly configured receiving mail servers.
+    email_trusted_authserv_ids: tuple[str, ...] = ()
     geocoder_user_agent: str = ""
     # rate limits: (requests, window seconds)
     rl_checks: tuple = (20, 3600)
@@ -106,6 +108,7 @@ class Settings:
                 webrisk_api_key=g("WEBRISK_API_KEY", ""), tavily_api_key=g("TAVILY_API_KEY", ""), weir_api_key=g("WEIR_API_KEY", ""), scrape_creators_api_key=g("SCRAPE_CREATORS_API_KEY", ""), intelligence_cache_ttl_seconds=max(0, min(int(g("INTELLIGENCE_CACHE_TTL_SECONDS", 900)), 86400)), google_places_api_key=g("GOOGLE_PLACES_API_KEY", ""), urlscan_api_key=g("URLSCAN_API_KEY", ""), blocklist_path=g("BLOCKLIST_PATH", ""), enable_link_fetch=g("ENABLE_LINK_FETCH") == "1",
                 enable_rdap=g("ENABLE_RDAP") == "1", enable_domain_intelligence=g("ENABLE_DOMAIN_INTELLIGENCE") == "1",
                 certspotter_api_key=g("CERTSPOTTER_API_KEY", ""), domain_intel_include_subdomains=g("DOMAIN_INTEL_INCLUDE_SUBDOMAINS") == "1",
+                email_trusted_authserv_ids=tuple(x.strip().lower() for x in g("EMAIL_TRUSTED_AUTHSERV_IDS", "").split(",") if x.strip()),
                 geocoder_user_agent=g("GEOCODER_USER_AGENT", ""), dev_echo_codes=g("DEV_ECHO_CODES") == "1",
                 whatsapp_verify_token=g("WHATSAPP_VERIFY_TOKEN", ""), whatsapp_app_secret=g("WHATSAPP_APP_SECRET", ""), whatsapp_token=g("WHATSAPP_TOKEN", ""),
                 whatsapp_phone_number_id=g("WHATSAPP_PHONE_NUMBER_ID", ""), at_username=g("AT_USERNAME", ""), at_api_key=g("AT_API_KEY", ""),

@@ -9,3 +9,4 @@ python-multipart>=0.0.9
 httpx>=0.27
 pillow>=10
 pytest>=8
+dkimpy>=1.1.8

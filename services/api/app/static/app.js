@@ -1433,6 +1433,125 @@ async function submit(ev) {
   } finally { busy = false; syncSend(); box().focus(); }
 }
 
+/* ---------- Email forensics: raw .eml/header analysis ---------- */
+function renderEmailForensicsResult(data) {
+  const root = $("#email-forensics-results");
+  if (!root) return;
+  root.replaceChildren();
+  root.hidden = false;
+  const attention = data.attention_level || "insufficient_email_identity_data";
+  const cls = attention === "high_attention" ? "high" : (attention === "review_recommended" || attention === "some_indicators") ? "review" : "";
+  const attentionLabel = attention === "high_attention" ? t("email_high") :
+    attention === "review_recommended" ? t("email_review") :
+    attention === "some_indicators" ? t("email_some") : t("email_no_major");
+  root.append(h("div", { class: "email-attention " + cls },
+    h("strong", { text: attentionLabel }),
+    h("p", { text: data.summary || "" })
+  ));
+  const group = (title, items) => {
+    if (!items || !items.length) return;
+    const list = h("ul", { class: "email-result-list" });
+    items.forEach(item => {
+      const main = typeof item === "string" ? item : item.main;
+      const detail = typeof item === "string" ? "" : item.detail;
+      const li = h("li", {}, main || "");
+      if (detail) li.append(h("small", { text: detail }));
+      list.append(li);
+    });
+    root.append(h("section", { class: "email-result-group" }, h("h3", { text: title }), list));
+  };
+  const sender = data.sender_identity || {};
+  const fmt = arr => (arr || []).map(x => `${x.display_name ? x.display_name + " — " : ""}${x.address}`);
+  const senderRows = [];
+  if (sender.from?.length) senderRows.push({ main: t("email_from") + ": " + fmt(sender.from).join("; "), detail: sender.from_domain || "" });
+  if (sender.reply_to?.length) senderRows.push({ main: t("email_reply") + ": " + fmt(sender.reply_to).join("; ") });
+  if (sender.return_path_domain) senderRows.push({ main: t("email_return") + ": " + sender.return_path_domain });
+  if (sender.sender?.length) senderRows.push({ main: "Sender: " + fmt(sender.sender).join("; ") });
+  group(t("email_sender"), senderRows);
+
+  const auth = data.authentication || {};
+  const authRows = [];
+  (auth.trusted_receiver_results || []).forEach(x => authRows.push({ main: `${x.authserv_id}: ${Object.entries(x.results || {}).map(([k, v]) => k.toUpperCase() + "=" + v).join(" · ")}`, detail: t("email_trusted") }));
+  (auth.untrusted_header_claims || []).forEach(x => authRows.push({ main: `${x.authserv_id || "Unknown receiver"}: ${Object.entries(x.results || {}).map(([k, v]) => k.toUpperCase() + "=" + v).join(" · ")}`, detail: t("email_untrusted") }));
+  if (auth.dkim_signature_count) authRows.push({ main: `${t("email_dkim")}: ${auth.dkim_verification?.status || t("email_not_checked")}` });
+  const dns = auth.dns_posture;
+  if (dns?.status === "checked") (dns.domains || []).forEach(x => authRows.push({ main: `${t("email_dns")}: ${x.domain}`, detail: `SPF records: ${x.spf_record_count}; DMARC records: ${x.dmarc_record_count}; DMARC policy: ${x.dmarc_policy || "not found"}` }));
+  if (!authRows.length) authRows.push({ main: t("email_not_checked") });
+  group(t("email_auth"), authRows);
+
+  const findings = (data.findings || []).map(x => ({
+    main: `${x.title || x.code} `,
+    detail: `${x.detail || ""}${x.limitation ? " " + x.limitation : ""}`
+  }));
+  group(t("email_findings"), findings.length ? findings : [{ main: t("email_no_findings") }]);
+  const linkRows = (data.links?.items || []).map(x => ({
+    main: `${x.display_text ? x.display_text + " → " : ""}${x.destination_host || "Unrecognized destination"}`,
+    detail: (x.warning_codes || []).join(" · ")
+  }));
+  group(t("email_links"), linkRows);
+  const attachmentRows = (data.attachments?.items || []).map(x => ({
+    main: `${x.filename} (${x.content_type}, ${x.size_bytes} bytes)`,
+    detail: `${x.risk_note || "No extension-based warning"}${x.sha256 ? " · SHA-256: " + x.sha256 : ""}`
+  }));
+  group(t("email_attachments"), attachmentRows);
+  const hopRows = (data.routing?.hops || []).map((x, i) => ({
+    main: `${i + 1}. ${x.from_host || "unknown source"} → ${x.by_host || "unknown receiving host"}`,
+    detail: x.date_text || ""
+  }));
+  group(t("email_routing"), hopRows);
+  group(t("email_limits"), (data.limitations || []).map(x => ({ main: x })));
+}
+
+function initEmailForensics() {
+  const dialog = $("#email-forensics-dialog");
+  const form = $("#email-forensics-form");
+  if (!dialog || !form) return;
+  const file = $("#email-raw-file"), pasted = $("#email-raw-text"), status = $("#email-forensics-status");
+  const dns = $("#email-dns-consent"), submitButton = $("#email-forensics-submit"), results = $("#email-forensics-results");
+  $("#email-forensics-open")?.addEventListener("click", () => {
+    closeMobileSidebar(false);
+    dialog.showModal();
+  });
+  $("#email-forensics-close")?.addEventListener("click", () => dialog.close());
+  $("#email-forensics-cancel")?.addEventListener("click", () => dialog.close());
+  file?.addEventListener("change", () => { if (file.files?.length) pasted.value = ""; });
+  pasted?.addEventListener("input", () => { if (pasted.value.trim()) file.value = ""; });
+  form.addEventListener("submit", async ev => {
+    ev.preventDefault();
+    const selected = file.files?.[0] || null;
+    const rawText = pasted.value.trim();
+    if ((!selected && !rawText) || (selected && rawText)) {
+      status.textContent = t("email_no_input");
+      return;
+    }
+    if (selected && selected.size > 5 * 1024 * 1024) {
+      status.textContent = t("err_files");
+      return;
+    }
+    const formData = new FormData();
+    if (selected) formData.append("file", selected, selected.name);
+    else formData.append("raw_email", rawText);
+    formData.append("allow_dns_checks", dns?.checked ? "true" : "false");
+    submitButton.disabled = true;
+    status.textContent = t("email_analyzing");
+    results.hidden = true;
+    results.replaceChildren();
+    try {
+      const result = await api("/v1/email/analyze", { method: "POST", form: formData });
+      renderEmailForensicsResult(result);
+      status.textContent = t("email_done");
+      if (selected) file.value = "";
+      pasted.value = "";
+      dns.checked = false;
+      results.scrollIntoView({ block: "nearest", behavior: reduced ? "auto" : "smooth" });
+    } catch (err) {
+      status.textContent = err?.message || t("sorry");
+    } finally {
+      submitButton.disabled = false;
+    }
+  });
+}
+
 /* ---------- Language & Boot ---------- */
 function applyLang(l) {
   lang = l; document.documentElement.lang = l;
@@ -1591,6 +1710,8 @@ function boot() {
     document.body.append(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(u), 1000);
   });
+
+  initEmailForensics();
 
   // Safety Dialog
   const safetyDlg = $("#safety-dialog");
