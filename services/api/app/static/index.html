@@ -117,15 +117,7 @@
         <h1 class="sr-only" id="page-h">Toroka: check a message, shop or website</h1>
         
         <section id="welcome" aria-labelledby="welcome-h">
-          <div class="welcome-search-mark" aria-hidden="true">
-            <svg viewBox="0 0 96 96" focusable="false">
-              <circle cx="39" cy="36" r="23"></circle>
-              <circle class="lens-highlight" cx="39" cy="36" r="16"></circle>
-              <path d="M56 53 78 76"></path>
-              <path class="lens-glint" d="M29 27c3-4 7-6 12-6"></path>
-            </svg>
-          </div>
-          <h2 id="welcome-h" data-t-key="welcome_hi">What should we look into?</h2>
+          <h2 id="welcome-h" data-t-key="welcome_hi">What would you like to investigate?</h2>
           <p class="sub" id="welcome-p" data-t-key="welcome_desc">Share a message, link, screenshot or seller profile. I'll examine the available evidence and explain what I can and cannot verify.</p>
           
           <ul class="suggest">
@@ -184,8 +176,8 @@
 
       <!-- COMPOSER -->
       <form id="composer" class="composer" aria-label="Message Toroka" novalidate>
-        <ul id="attachments" class="attachments" aria-label="Attached files" hidden></ul>
-      <div id="campaign-image-consent" class="campaign-image-consent" hidden>
+        <ul id="attachments" class="attachments" aria-label="Attached screenshots" hidden></ul>
+        <div id="campaign-image-consent" class="campaign-image-consent" hidden>
           <label for="campaign-image-consent-toggle">
             <input id="campaign-image-consent-toggle" type="checkbox" value="cross_case_campaign">
             <span data-t-key="campaign_image_optin_label">Allow Toroka to compare this image's fingerprint across opted-in investigations</span>
@@ -200,18 +192,46 @@
           <span id="url-preview-target" class="url-preview-target"></span>
           <button type="button" id="url-preview-remove" class="url-preview-remove" aria-label="Remove link from message" title="Remove link">×</button>
         </div>
-        <div class="box">
-          <button type="button" id="attach" class="icon" aria-label="Attach image or email file" title="Attach an image or original email">
-            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M21 11.5l-8.600 8.600a5.500 5.500 0 0 1-7.800-7.800l9-9a3.700 3.700 0 0 1 5.200 5.200l-9 9a1.900 1.900 0 0 1-2.600-2.600l8.200-8.200"/></svg>
+        <div class="composer-actions-wrap">
+          <button type="button" id="attach" class="icon plus-trigger" aria-label="Open actions" title="Add to your message" aria-haspopup="menu" aria-expanded="false" aria-controls="composer-actions-menu">
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 5v14M5 12h14"/></svg>
           </button>
-          <button type="button" id="camera-btn" class="icon" aria-label="Take or upload photo" title="Upload image">
-            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
-          </button>
-          <button type="button" id="paste-btn" class="icon" aria-label="Paste from clipboard" title="Paste">
-            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/></svg>
-          </button>
+          <div id="composer-actions-menu" class="composer-actions-menu" role="menu" aria-label="Message actions" hidden>
+            <div class="composer-menu-section">
+              <span class="composer-menu-label" data-t-key="menu_add_title">Add to your message</span>
+              <button type="button" class="composer-menu-item" id="menu-add-images" role="menuitem">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>
+                <span><strong data-t-key="menu_images">Photos and screenshots</strong><small data-t-key="menu_images_hint">Add images to investigate</small></span>
+              </button>
+              <button type="button" class="composer-menu-item" id="menu-add-email" role="menuitem">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></svg>
+                <span><strong data-t-key="menu_email">Original email file</strong><small data-t-key="menu_email_hint">Upload .eml or full headers</small></span>
+              </button>
+              <button type="button" class="composer-menu-item" id="menu-paste" role="menuitem">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 4H6a2 2 0 0 0-2 2v14h16V6a2 2 0 0 0-2-2h-2"/><rect x="8" y="2" width="8" height="4" rx="1"/></svg>
+                <span><strong data-t-key="menu_paste">Paste from clipboard</strong><small data-t-key="menu_paste_hint">Insert copied text</small></span>
+              </button>
+            </div>
+            <div class="composer-menu-divider" role="separator"></div>
+            <div class="composer-menu-section">
+              <span class="composer-menu-label" data-t-key="menu_quick_title">Start an investigation</span>
+              <button type="button" class="composer-menu-item" data-menu-prompt="menu_prompt_link" role="menuitem">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.5 1.5M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.5-1.5"/></svg>
+                <span><strong data-t-key="menu_link">Check a website or link</strong><small data-t-key="menu_link_hint">Look into a domain or URL</small></span>
+              </button>
+              <button type="button" class="composer-menu-item" data-menu-prompt="menu_prompt_shop" role="menuitem">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 9h18l-1.5 12h-15L3 9Z"/><path d="M7 9V6a5 5 0 0 1 10 0v3"/></svg>
+                <span><strong data-t-key="menu_shop">Investigate an online shop</strong><small data-t-key="menu_shop_hint">Check a seller or social profile</small></span>
+              </button>
+              <button type="button" class="composer-menu-item" data-menu-prompt="menu_prompt_payment" role="menuitem">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20M6 15h4"/></svg>
+                <span><strong data-t-key="menu_payment">Check an M-PESA or payment message</strong><small data-t-key="menu_payment_hint">Review a receipt or payment request</small></span>
+              </button>
+            </div>
+          </div>
           <input type="file" id="file" accept="image/png,image/jpeg,image/webp,.eml,.headers,.txt,message/rfc822,text/plain" multiple hidden>
-          <textarea id="text" rows="1" maxlength="5242880" aria-label="Message to Toroka" placeholder="Ask or paste a message, link…" autocomplete="off" enterkeyhint="send"></textarea>
+        </div>
+        <textarea id="text" rows="1" maxlength="5242880" aria-label="Message to Toroka" placeholder="Ask or paste a message, link…" autocomplete="off" enterkeyhint="send"></textarea>
           <button type="submit" id="send" class="icon send" aria-label="Send" disabled>
             <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
           </button>
@@ -344,7 +364,6 @@
       </div>
     </div>
   </dialog>
-
 
   <script src="/static/i18n.js"></script>
   <script src="/static/i18n-chat.js"></script>

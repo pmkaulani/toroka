@@ -413,15 +413,6 @@ function userMsg(text, imgs = [], tKey = null, attachmentNames = []) {
   const b = h("div", { class: "bubble" }, h("span", { class: "sr-only", text: t("you_said") + " " }), said);
   const liveImgs = isReplaying ? imgs.filter(u => typeof u === "string" && !u.startsWith("blob:")) : imgs;
   liveImgs.forEach(u => b.append(h("img", { src: u, alt: t("shot_note") })));
-  if (!isReplaying) {
-    const documentNames = (attachmentNames || []).filter(name => /\.(?:eml|headers|txt)$/i.test(String(name || "")));
-    if (documentNames.length) {
-      const list = h("div", { class: "attachment-history attachment-document-history", "aria-label": "Attached email source" });
-      documentNames.slice(0, MAX_FILES).forEach(name => list.append(h("span", { class: "attachment-history-item" },
-        svg("attachment-file-icon", "M8 3h6l5 5v13H5V3z", "M14 3v6h5"), h("span", { text: name }))));
-      b.append(list);
-    }
-  }
   if (isReplaying && !liveImgs.length && (attachmentNames.length || imgs.length)) {
     const names = attachmentNames.length ? attachmentNames : [t("saved_attachment")];
     const list = h("div", { class: "attachment-history", "aria-label": t("saved_attachments_label") });
@@ -448,12 +439,13 @@ function inlineTokens(str) {
   let last = 0, match;
   while ((match = pattern.exec(str)) !== null) {
     if (match.index > last) tokens.push({ type: "text", value: str.slice(last, match.index) });
-    const token = match[0];
-    if (token.startsWith("**")) tokens.push({ type: "strong", value: token.slice(2, -2) });
+    const raw = match[0];
+    if (raw.startsWith("**")) tokens.push({ type: "strong", value: raw.slice(2, -2) });
     else {
-      const link = /^\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)$/.exec(token);
-      if (link && safeEvidenceUrl(link[2])) tokens.push({ type: "link", value: link[1], url: safeEvidenceUrl(link[2]) });
-      else tokens.push({ type: "text", value: token });
+      const parsed = /^\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)$/.exec(raw);
+      const url = parsed ? safeEvidenceUrl(parsed[2]) : null;
+      if (parsed && url) tokens.push({ type: "link", value: parsed[1], url });
+      else tokens.push({ type: "text", value: raw });
     }
     last = pattern.lastIndex;
   }
@@ -515,19 +507,22 @@ function renderRichContent(container, text) {
 }
 async function typeInlineContent(container, value, totalChars) {
   const tokens = inlineTokens(value);
-  const budget = Math.max(2, Math.round((value.length / Math.max(1, totalChars)) * 44));
+  const share = value.length / Math.max(1, totalChars);
+  const ticks = Math.max(2, Math.min(24, Math.round(share * 180)));
   for (const token of tokens) {
     let target = container;
     if (token.type === "strong") { target = h("strong"); container.append(target); }
-    else if (token.type === "link") { target = h("a", { href: token.url, target: "_blank", rel: "noopener noreferrer" }); container.append(target); }
-    const valueText = token.value;
+    else if (token.type === "link") {
+      target = h("a", { href: token.url, target: "_blank", rel: "noopener noreferrer" });
+      container.append(target);
+    }
     const node = document.createTextNode("");
     target.append(node);
-    if (reduced || valueText.length < 10) { node.textContent = valueText; continue; }
-    const ticks = Math.max(1, Math.round(budget * (valueText.length / Math.max(1, value.length))));
-    for (let i = 1; i <= ticks; i++) {
-      node.textContent = valueText.slice(0, Math.ceil(valueText.length * i / ticks));
-      await new Promise(resolve => setTimeout(resolve, 8));
+    if (reduced || token.value.length < 12) { node.textContent = token.value; continue; }
+    const tokenTicks = Math.max(1, Math.round(ticks * token.value.length / Math.max(1, value.length)));
+    for (let i = 1; i <= tokenTicks; i++) {
+      node.textContent = token.value.slice(0, Math.ceil(token.value.length * i / tokenTicks));
+      await new Promise(resolve => setTimeout(resolve, 9));
     }
   }
 }
@@ -535,13 +530,18 @@ async function renderRichContentStreaming(container, text) {
   if (reduced || isReplaying) { renderRichContent(container, text); return; }
   container.replaceChildren();
   const blocks = parseFormattedBlocks(text);
-  const totalChars = Math.max(1, blocks.reduce((sum, block) => sum + (block.type === "ul" || block.type === "ol" ? block.items.reduce((n, item) => n + item.length, 0) : block.text.length), 0));
+  const totalChars = Math.max(1, blocks.reduce((sum, block) => sum + (
+    block.type === "ul" || block.type === "ol"
+      ? block.items.reduce((count, item) => count + item.length, 0)
+      : block.text.length
+  ), 0));
   for (const block of blocks) {
     if (block.type === "ul" || block.type === "ol") {
       const list = h(block.type, { class: "bot-points" });
       container.append(list);
       for (const item of block.items) {
-        const li = h("li"); list.append(li); await typeInlineContent(li, item, totalChars);
+        const li = h("li"); list.append(li);
+        await typeInlineContent(li, item, totalChars);
       }
     } else {
       const tag = /^h[2-4]$/.test(block.type) ? block.type : "p";
@@ -593,7 +593,7 @@ function thinkingStepKeys(context = "") {
   if (/\b(?:email|e-mail|from:|reply-to:|return-path|dkim|spf|dmarc|\.eml)\b/.test(value)) {
     return ["th_email_1", "th_email_2", "th_email_3", "th_email_4", "th5"];
   }
-  if (/https?:\/\/|www\.|\b(?:\w+\.)+(?:com|org|net|co\.ke|ke)\b|instagram|tiktok|facebook|@\w+/.test(value)) {
+  if (/https?:\/\/|www\.|\b(?:[a-z0-9-]+\.)+(?:com|org|net|co\.ke|ke)\b|instagram|tiktok|facebook|@\w+/.test(value)) {
     return ["th_web_1", "th_web_2", "th_web_3", "th_web_4", "th5"];
   }
   if (/\b(?:m[\s-]?pesa|till|paybill|payment|paid|transaction|receipt|bank details)\b/.test(value)) {
@@ -607,17 +607,15 @@ function thinkingStepKeys(context = "") {
 function think(context = "") {
   const m = botMsg();
   const keys = thinkingStepKeys(context);
-  const initial = t(keys[0]);
-  const line = h("span", { class: "think-copy", "aria-hidden": "true", text: initial });
-  // Keep the animated visual text separate from the live region so assistive
-  // technology hears each complete update, not every typed character.
-  const live = h("span", { class: "sr-only", role: "status", "aria-live": "polite", text: initial });
+  const line = h("span", { class: "think-copy", "aria-hidden": "true", text: t(keys[0]) });
+  const live = h("span", { class: "sr-only", role: "status", "aria-live": "polite", text: t(keys[0]) });
   const row = h("div", { class: "think" },
-    h("span", { class: "think-orbit", "aria-hidden": "true" }), line,
-    h("span", { class: "dots", "aria-hidden": "true" }), live
+    h("span", { class: "think-orbit", "aria-hidden": "true" }),
+    line, h("span", { class: "dots", "aria-hidden": "true" }), live
   );
   m.body.append(row); run(m.avatar.firstChild); say(t("thinking"));
-  let index = 0, typeTimer = null, cycleTimer = null, stopped = false;
+
+  let index = 0, typeTimer = null, stageTimer = null, stopped = false;
   const typeLine = value => {
     if (typeTimer) clearTimeout(typeTimer);
     live.textContent = value;
@@ -626,23 +624,26 @@ function think(context = "") {
     let position = 0;
     const tick = () => {
       if (stopped) return;
-      position = Math.min(value.length, position + Math.max(1, Math.ceil(value.length / 30)));
+      position = Math.min(value.length, position + (position < 24 ? 2 : 3));
       line.textContent = value.slice(0, position);
-      if (position < value.length) typeTimer = setTimeout(tick, 14);
+      if (position < value.length) typeTimer = setTimeout(tick, 18);
     };
     tick();
   };
-  typeLine(initial);
-  if (!reduced) {
-    cycleTimer = setInterval(() => {
-      if (stopped) return;
-      index = (index + 1) % keys.length;
+  const advance = () => {
+    if (stopped) return;
+    if (index < keys.length - 1) {
+      index += 1;
       typeLine(t(keys[index]));
-    }, 1850);
-  }
+      stageTimer = setTimeout(advance, 2600);
+    } else {
+      stageTimer = setTimeout(() => typeLine(t("th_wait")), 4200);
+    }
+  };
+  if (!reduced) stageTimer = setTimeout(advance, 2500);
   return { stop() {
     stopped = true;
-    if (cycleTimer) clearInterval(cycleTimer);
+    if (stageTimer) clearTimeout(stageTimer);
     if (typeTimer) clearTimeout(typeTimer);
     m.li.remove();
   } };
@@ -1094,6 +1095,20 @@ async function sendFeedback(checkId, sampleText, assessment, feedbackType, comme
   }
 }
 
+function responseHighlights(parent, findings, limit = 2) {
+  const items = (findings || []).filter(f => f && f.plain_text && f.why_it_matters).slice(0, limit);
+  if (!items.length) return;
+  const section = h("section", { class: "response-highlights", "aria-label": t("r_highlights") },
+    h("h3", { text: t("r_highlights") }),
+    h("div", { class: "response-highlight-list" }, items.map(item => h("article", { class: "response-highlight" },
+      h("strong", { text: item.plain_text }),
+      h("p", { text: item.why_it_matters }),
+      item.excerpt ? h("blockquote", { text: `“${item.excerpt}”` }) : null
+    )))
+  );
+  parent.append(section);
+}
+
 async function renderCheck(data, text, bubble) {
   const a = data.assessment, m = botMsg();
   if (!a || data.status === "failed_safely") { await stream(m.body.appendChild(h("p")), t("failed_safely")); return; }
@@ -1107,19 +1122,9 @@ async function renderCheck(data, text, bubble) {
   } else {
     await stream(p, strip(a.label, a.summary, !!pay));
   }
-  const visibleFindings = (a.findings || []).filter(f => f && f.plain_text && f.why_it_matters).slice(0, 2);
-  if (visibleFindings.length) {
-    const highlights = h("section", { class: "response-highlights", "aria-label": t("r_highlights") },
-      h("h3", { text: t("r_highlights") }),
-      h("div", { class: "response-highlight-list" }, visibleFindings.map(f => h("article", { class: "response-highlight" },
-        h("strong", { text: f.plain_text }),
-        h("p", { text: f.why_it_matters }),
-        f.excerpt ? h("blockquote", { text: `“${f.excerpt}”` }) : null
-      )))
-    );
-    m.body.append(highlights);
-  }
+  // Put urgent advice immediately after the answer, before supporting details.
   if (pay) m.body.append(h("div", { class: "callout" }, h("strong", { "data-t-key": "before_pay", text: t("before_pay") }), h("span", { class: "callout-text", text: " " + pay.text })));
+  responseHighlights(m.body, a.findings, 2);
   const rest = a.next_steps.filter(n => n !== pay);
   if (rest.length) {
     const nsWrap = h("div", { class: "next-steps-wrap" },
@@ -1201,7 +1206,7 @@ function parseId(s) {
   return null;
 }
 async function lookup(type, value) {
-  const th = think();
+  const th = think(value);
   try {
     const d = await api(`/v1/reports/search?type=${encodeURIComponent(type)}&value=${encodeURIComponent(value)}`); th.stop();
     if (!d.found) {
@@ -1410,9 +1415,9 @@ async function addFiles(list) {
     }
     if (!image && !emailSource) { showError(t("err_type")); continue; }
     if (raw.size > MAX_BYTES || files.length >= MAX_FILES) { showError(t("err_files")); continue; }
-    const f = image ? await compressImage(raw) : raw;
-    if (image) f.__url = URL.createObjectURL(f);
-    files.push(f);
+    const file = image ? await compressImage(raw) : raw;
+    if (image) file.__url = URL.createObjectURL(file);
+    files.push(file);
   }
   renderFiles(); syncSend();
 }
@@ -1446,6 +1451,8 @@ async function renderUrlInvestigation(inv, replyText, actionChips) {
   } else {
     await stream(pSum, inv.summary);
   }
+
+  responseHighlights(m.body, inv.findings, 3);
 
   if (inv.contradictions && inv.contradictions.length) {
     const cBox = h("div", { class: "contradiction-callout" });
@@ -1563,10 +1570,7 @@ function looksLikeRawEmailSource(text) {
   const found = new Set();
   for (const line of lines) {
     const match = /^([A-Za-z][A-Za-z0-9-]{1,40}):\s*/.exec(line);
-    if (match) {
-      const name = match[1].toLowerCase();
-      if (headerNames.includes(name)) found.add(name);
-    }
+    if (match && headerNames.includes(match[1].toLowerCase())) found.add(match[1].toLowerCase());
   }
   const hasSender = found.has("from") || found.has("sender");
   const supporting = ["to", "subject", "date", "received", "return-path", "authentication-results", "dkim-signature", "mime-version"].some(x => found.has(x));
@@ -1580,17 +1584,16 @@ async function doEmailCheck({ file = null, rawText = "", bubble = null, label = 
     const formData = new FormData();
     if (file) formData.append("file", file, file.name || "original-email.eml");
     else formData.append("raw_email", rawText);
-    // DNS lookups remain opt-in; the default email analysis is local-first.
     formData.append("allow_dns_checks", "false");
     const result = await api("/v1/email/analyze", { method: "POST", form: formData });
     th.stop();
     const m = botMsg();
-    const report = h("section", { class: "email-results email-results-chat", "aria-label": "Email investigation findings" });
+    const report = h("section", { class: "email-results email-results-chat", "aria-label": t("email_report_aria") });
     m.body.append(report);
     renderEmailForensicsResult(result, report);
-    const summary = result.summary || "Email investigation completed.";
+    const summary = result.summary || t("email_done");
     convMessages.push({ role: "bot", text: summary });
-    saveOrUpdateCurrentConversation(label || "Email investigation", summary);
+    saveOrUpdateCurrentConversation(label || t("email_title"), summary);
     if (bubble && !label) bubble.dataset.emailAnalyzed = "true";
   } catch (error) {
     th.stop();
@@ -1606,17 +1609,17 @@ async function submit(ev) {
   const rawEmail = !emailFile && looksLikeRawEmailSource(text);
   const crossCaseImageConsent = imageFiles.length > 0 && $("#campaign-image-consent-toggle")?.checked === true;
   box().value = ""; files = []; fit(); renderFiles(); busy = true; syncSend();
-  // Keep the conversation natural: show an attachment label, never dump raw headers into the chat.
-  const displayText = emailFile && !text ? (lang === "sw" ? `Barua pepe asili imeambatishwa: ${emailFile.name}` : `Original email attached: ${emailFile.name}`)
-    : rawEmail ? (lang === "sw" ? "Chanzo cha barua pepe kimetumwa kwa uchunguzi" : "Email source provided for investigation")
-    : (text || (fl.length ? t("count_shots") : ""));
+  const displayText = emailFile && !text
+    ? (lang === "sw" ? `Barua pepe asili imeambatishwa: ${emailFile.name}` : `Original email attached: ${emailFile.name}`)
+    : rawEmail
+      ? (lang === "sw" ? "Chanzo cha barua pepe kimetumwa kwa uchunguzi" : "Email source provided for investigation")
+      : (text || (fl.length ? t("count_shots") : ""));
   const imageUrls = imageFiles.filter(f => f.__url).map(f => f.__url);
   const u = userMsg(displayText, imageUrls, null, fl.map(f => f.name));
   try {
     pending = null;
     if (emailFile || rawEmail) {
-      await doEmailCheck({ file: emailFile, rawText: rawEmail ? text : "", bubble: u.bubble, label: emailFile?.name || "Email investigation" });
-      // If the user attached screenshots alongside the original email, inspect those in the normal evidence path too.
+      await doEmailCheck({ file: emailFile, rawText: rawEmail ? text : "", bubble: u.bubble, label: emailFile?.name || t("email_title") });
       if (imageFiles.length) await doCheck(text || "Screenshots accompanying an email investigation", imageFiles, u.bubble, crossCaseImageConsent);
     } else if (imageFiles.length > 0 || looksLikeEvidence(text, imageFiles)) {
       await doCheck(text, imageFiles, u.bubble, crossCaseImageConsent);
@@ -1629,7 +1632,6 @@ async function submit(ev) {
     }
   } finally { busy = false; syncSend(); box().focus(); }
 }
-
 /* ---------- Email forensics: raw .eml/header analysis ---------- */
 function renderEmailForensicsResult(data, targetRoot = null) {
   const root = targetRoot || $("#email-forensics-results");
@@ -1699,6 +1701,88 @@ function renderEmailForensicsResult(data, targetRoot = null) {
   group(t("email_limits"), (data.limitations || []).map(x => ({ main: x })));
 }
 
+
+/* ---------- ChatGPT-style composer actions menu ---------- */
+function closeComposerActionsMenu({ restoreFocus = false } = {}) {
+  const menu = $("#composer-actions-menu"), trigger = $("#attach");
+  if (!menu || !trigger || menu.hidden) return;
+  menu.hidden = true;
+  trigger.setAttribute("aria-expanded", "false");
+  if (restoreFocus) trigger.focus();
+}
+function openComposerActionsMenu() {
+  const menu = $("#composer-actions-menu"), trigger = $("#attach");
+  if (!menu || !trigger) return;
+  menu.hidden = false;
+  trigger.setAttribute("aria-expanded", "true");
+  menu.querySelector("[role='menuitem']")?.focus();
+}
+function toggleComposerActionsMenu() {
+  const menu = $("#composer-actions-menu");
+  if (!menu) return;
+  if (menu.hidden) openComposerActionsMenu(); else closeComposerActionsMenu();
+}
+async function pasteComposerClipboard() {
+  try {
+    if (!navigator.clipboard?.readText) throw new Error("Clipboard access unavailable");
+    const value = await navigator.clipboard.readText();
+    if (value) {
+      const el = box(), start = el.selectionStart ?? el.value.length, end = el.selectionEnd ?? start;
+      el.setRangeText(value, start, end, "end");
+      fit(); syncSend(); el.focus();
+    }
+  } catch (_) {
+    box().focus();
+    showError(t("clipboard_unavailable"));
+  }
+}
+function insertComposerPrompt(key) {
+  const prompts = {
+    menu_prompt_link: t("insert_link_prompt"),
+    menu_prompt_shop: t("insert_shop_prompt"),
+    menu_prompt_payment: t("insert_payment_prompt")
+  };
+  const value = prompts[key];
+  if (!value) return;
+  const el = box();
+  if (el.value.trim()) el.value = `${el.value.trim()}\n${value}`;
+  else el.value = value;
+  fit(); syncSend(); el.focus(); el.setSelectionRange(el.value.length, el.value.length);
+}
+function initComposerActionsMenu() {
+  const menu = $("#composer-actions-menu"), trigger = $("#attach"), input = $("#file");
+  if (!menu || !trigger || !input) return;
+  trigger.addEventListener("click", toggleComposerActionsMenu);
+  $("#menu-add-images")?.addEventListener("click", () => {
+    closeComposerActionsMenu(); input.accept = "image/png,image/jpeg,image/webp"; input.click();
+  });
+  $("#menu-add-email")?.addEventListener("click", () => {
+    closeComposerActionsMenu(); input.accept = ".eml,.headers,.txt,message/rfc822,text/plain,application/octet-stream"; input.click();
+  });
+  $("#menu-paste")?.addEventListener("click", () => { closeComposerActionsMenu(); pasteComposerClipboard(); });
+  menu.querySelectorAll("[data-menu-prompt]").forEach(button => button.addEventListener("click", () => {
+    const key = button.dataset.menuPrompt;
+    closeComposerActionsMenu(); insertComposerPrompt(key);
+  }));
+  menu.addEventListener("keydown", ev => {
+    const items = [...menu.querySelectorAll("[role='menuitem']:not(:disabled)")];
+    const index = items.indexOf(document.activeElement);
+    if (ev.key === "Escape") { ev.preventDefault(); closeComposerActionsMenu({ restoreFocus: true }); }
+    else if (ev.key === "ArrowDown" || ev.key === "ArrowUp") {
+      ev.preventDefault();
+      const delta = ev.key === "ArrowDown" ? 1 : -1;
+      items[(index + delta + items.length) % items.length]?.focus();
+    }
+    else if (ev.key === "Home") { ev.preventDefault(); items[0]?.focus(); }
+    else if (ev.key === "End") { ev.preventDefault(); items.at(-1)?.focus(); }
+  });
+  document.addEventListener("pointerdown", ev => {
+    if (!menu.hidden && !ev.target.closest(".composer-actions-wrap")) closeComposerActionsMenu();
+  });
+  document.addEventListener("keydown", ev => {
+    if (ev.key === "Escape" && !menu.hidden) { ev.preventDefault(); closeComposerActionsMenu({ restoreFocus: true }); }
+  });
+}
 
 /* ---------- Language & Boot ---------- */
 function applyLang(l) {
@@ -1810,18 +1894,12 @@ function boot() {
   box().addEventListener("input", () => { fit(); syncSend(); });
   box().addEventListener("keydown", ev => { if (ev.key === "Enter" && !ev.shiftKey && !ev.isComposing) { ev.preventDefault(); submit(); } });
   box().addEventListener("paste", ev => { const imgs = [...(ev.clipboardData ? ev.clipboardData.files : [])].filter(f => f.type.startsWith("image/")); if (imgs.length) { ev.preventDefault(); addFiles(imgs); } });
-  $("#attach").addEventListener("click", () => $("#file").click());
-  $("#camera-btn")?.addEventListener("click", () => $("#file").click());
-  $("#file").addEventListener("change", ev => { addFiles([...ev.target.files]); ev.target.value = ""; });
-
-  const pb = $("#paste-btn");
-  if (pb) {
-    if (navigator.clipboard && navigator.clipboard.readText) {
-      pb.addEventListener("click", async () => {
-        try { const txt = await navigator.clipboard.readText(); if (txt) { box().value = txt.slice(0, 5000); fit(); syncSend(); box().focus(); } } catch (_) { box().focus(); }
-      });
-    } else { pb.hidden = true; }
-  }
+  initComposerActionsMenu();
+  $("#file").addEventListener("change", async ev => {
+    await addFiles([...ev.target.files]);
+    ev.target.value = "";
+    ev.target.accept = "image/png,image/jpeg,image/webp,.eml,.headers,.txt,message/rfc822,text/plain";
+  });
 
   // Settings Dialog
   const settingsDlg = $("#settings-dialog");
@@ -1858,6 +1936,7 @@ function boot() {
     document.body.append(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(u), 1000);
   });
+
 
   // Safety Dialog
   const safetyDlg = $("#safety-dialog");

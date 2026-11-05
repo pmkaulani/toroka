@@ -1655,268 +1655,57 @@ body:not(.dark-theme) .msg.user .bubble {
   .sidebar-local-note { font-size: .7rem; }
 }
 
-/* ---------- EMAIL FORENSICS RESULTS INSIDE THE NORMAL CHAT ---------- */
-.email-results { display: flex; flex-direction: column; gap: 10px; border-top: 1px solid var(--border-subtle); padding-top: 12px; }
-.email-results[hidden] { display: none; }
-.email-results-chat { margin-top: 10px; max-width: 100%; }
-.email-results-chat .email-result-group { background: var(--surface); }
+
+
+/* Compact, keyboard-accessible plus menu inspired by familiar AI chat composers. */
+.composer { position: relative; }
+.composer-actions-wrap { position: relative; flex: none; }
+.plus-trigger { width: 42px; height: 42px; border-radius: 50%; color: var(--ink); }
+.plus-trigger svg { width: 21px; height: 21px; transition: transform .16s ease; }
+.plus-trigger[aria-expanded="true"] svg { transform: rotate(45deg); }
+.composer-actions-menu {
+  position: absolute;
+  z-index: 30;
+  left: 0;
+  bottom: calc(100% + 10px);
+  width: min(330px, calc(100vw - 34px));
+  padding: 8px;
+  border: 1px solid var(--border-control);
+  border-radius: 16px;
+  background: var(--surface);
+  box-shadow: 0 14px 38px rgba(15, 35, 52, .16), 0 2px 8px rgba(15, 35, 52, .06);
+  animation: composer-menu-in .14s ease-out;
+}
+.composer-actions-menu[hidden] { display: none; }
+.composer-menu-section { display: grid; gap: 2px; }
+.composer-menu-label { padding: 7px 10px 5px; color: var(--text-secondary); font-size: .68rem; font-weight: 750; letter-spacing: .055em; text-transform: uppercase; }
+.composer-menu-item {
+  display: flex; align-items: center; gap: 12px; width: 100%; min-height: 54px;
+  padding: 8px 10px; border: 0; border-radius: 10px; background: transparent;
+  color: var(--ink); text-align: left; cursor: pointer; font: inherit;
+}
+.composer-menu-item:hover, .composer-menu-item:focus-visible { background: var(--unknown-bg); outline: none; }
+.composer-menu-item > svg { flex: none; width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; color: var(--text-secondary); }
+.composer-menu-item span { display: grid; gap: 2px; min-width: 0; }
+.composer-menu-item strong { font-size: .84rem; font-weight: 650; }
+.composer-menu-item small { color: var(--text-secondary); font-size: .72rem; line-height: 1.35; }
+.composer-menu-divider { height: 1px; margin: 7px 4px; background: var(--border-subtle); }
+.attachment-document-item .attachment-file-chip { display: flex; align-items: center; gap: 6px; max-width: 220px; padding: 8px 10px; border: 1px solid var(--border-control); border-radius: 9px; background: var(--surface); color: var(--ink); font-size: .76rem; }
+.attachment-file-icon { width: 18px; height: 18px; flex: none; }
+.email-results-chat { margin-top: 4px; }
+@keyframes composer-menu-in { from { opacity: 0; transform: translateY(5px) scale(.985); } to { opacity: 1; transform: translateY(0) scale(1); } }
+@media (prefers-reduced-motion: reduce) { .composer-actions-menu { animation: none; } .plus-trigger svg { transition: none; } }
+
+/* Email-forensics evidence rendered inline as a normal assistant reply. */
+.email-results { display: flex; flex-direction: column; gap: 10px; padding-top: 4px; }
 .email-attention { padding: 11px 12px; border: 1px solid var(--border-control); border-radius: 10px; background: var(--unknown-bg); }
 .email-attention.high { border-color: var(--risk-fg); background: var(--risk-bg); }
 .email-attention.review { border-color: var(--verify-fg); background: var(--verify-bg); }
 .email-attention strong { display: block; margin-bottom: 3px; }
-.email-attention p { margin: 0; font-size: .88rem; line-height: 1.55; }
+.email-attention p { margin: 0; font-size: .82rem; line-height: 1.45; }
 .email-result-group { border: 1px solid var(--border-subtle); border-radius: 9px; padding: 10px 11px; }
 .email-result-group h3 { margin: 0 0 7px; font-size: .86rem; color: var(--action); }
 .email-result-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 7px; }
-.email-result-list li { border-top: 1px solid var(--border-subtle); padding-top: 7px; font-size: .84rem; line-height: 1.5; overflow-wrap: anywhere; }
+.email-result-list li { border-top: 1px solid var(--border-subtle); padding-top: 7px; font-size: .8rem; line-height: 1.45; overflow-wrap: anywhere; }
 .email-result-list li:first-child { border-top: 0; padding-top: 0; }
 .email-result-list small { display: block; color: var(--text-secondary); margin-top: 2px; }
-.email-severity { display: inline-block; margin-right: 5px; border: 1px solid var(--border-control); border-radius: 999px; padding: 1px 6px; font-size: .68rem; color: var(--text-secondary); }
-.attachment-document-item { display: flex; align-items: center; gap: 8px; }
-.attachment-file-chip { display: inline-flex; align-items: center; gap: 7px; max-width: min(320px, 68vw); padding: 8px 11px; border: 1px solid var(--border-subtle); border-radius: 12px; background: var(--unknown-bg); color: var(--text-primary); font-size: .82rem; }
-.attachment-file-chip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.attachment-file-icon { width: 19px; height: 19px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
-
-/* -------------------------------------------------------------------------
-   TOROKA CHAT EXPERIENCE REFINEMENT
-   Familiar conversational layout; keep the existing Toroka runner logo.
-   ------------------------------------------------------------------------- */
-:root {
-  --chat-side: #f7f8f8;
-  --chat-tile: #fbfcfc;
-  --chat-line: #e3e8ea;
-  --chat-shadow: 0 1px 2px rgba(20, 36, 48, .035), 0 5px 18px rgba(20, 36, 48, .035);
-}
-body:not(.dark-theme) .sidebar { background: var(--chat-side); }
-body:not(.dark-theme) .sidebar-top { background: var(--chat-side); }
-body:not(.dark-theme) .main-wrapper,
-body:not(.dark-theme) main,
-body:not(.dark-theme) .top { background: #fff; }
-
-/* A single investigation mark above the welcome chat. The Toroka logo itself is unchanged. */
-.welcome-search-mark {
-  width: 76px;
-  height: 76px;
-  display: grid;
-  place-items: center;
-  margin: 0 auto 22px;
-  position: relative;
-  border-radius: 25px;
-  background: #edf7f7;
-  color: var(--action);
-  box-shadow: inset 0 0 0 1px rgba(8, 127, 140, .07);
-}
-.welcome-search-mark::before {
-  content: "";
-  position: absolute;
-  width: 28px;
-  height: 28px;
-  border-radius: 10px;
-  right: -7px;
-  top: -7px;
-  background: #e7e1ff;
-  z-index: 0;
-}
-.welcome-search-mark svg {
-  position: relative;
-  z-index: 1;
-  width: 58px;
-  height: 58px;
-  overflow: visible;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 4.2;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  transform: rotate(-7deg);
-}
-.welcome-search-mark .lens-highlight {
-  stroke: rgba(8, 127, 140, .42);
-  stroke-width: 2.1;
-}
-.welcome-search-mark .lens-glint {
-  stroke: #fff;
-  stroke-width: 2.6;
-}
-#welcome { max-width: 760px; padding: 16px 20px; }
-#welcome h2 {
-  max-width: 22ch;
-  margin: 0 auto 10px;
-  font-size: clamp(2rem, 3.4vw, 2.65rem);
-  font-weight: 720;
-  letter-spacing: -.052em;
-  line-height: 1.12;
-}
-#welcome .sub {
-  max-width: 54ch;
-  margin-bottom: 25px;
-  font-size: .98rem;
-  line-height: 1.6;
-  color: var(--text-secondary);
-}
-
-/* Prompt starters become quiet, useful action tiles rather than plain text links. */
-#welcome .suggest {
-  max-width: 660px;
-  gap: 10px;
-  margin-top: 2px;
-}
-#welcome .suggest .prompt-action-card {
-  min-height: 76px;
-  padding: 13px 14px;
-  gap: 12px;
-  align-items: center;
-  background: var(--chat-tile);
-  border: 1px solid var(--chat-line);
-  border-radius: 14px;
-  box-shadow: none;
-  transition: background .16s ease, border-color .16s ease, transform .16s ease, box-shadow .16s ease;
-}
-#welcome .suggest .prompt-action-card:hover,
-#welcome .suggest .prompt-action-card:focus-visible {
-  background: #fff;
-  border-color: #b6d6d8;
-  box-shadow: var(--chat-shadow);
-  transform: translateY(-1px);
-}
-#welcome .prompt-card-icon {
-  display: grid !important;
-  width: 36px;
-  height: 36px;
-  border-radius: 11px;
-  background: #edf5f5;
-  color: var(--action);
-}
-#welcome .prompt-card-icon svg { width: 18px; height: 18px; }
-#welcome .prompt-card-body { gap: 3px; }
-#welcome .prompt-card-title { font-size: .86rem; font-weight: 670; line-height: 1.3; }
-#welcome .prompt-card-desc { font-size: .74rem; line-height: 1.38; color: var(--text-secondary); }
-
-/* Conversation width and rhythm: user messages stay compact, Toroka's answer stays open. */
-#thread { max-width: 800px; padding: 20px 22px 30px; gap: 26px; }
-.msg { gap: 12px; }
-.msg.bot .avatar { width: 30px; height: 30px; margin-top: 1px; }
-.msg.bot .reply { font-size: .97rem; line-height: 1.68; }
-.msg.user .bubble {
-  max-width: min(76%, 620px);
-  padding: 12px 16px;
-  border-radius: 19px;
-  background: #f1f3f4;
-  line-height: 1.58;
-}
-.reply p { line-height: 1.68; }
-.reply a { text-decoration-thickness: 1px; text-underline-offset: 2px; overflow-wrap: anywhere; }
-.reply h2, .reply h3, .reply h4 { letter-spacing: -.025em; }
-
-/* Grounded highlights make the first answer useful before users open every detail. */
-.response-highlights {
-  margin: 15px 0 17px;
-  padding: 13px 15px 4px;
-  background: #f8fafb;
-  border: 1px solid #e7ecee;
-  border-radius: 14px;
-}
-.response-highlights h3 {
-  margin: 0 0 7px;
-  color: var(--ink);
-  font-size: .86rem;
-  font-weight: 720;
-  letter-spacing: -.01em;
-}
-.response-highlight-list { display: flex; flex-direction: column; }
-.response-highlight {
-  padding: 10px 0 12px;
-  border-top: 1px solid #e8edef;
-}
-.response-highlight:first-child { border-top: 0; }
-.response-highlight strong { display: block; margin-bottom: 4px; font-size: .88rem; line-height: 1.45; }
-.response-highlight p { margin: 0; color: var(--text-secondary); font-size: .82rem; line-height: 1.55; }
-.response-highlight blockquote {
-  margin: 8px 0 0;
-  padding: 7px 10px;
-  color: var(--text-secondary);
-  background: #fff;
-  border-left: 3px solid var(--action);
-  border-radius: 0 8px 8px 0;
-  font-size: .8rem;
-}
-
-/* Natural, type-in investigation status. */
-.think {
-  display: inline-flex;
-  align-items: center;
-  min-height: 30px;
-  gap: 9px;
-  color: var(--text-secondary);
-  font-size: .87rem;
-  line-height: 1.4;
-}
-.think-copy { min-width: 0; animation: think-copy-in .22s ease both; }
-.think-orbit {
-  width: 15px;
-  height: 15px;
-  flex: none;
-  border: 2px solid #c6dddd;
-  border-top-color: var(--action);
-  border-right-color: var(--action);
-  border-radius: 50%;
-  animation: think-spin .85s linear infinite;
-}
-.dots::after { content: ""; display: inline-block; width: 1.4em; animation: think-dots 1.35s steps(4, end) infinite; }
-@keyframes think-spin { to { transform: rotate(360deg); } }
-@keyframes think-copy-in { from { opacity: .25; transform: translateY(2px); } to { opacity: 1; transform: translateY(0); } }
-@keyframes think-dots { 0% { content: ""; } 25% { content: "."; } 50% { content: ".."; } 75%, 100% { content: "..."; } }
-
-/* Composer: familiar rounded writing surface, while keeping Toroka's tools and safety note. */
-.composer { max-width: 820px; padding: 9px 20px 13px; }
-.composer .box {
-  border: 1px solid #d8dfe2;
-  border-radius: 25px;
-  background: #fff;
-  padding: 6px 8px;
-  box-shadow: 0 2px 7px rgba(15, 35, 52, .055);
-  transition: border-color .16s ease, box-shadow .16s ease;
-}
-.composer .box:focus-within {
-  border-color: #8bbfc3;
-  box-shadow: 0 0 0 3px rgba(8, 127, 140, .09), 0 3px 12px rgba(15, 35, 52, .06);
-}
-#text { min-height: 48px; font-size: .97rem; line-height: 1.5; }
-#text::placeholder { color: #7b8790; }
-.composer .icon { width: 40px; height: 40px; }
-.composer .send { background: #087f8c; color: #fff; }
-.composer .send:hover { background: #066e78; }
-.composer .send:disabled { background: #e8edef; color: #82919a; }
-.fine { max-width: 740px; line-height: 1.45; }
-
-body.dark-theme .welcome-search-mark { background: #132d30; color: #72c7cc; }
-body.dark-theme .welcome-search-mark::before { background: #33265c; }
-body.dark-theme #welcome .suggest .prompt-action-card { background: #101416; border-color: #273236; }
-body.dark-theme #welcome .suggest .prompt-action-card:hover { background: #151c1e; border-color: #38666b; }
-body.dark-theme #welcome .prompt-card-icon { background: #172d30; color: #72c7cc; }
-body.dark-theme .msg.user .bubble { background: #1b2225; color: #f3f6f7; }
-body.dark-theme .response-highlights { background: #101416; border-color: #273236; }
-body.dark-theme .response-highlight { border-color: #273236; }
-body.dark-theme .response-highlight blockquote { background: #171e21; }
-body.dark-theme .composer .box { background: #101416; border-color: #354247; }
-body.dark-theme .composer .box:focus-within { border-color: #4f9da3; }
-
-@media (max-width: 768px) {
-  .welcome-search-mark { width: 64px; height: 64px; border-radius: 21px; margin-bottom: 17px; }
-  .welcome-search-mark svg { width: 50px; height: 50px; }
-  #welcome { padding: 12px 4px; }
-  #welcome .suggest { grid-template-columns: 1fr; max-width: 540px; gap: 8px; }
-  #welcome .suggest .prompt-action-card { min-height: 68px; padding: 10px 12px; }
-  #thread { padding: 14px 10px 24px; gap: 20px; }
-  .composer { padding: 7px 12px calc(9px + env(safe-area-inset-bottom, 0px)); }
-  .msg.user .bubble { max-width: 90%; }
-}
-@media (max-width: 420px) {
-  #welcome h2 { font-size: 1.8rem; }
-  #welcome .sub { font-size: .9rem; margin-bottom: 19px; }
-  .think { font-size: .82rem; }
-}
-@media (prefers-reduced-motion: reduce) {
-  .think-orbit, .think-copy, .dots::after { animation: none !important; }
-}
-
