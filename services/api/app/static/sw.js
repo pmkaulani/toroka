@@ -1,5 +1,5 @@
 /* Caches the app shell only. API calls and anything private are never cached. */
-const CACHE = "toroka-shell-v6-layout-fix";
+const CACHE = "toroka-shell-v7-clickable-words";
 const SHELL = ["/", "/static/styles.css", "/static/app.js", "/static/i18n.js", "/static/i18n-chat.js", "/static/icon.svg", "/manifest.webmanifest"];
 self.addEventListener("install", e => e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting())));
 self.addEventListener("activate", e => e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== CACHE).map(k => caches.delete(k)))).then(() => self.clients.claim())));
