@@ -1813,21 +1813,24 @@ body:not(.dark-theme) .top { background: #fff; }
 }
 .msg.user .bubble {
   max-width: min(84%, 640px);
-  padding: 12px 17px;
+  padding: 11px 16px;
   border-radius: 20px;
   background: #f4f6f7;
   color: #172d43;
-  box-shadow: 0 1px 2px rgba(15, 35, 52, .04);
+  box-shadow: none;
 }
 .msg.bot {
   max-width: 100%;
+  width: 100%;
 }
 .msg.bot .reply {
-  max-width: min(86%, 680px);
-  padding: 12px 16px;
-  border-radius: 19px;
-  background: #f1f3f4;
-  line-height: 1.58;
+  max-width: 100%;
+  padding: 2px 0 0;
+  border-radius: 0;
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  line-height: 1.65;
 }
 .reply p { line-height: 1.68; }
 .reply a { text-decoration-thickness: 1px; text-underline-offset: 2px; overflow-wrap: anywhere; }
@@ -1936,7 +1939,7 @@ body.dark-theme #welcome .suggest .prompt-action-card:focus-visible .prompt-card
 }
 body.dark-theme #welcome .prompt-card-icon { background: #172d30; color: #72c7cc; }
 body.dark-theme .msg.user .bubble { background: #1b2225; color: #f3f6f7; }
-body.dark-theme .msg.bot .reply { background: #171e21; color: #f3f6f7; }
+body.dark-theme .msg.bot .reply { background: transparent !important; color: #f3f6f7; }
 body.dark-theme .response-highlights { background: #101416; border-color: #273236; }
 body.dark-theme .response-highlight { border-color: #273236; }
 body.dark-theme .response-highlight blockquote { background: #171e21; }
