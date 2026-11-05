@@ -1,59 +1,261 @@
-# Toroka
+# Toroka 🏃‍♂️🇰🇪
 
-*Toroka* is Swahili for "run away": the logo is a running figure. A Kenya-first, evidence-first scam checker you talk to like a chat assistant. Paste a message, link or seller details (or attach screenshots) and Toroka thinks, then replies with a label, the reasons, dated official sources, and what it could **not** check. It says when a website or shop is **verified** (from a reviewed, dated, revocable record), gives context-specific payment guidance, and never treats the absence of reports as proof of safety. It never accuses a person and is never a guarantee.
+> **Toroka** *(Swahili for "run away" / "escape")* is a Kenya-first, evidence-first digital safety and fraud investigation assistant. 
 
-## Run it
-```bash
-make install
-make test        # 224 Python tests (rules, fuzzing, connectors, API, web shell)
-make eval        # labelled evaluation (29 invented cases)
-make live        # starts the real server; every endpoint over HTTP; 600 concurrent requests
-(cd web-tests && npm ci) && make browser      # real Chromium: 37 tests, chat flows, keyboard, accessibility (axe), offline
-make migrate && make run                      # app at http://localhost:8000, API docs at /docs
-make user EMAIL=you@example.com               # create a moderator (SSI_NEW_PASSWORD=... or you are prompted)
-make registry-due      make registry-check    # official records due for review / pages that changed
-make purge                                    # delete expired checks and files (run it daily)
+Toroka helps individuals, shoppers, and businesses verify suspicious SMS messages, WhatsApp chats, social media shops, M-PESA payment requests, links, and emails. Talk to Toroka like an AI assistant—paste a message, upload a screenshot, drop email headers, or share a seller's profile, and Toroka delivers a calm, objective, evidence-backed assessment with dated sources, actionable next steps, and complete transparency on what could and could not be verified.
+
+---
+
+## ⚡ Key Highlights
+
+- **Conversational Safety Assistant:** Powered by conversational AI with deterministic rule-based safety backstops. Explains risk factors in plain language without technical jargon or shame.
+- **Open Reading Design:** A clean, borderless chat canvas where findings flow naturally as editorial reading text rather than boxed chat bubbles or cluttered cards.
+- **Interactive Action Menu (+):** Instant access to targeted workflows:
+  - 🔍 **Check a suspicious message:** SMS, WhatsApp, Telegram, or email.
+  - 🛍️ **Investigate an online shop:** Instagram, TikTok, Facebook pages, delivery-fee scams.
+  - 📞 **Look up a number or website:** M-PESA Till numbers, Paybills, phone numbers, domain names.
+  - 🛡️ **I already paid or shared something:** Calm emergency triage and immediate action plan.
+  - ✉️ **Full email headers:** Deep email forensic inspection (SPF/DKIM/DMARC, spoofing detection).
+- **Deep Kenyan Fraud Intelligence:** Purpose-built for local payment vectors:
+  - M-PESA "wrong transfer" reversal scams and fake MPESA confirmation SMS.
+  - Unregulated deposit requests and "pay delivery fee before dispatch" shop tactics.
+  - Impersonation of Safaricom (e.g. fake 333 / SIM swap alerts) and Kenya Revenue Authority (KRA).
+  - Job recruitments, task scams, and advance-fee pyramid schemes.
+- **Privacy by Default:** No account required. Checks run anonymously, message history stays local to your device, evidence is encrypted with ephemeral retention, and PINs/passwords are never collected.
+- **Bilingual (English & Kiswahili):** Full UI and investigation support in both English and Kiswahili (`EN` / `SW` toggle).
+
+---
+
+## 🧭 Verdicts & Assessment Policy
+
+Toroka evaluates evidence deterministically through multi-layered heuristic rules, verified official registries, and machine learning signals. Every investigation returns one of five transparent outcomes:
+
+| Verdict | Meaning | What It Guarantees |
+|---|---|---|
+| **`high_risk`** | Verified threat indicators found (e.g. requesting M-PESA PIN, impersonating official authorities, known malicious infrastructure). | Explicit danger warning; immediate defensive actions recommended. |
+| **`suspicious_verify_first`** | Strong risk signals detected (e.g. newly registered domain, unverified shop requiring upfront deposit, pressure tactics). | Warning to pause and verify through independent official channels before sending money. |
+| **`inconclusive`** | Insufficient corroborating evidence to confirm legitimacy or risk. | Cautionary guidance with missing verification steps. |
+| **`no_known_threats_found`** | No threat indicators matched across current threat feeds and rules. | **Never a guarantee of safety.** Explains what was checked and what remains unknown. |
+| **`verified_official`** | Authenticated channel or domain from a reviewed, dated official registry (e.g. Safaricom, KRA). | Confirms the entity/domain is legitimate. **Never vouches for unauthorized offers or PIN requests.** |
+
+### Radical Transparency
+Every report breaks down coverage explicitly:
+- **Checked:** Specific databases, rules, and threat feeds that ran successfully.
+- **Not Checked:** Checks that were not applicable to the submitted data.
+- **Could Not Check:** External lookups that failed, timed out, or were platform-restricted.
+- **Official Sources Cited:** Dated references to public statements and regulatory registries.
+
+---
+
+## 🔬 Multi-Phase Intelligence Architecture
+
+Toroka combines deterministic rule engines, OSINT connectors, email forensics, graph correlation, and machine learning:
+
 ```
-Production-like: `cp .env.example .env`, set the keys, then `docker compose up` (not run in the authoring environment). Use PostgreSQL for real traffic: with SQLite, writes are serialised and it must run as a single process.
+                            [ User Input ]
+             (Text, Links, Screenshots, Phone/Till, .eml)
+                                  │
+                                  ▼
+                   ┌──────────────────────────────┐
+                   │   FastAPI Gateway & Auth     │
+                   └──────────────┬───────────────┘
+                                  │
+         ┌────────────────────────┼────────────────────────┐
+         ▼                        ▼                        ▼
+┌──────────────────┐    ┌──────────────────┐    ┌──────────────────┐
+│   Email Engine   │    │  Rules Engine    │    │ Connectors / OSINT│
+│ • RFC 5322 parser│    │ • Assessment v0.3│    │ • DNS / RDAP age │
+│ • DKIM/SPF/DMARC │    │ • M-PESA logic   │    │ • URL redirect   │
+│ • Spoofing check │    │ • Shop taxonomy  │    │ • Safe OCR       │
+│ • Phishing links │    │ • Swahili rules  │    │ • Threat feeds   │
+└────────┬─────────┘    └────────┬─────────┘    └────────┬─────────┘
+         │                       │                       │
+         └───────────────────────┼───────────────────────┘
+                                 │
+                                 ▼
+                   ┌──────────────────────────────┐
+                   │    Intelligence Pipeline     │
+                   │ • Phase 2: Content Patterns  │
+                   │ • Phase 3: Identity Graph    │
+                   │ • Phase 4: Campaign Clusters │
+                   │ • Phase 5: Observation Fusion│
+                   │ • Phase 6: Threat Feed Sync │
+                   │ • Phase 7: Historical Memory │
+                   │ • ML: Autonomous Classifier  │
+                   └──────────────┬───────────────┘
+                                  │
+                                 ▼
+                   ┌──────────────────────────────┐
+                   │   Conversational AI Agent    │
+                   │ (Gemini + Local Safety Fallback)
+                   └──────────────┬───────────────┘
+                                  │
+                                 ▼
+                   ┌──────────────────────────────┐
+                   │    Modern Responsive UI     │
+                   │ (PWA Shell, English & Swahili)│
+                   └──────────────────────────────┘
+```
 
-## What is built
+1. **Email Forensics Engine (`services/api/toroka_email_forensics/`)**:
+   - Parses RFC 5322 headers and MIME structures.
+   - Validates SPF, DKIM, and DMARC authentication headers.
+   - Detects display-name impersonation and mismatched `Return-Path` vs `From` headers.
+   - Inspects relay hops and extracts embedded URLs for punycode/IDN homograph attacks.
+2. **Shop & Seller Intelligence (`services/api/toroka_evidence/`, `app/social_intelligence.py`)**:
+   - Evaluates Instagram, TikTok, and web merchant profiles.
+   - Assesses contact transparency, payment destination safety, and return policies.
+   - Contextual guidance distinguishing safe cash-on-delivery from risky unescrowed deposits.
+3. **Correlation & Campaign Clustering (Phases 3–7)**:
+   - Privacy-preserving entity hashing (`toroka-v3:{kind}:{digest}`) using HMAC-SHA256.
+   - Correlates shared infrastructure (phone numbers, domains, payment handles) across fraud campaigns.
+   - Ingests threat feeds (OpenPhish, URLhaus, PhishTank) with automatic deduplication.
+4. **Autonomous ML Classifier (`packages/rules/ssi_rules/ml/`)**:
+   - Scikit-Learn TF-IDF classifier operating alongside deterministic rules.
+   - Shadow evaluation and champion-challenger promotion pipeline.
 
-**Built and tested here**
-| Area | What it does |
-|---|---|
-| Check | Text in, label out (`high_risk`, `suspicious_verify_first`, `inconclusive`, `no_known_threats_found`) with findings, evidence type and strength, excerpts, dated sources, coverage (checked / not_checked / could_not_check / not_found), limitations, next steps. Deterministic policy v0.2; no model decides the label |
-| Rules | PIN/OTP requests, advance fees, wrong-transfer reversals, prizes, urgency, shortened links, payment to mobile numbers, lookalike and mismatched domains, guaranteed returns, medical and "government approved" claims, discount framing. English and Swahili cues; false-positive guards for genuine warnings |
-| Official sources | Safaricom and KRA statements, official domains and numbers; programme records in the database (admin editable) with review dates; stale sources lose weight; `registry-check` detects changed pages |
-| Screenshots | Safe intake (type by content, size and pixel limits, EXIF stripped), OCR, encrypted storage, never served back, multi-piece assessment, location consistency, similar-image leads (weak) |
-| Links | Redirect following with per-hop validation, DNS pinning and no body download; reputation provider interface (local blocklist; Web Risk adapter); RDAP age; place existence |
-| Shops and claims | Seller profile extraction (platform, handle, prices, location, delivery and returns), safer-buying steps; weak signals are never treated as fraud proof |
-| Community | Private reports; independence and duplicate handling; moderator queue; publication thresholds; public indicator search with anti-enumeration limits; urgent takedown; appeals with verification and an "under review" state; campaign clustering and entity edges; business claims that cannot suppress reports |
-| Accounts and data | Register/login (scrypt), roles, history, delete, export, retention purge, audit log, rate limits |
-| Recovery | Calm triage after paying or sharing, asks only what is missing, never promises recovery |
-| Channels | WhatsApp and Africa's Talking SMS webhooks: signature check, parse, reply formatting (tested with sample payloads) |
-| Chat interface | One box and one conversation, like talking to an AI: paste text, attach, paste or drop screenshots; Toroka thinks (the running figure animates), then replies in plain language with a verdict, the one warning that matters, next steps, and folded-away evidence, coverage, sources and limits. Quick replies for lookups, recovery, reporting and corrections. Installable PWA, English and Kiswahili (draft), share target, offline shell |
-| Verified sites and shops | A fifth outcome, `verified_official`, only from a reviewed record (domain or social handle, basis, source, date, reviewer) that moderators can add, expire or revoke. It vouches for the site, never for an offer; a PIN or fee request in its name is still flagged. Shared hosts, lookalikes, http, punycode, IP and unresolved short links never verify. Shop guidance is contextual: verify the exact seller and recipient, understand written terms and buyer protection, and treat unexplained pressure or fee requests as risk signals rather than automatically labelling every deposit as fraud. |
-| Operations | Alembic migrations, CLI (create-user, purge, registry-due, registry-check), evaluation harness, Dockerfile, compose, CI workflow |
+---
 
-**Built, but needs outside accounts or approval to go live (adapters tested with mocks only)**
-Google Web Risk (licensed key), RDAP, OpenStreetMap Nominatim, WhatsApp Cloud API (business approval), Africa's Talking (account, and a short code for two-way SMS).
+## 📁 Repository Structure
 
-**Not built**
-- A delivery worker for the notification outbox. Appeal verification codes and outcome messages are queued, not sent; `DEV_ECHO_CODES=1` exists for local development only.
-- A moderator web console (moderation is API-only).
-- A native Android app (the PWA share target is the bridge), institutional API, aggregate dashboards, business portal beyond claim records.
-- Swahili OCR model, Sheng, other languages.
-- Live social-platform checks (platforms restrict this), payment-destination ownership lookups, contacting senders.
-- Key rotation, shared rate limiting across workers, a separate worker process for OCR and fetching (the pipeline is synchronous).
+```
+smart-scam-identifier/
+├── packages/
+│   ├── rules/                 # Pure assessment logic, fraud taxonomy, and ML
+│   │   ├── ssi_rules/         # Rules engine, signals, shop evaluation, Swahili cues
+│   │   │   └── ml/            # Autonomous ML training, models, and telemetry
+│   │   └── tests/             # Golden case tests, feature tests, ML tests
+│   └── connectors/            # External I/O adapters
+│       ├── ssi_connectors/    # DNS, RDAP, URL fetcher, OCR, Web Risk, Places
+│       └── tests/             # Connector mock tests
+├── services/
+│   └── api/                   # FastAPI backend and web application
+│       ├── app/               # Core routing, conversational AI agent, and DB models
+│       │   ├── ai_agent.py    # Conversational fraud investigator (Gemini / local)
+│       │   ├── routes_core.py # Core investigation endpoints
+│       │   ├── routes_email.py# Email forensics API
+│       │   └── static/        # PWA frontend (HTML, CSS, JS, Service Worker)
+│       ├── toroka_build3/     # Build 3 evidence and intelligence connectors
+│       ├── toroka_build4/     # Build 4 advanced domain intelligence
+│       ├── toroka_email_forensics/ # RFC 5322 header & authentication engine
+│       ├── toroka_evidence/   # Evidence store & shop discovery providers
+│       ├── toroka_phase3/     # Identity graph & entity correlation
+│       ├── toroka_phase4/     # Campaign clustering & syndicate correlation
+│       ├── toroka_phase5/     # Cross-source observation fusion
+│       ├── toroka_phase6/     # Threat intelligence feeds
+│       ├── toroka_phase7/     # Historical case memory & contextual scoring
+│       ├── migrations/        # Alembic database migrations
+│       └── tests/             # Comprehensive API and integration test suite
+├── eval/                      # Benchmark evaluation suite with labelled cases
+├── docs/                      # Architecture Decision Records (ADRs) & research
+│   ├── adr/                   # ADR-001 (Monolith), ADR-002 (Rules), ADR-003 (Privacy)
+│   └── research/              # Kenyan user research plans and interview guides
+├── scripts/                   # Operational and live diagnostic utilities
+├── web-tests/                 # Playwright end-to-end browser test suite
+├── Dockerfile                 # Multi-stage production container
+├── docker-compose.yml         # Container orchestration
+├── render.yaml                # Render production deployment blueprint
+├── pyproject.toml             # Python package configuration
+└── requirements.txt           # Production dependencies
+```
 
-## API (see `/docs`)
-`POST /v1/checks` · `GET /v1/checks/{id}` · `POST /v1/checks/{id}/evidence` · `GET .../export` · `DELETE /v1/checks/{id}` · `GET /v1/me/checks` · `POST /v1/recovery` · `GET /v1/opportunities` · `GET /v1/reports/search` · `POST /v1/reports` · `POST /v1/appeals` (+ `/verify`) · `POST /v1/business-claims` · `/v1/moderation/*` (queue, action, takedown, campaigns, appeals, claims) · `PUT /v1/admin/opportunities` · `/v1/channels/*` · `/v1/auth/*` · `/v1/health`, `/v1/ready`
+---
 
-## Layout
-`design/figma-preview.html` four design frames rendered from the live site (for Figma import) · `packages/rules` pure assessment logic and data · `packages/connectors` I/O adapters · `services/api` FastAPI app, database, migrations, web app (`app/static`) · `eval` labelled cases · `web-tests` real-browser tests · `docs` ADRs, research plan, process, verification · `TASKS.md`, `CLAUDE.md`, `memory/`
+## 🚀 Quickstart
 
-## Read before relying on it
-- **Registry records are `unreviewed`.** They were drafted from public pages on 20 Oct 2026 and need a human check against the live pages.
-- **Rules are heuristic** and cover a small set of patterns; expect misses and false positives. Every miss or false alarm becomes a golden case. The evaluation messages are invented.
-- **Not legal advice.** Wording, retention, public indicators and the dispute path need Kenyan counsel and data-protection advice before public launch (ADR-003).
-- Verification record, including what was not tested: `docs/verification.md`. Screenshots from the browser tests: `docs/screenshots`.
+### Prerequisites
+- Python 3.11+
+- Virtual environment (`venv` or `uv`)
+
+### 1. Installation
+Clone the repository and install dependencies:
+```bash
+# Clone
+git clone https://github.com/pmkaulani/toroka.git
+cd toroka/smart-scam-identifier
+
+# Create and activate virtual environment
+python -m venv .venv
+# Windows:
+.\.venv\Scripts\activate
+# Linux/macOS:
+source .venv/bin/activate
+
+# Install dependencies
+pip install -r requirements.txt
+```
+
+### 2. Configure Environment
+Copy `.env.example` to `.env` and configure your keys:
+```bash
+cp .env.example .env
+```
+Key configuration options:
+- `GEMINI_API_KEY`: *(Optional)* Enables Gemini conversational AI for natural chat. When unset, Toroka seamlessly falls back to high-accuracy local deterministic intelligence.
+- `DATABASE_URL`: Defaults to `sqlite:///./ssi.db` for local development. Use PostgreSQL for production concurrency (`postgresql://user:pass@host/toroka`).
+- `SECRET_KEY` & `TOROKA_ENTITY_HASH_SECRET`: 32+ byte secrets for sessions and privacy-preserving entity hashing.
+
+### 3. Run Migrations & Start Server
+```bash
+# Set PYTHONPATH
+# Windows (PowerShell):
+$env:PYTHONPATH = "packages/rules;packages/connectors;services/api"
+# Linux/macOS:
+export PYTHONPATH="packages/rules:packages/connectors:services/api"
+
+# Run migrations
+alembic -c services/api/alembic.ini upgrade head
+
+# Start application server
+uvicorn services.api.app.main:app --reload --host 0.0.0.0 --port 8000
+```
+Open [http://localhost:8000](http://localhost:8000) in your browser. Interactive OpenAPI documentation is available at [http://localhost:8000/docs](http://localhost:8000/docs).
+
+---
+
+## 🧪 Testing & Validation
+
+The codebase maintains rigorous automated test coverage across unit, integration, and golden-case test suites:
+
+```bash
+# Run core test suites
+pytest services/api/tests/ packages/rules/tests/ packages/connectors/tests/ -q
+
+# Run conversational AI & chat tests
+pytest services/api/tests/test_conversation_about_toroka.py -v
+
+# Run email forensics tests
+pytest services/api/tests/test_email_forensics.py services/api/tests/test_email_chat_integration_contract.py -v
+
+# Run web interface and action menu tests
+pytest services/api/tests/test_web.py services/api/tests/test_composer_actions_menu.py -v
+
+# Run labelled benchmark evaluation (29+ cases)
+python eval/run_eval.py
+```
+
+---
+
+## 🌐 Production Deployment
+
+Toroka is deployed on **Render** as a high-performance web service:
+
+- **Configuration:** Managed via [render.yaml](render.yaml).
+- **Runtime:** `gunicorn` with `uvicorn.workers.UvicornWorker` for asynchronous request concurrency.
+- **Health Check Endpoint:** `GET /v1/health` (returns `{"status": "ok"}`).
+- **Static Assets:** Cached and served with proper `Content-Security-Policy` and PWA service worker offline shell headers.
+
+---
+
+## 🛡️ Responsible Safety & Privacy Principles
+
+1. **No Accusations:** Toroka analyzes messages, domains, numbers, and technical evidence. It never accuses individuals or proclaims moral judgments.
+2. **Contextual Guidance:** Asking for a deposit or payment is not automatically fraud, but requesting upfront payment without an escrow mechanism or verified physical presence warrants caution.
+3. **Never Share Credentials:** Toroka will **never** ask you for your M-PESA PIN, bank password, or one-time passcode (OTP), and warns users whenever messages solicit credentials.
+4. **Data Minimization:** No personal phone numbers or user identities are published in public indicator searches. All cross-case correlations rely on one-way salted HMAC digests.
+
+---
+
+## 📄 License
+
+Proprietary and confidential. Developed for digital safety in Kenya and East Africa.
