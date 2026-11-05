@@ -84,7 +84,7 @@ RESPONSE STRUCTURE
 - Keep the first response focused. Leave secondary technical detail and provider status in supporting sections when they help the user make a decision.
 - Use short paragraphs by default. Use lists for distinct findings or steps, not for every sentence.
 - Do not create a section just to fill a template. Omit sections that have no useful, supported content.
-- For a general question or simple follow-up, answer naturally without forcing an investigation-report format.
+- For a general question or simple follow-up, answer the exact question naturally without forcing an investigation-report format. Use recent relevant conversation context to understand short follow-ups such as “tell me more”. Do not repeat the same introduction or generic list after the user asks for more detail; add a genuinely deeper layer or ask one focused clarification.
 """
 
 
@@ -287,6 +287,92 @@ def _format_public_search_leads(results: list[dict[str, Any]], limit: int = 3) -
         reason = str(item.get("relevance_reason") or "")[:180]
         lines.append(f"- **{label}**: {title} — {url}. {snippet} {reason}".strip())
     return "\n".join(lines)
+
+
+def _recently_discussed_toroka(history: list[dict[str, str]] | None) -> bool:
+    """Return True when the current conversation is already explaining Toroka."""
+    if not history:
+        return False
+    about_patterns = (
+        r"\bwho\s+are\s+you\b", r"\bwhat\s+(?:do|can|exactly)\s+you\s+do\b",
+        r"\bwhat\s+are\s+you\b", r"\btell\s+me\s+(?:more\s+)?about\s+(?:yourself|you)\b",
+        r"\btell\s+me\s+everything\s+about\s+you\b", r"\bhow\s+do\s+you\s+work\b",
+        r"\bwhat\s+can\s+you\s+help\s+with\b", r"\bwewe\s+ni\s+nani\b",
+        r"\bunafanya\s+nini\b", r"\bniambie\s+zaidi\s+kukuhusu\b",
+    )
+    for item in (history or [])[-10:]:
+        if str(item.get("role") or "").lower() != "user":
+            continue
+        text = str(item.get("text") or "").lower().strip()
+        if any(re.search(pattern, text) for pattern in about_patterns):
+            return True
+    return False
+
+
+def _toroka_profile_replies(level: int) -> tuple[str, str]:
+    """Progressive, truthful product explanations for first-time and follow-up questions."""
+    if level <= 1:
+        return (
+            "Good question. I'm **Toroka**, a digital-safety investigator focused on the kinds of online risks people in Kenya encounter. You can bring me something that feels suspicious and I'll help you work out what the available evidence says.\n\n"
+            "I can help examine suspicious SMS and WhatsApp messages, emails (including original `.eml` files), websites and shortened links, Instagram or TikTok shops, job and grant offers, payment requests, M-PESA messages and receipts, and screenshots.\n\n"
+            "I don't just try to give you a yes-or-no label. I look for specific warning signs, compare details with available records and sources, explain why something matters, and point out what I could not verify. You can ask follow-up questions in the same chat, such as why I reached a conclusion or what evidence would change it.\n\n"
+            "You don't need to create an account to start. **What you share is the starting point for an investigation—not an instruction to trust or accuse anyone.**",
+            "Swali zuri. Mimi ni **Toroka**, msaidizi wa kuchunguza usalama wa kidijitali, nikiangazia hatari ambazo watu nchini Kenya hukutana nazo mtandaoni. Unaweza kuniletea jambo linalotia shaka nami nitakusaidia kuelewa ushahidi uliopo unasema nini.\n\n"
+            "Naweza kuchunguza SMS na ujumbe wa WhatsApp, barua pepe (ikiwemo faili asili za `.eml`), tovuti na viungo vifupi, maduka ya Instagram au TikTok, matangazo ya kazi na ruzuku, maombi ya malipo, ujumbe na risiti za M-PESA, pamoja na picha za skrini.\n\n"
+            "Sitoi tu jibu la ndiyo au hapana. Hutafuta ishara maalum za hatari, kulinganisha maelezo na rekodi au vyanzo vinavyopatikana, kueleza kwa nini jambo ni muhimu, na kutaja yale ambayo sikuweza kuthibitisha. Unaweza kuuliza maswali ya kufuatilia kwenye mazungumzo haya haya.\n\n"
+            "Huhitaji kufungua akaunti ili kuanza. **Unachoshiriki ni mwanzo wa uchunguzi—si sababu ya kumwamini au kumshutumu mtu moja kwa moja.**",
+        )
+    if level == 2:
+        return (
+            "Let me explain how I work. When you send something, I first identify what kind of material it is and which checks are relevant. A link may need domain, DNS, registration-age and reputation checks; an email may need sender, Reply-To, routing and SPF/DKIM/DMARC analysis; a shop may need profile, business, location and historical-report comparisons.\n\n"
+            "I then organise the result into four distinct things:\n\n"
+            "- **What you provided:** the words, address, image or payment details visible in your submission.\n"
+            "- **What a source says:** a finding from a record, public source or provider, with its date and limitations.\n"
+            "- **What it may mean:** the risk inference drawn from those observations.\n"
+            "- **What remains unknown:** checks that were unavailable, identity links that are not established, or details that need confirmation.\n\n"
+            "For example, a newly registered domain is a fact about the domain's age; it does not by itself prove that the shop is fraudulent. A business listing is a possible location match; it does not prove that the social account belongs to that business. I keep those distinctions visible.\n\n"
+            "Some checks run locally. External lookups run only when a provider is configured, available and permitted. I will say when a check was not performed rather than pretending it was.",
+            "Nieleze jinsi ninavyofanya kazi. Unapotuma kitu, kwanza hutambua aina ya taarifa hiyo na ukaguzi unaofaa. Kiungo kinaweza kuhitaji ukaguzi wa domain, DNS, umri wa usajili na sifa yake; barua pepe inaweza kuhitaji ukaguzi wa mtumaji, Reply-To, njia ilikopitia na SPF/DKIM/DMARC; duka linaweza kuhitaji kulinganisha wasifu, biashara, eneo na ripoti za awali.\n\n"
+            "Kisha hupanga matokeo katika sehemu nne:\n\n"
+            "- **Ulichotuma:** maneno, anwani, picha au maelezo ya malipo yanayoonekana kwenye ujumbe wako.\n"
+            "- **Chanzo kinasema nini:** taarifa kutoka rekodi, chanzo cha umma au huduma ya ukaguzi, pamoja na tarehe na mipaka yake.\n"
+            "- **Inaweza kumaanisha nini:** tathmini ya hatari inayotokana na ushahidi huo.\n"
+            "- **Kisichojulikana bado:** ukaguzi ambao haukupatikana, uhusiano wa utambulisho ambao haujathibitishwa, au maelezo yanayohitaji uthibitisho.\n\n"
+            "Kwa mfano, domain iliyosajiliwa hivi karibuni ni taarifa kuhusu umri wake; hilo pekee halithibitishi kuwa duka ni la ulaghai. Orodha ya biashara kwenye ramani inaweza kuwa eneo linalowezekana; haithibitishi kuwa akaunti ya kijamii ni ya biashara hiyo. Natenganisha mambo hayo waziwazi.\n\n"
+            "Ukaguzi fulani hufanyika ndani ya mfumo. Utafutaji wa nje hufanyika tu huduma husika ikiwa imeunganishwa, inapatikana na inaruhusiwa. Nitasema ukaguzi haukufanyika badala ya kujifanya umefanyika.",
+        )
+    return (
+        "Here's the fuller picture. Think of me as a single chat that can coordinate several kinds of investigation—not as a guarantee that every check on the internet has been completed.\n\n"
+        "**What I can investigate**\n"
+        "- **Messages and conversations:** suspicious SMS, WhatsApp chats, recruitment messages, prize claims, grant offers, delivery-fee requests and payment pressure.\n"
+        "- **Websites and digital identities:** URLs, redirects, domain registration information, DNS, hosting/network context, certificate records and known threat indicators where available.\n"
+        "- **Online sellers:** public social-profile details, advertised business identity, possible location matches, related domains and reviewed historical reports.\n"
+        "- **Payments:** visible M-PESA receipt fields, payment instructions, recipient mismatches and common social-engineering patterns. A screenshot is not proof that money reached an account.\n"
+        "- **Emails:** original `.eml` files or raw headers, sender and reply-address differences, trusted authentication results, links, routing and suspicious attachments.\n"
+        "- **Images and documents:** visible text, OCR results, reused-image clues and inconsistencies. Similarity is a lead, not proof of theft or common ownership.\n\n"
+        "**How I reach a conclusion**\n"
+        "I combine the material you provide with relevant local checks, available external sources and reviewed Toroka records. I consider source quality, dates, whether sources are independent, and whether two records really refer to the same person, shop or domain. Then I explain the strongest observations, the inference they support, and any contradictions. A result can be high risk, suspicious, inconclusive or show no known threat; 'not found' never means 'guaranteed safe'.\n\n"
+        "**What I cannot do**\n"
+        "I cannot access private social accounts or someone's private mailbox, reveal the registered owner of an arbitrary phone number, independently confirm a personal M-PESA transfer from a screenshot, or guarantee that a seller is honest. Official business and recruitment records must be available through an authorized source or a reviewed record. Some live checks may be unavailable when a provider is not configured.\n\n"
+        "**Your privacy and safety**\n"
+        "You can start without creating an account. Never send me your PIN, password, OTP, recovery code or full card details. For an email investigation, an original `.eml` file is more useful than a screenshot, but check it for sensitive personal information before sharing.\n\n"
+        "I can explain a result, compare two offers, help you decide what to verify next, or guide you through safer next steps if you've already clicked or paid. My job is to help you make a better-informed decision—not to shame you or make an unsupported accusation.",
+        "Huu ndio muhtasari mpana zaidi. Nifikirie kama mazungumzo moja yanayoweza kuratibu aina mbalimbali za uchunguzi—si kama dhamana kwamba kila ukaguzi wa mtandaoni umefanyika.\n\n"
+        "**Ninachoweza kuchunguza**\n"
+        "- **Ujumbe na mazungumzo:** SMS zenye shaka, WhatsApp, ujumbe wa ajira, madai ya zawadi, ruzuku, ada za usafirishaji na shinikizo la kutuma malipo.\n"
+        "- **Tovuti na utambulisho wa kidijitali:** URL, redirects, taarifa za usajili wa domain, DNS, mtandao/hosting, rekodi za vyeti na viashiria vya vitisho vinapopatikana.\n"
+        "- **Wauzaji mtandaoni:** maelezo ya wasifu wa umma, utambulisho wa biashara unaotangazwa, maeneo yanayoweza kulingana na ripoti za awali zilizokaguliwa.\n"
+        "- **Malipo:** sehemu zinazoonekana kwenye risiti za M-PESA, maelekezo ya malipo, kutolingana kwa mpokeaji na mbinu za kawaida za udanganyifu. Picha ya skrini si uthibitisho kuwa pesa zimeingia kwenye akaunti.\n"
+        "- **Barua pepe:** faili asili za `.eml` au headers kamili, tofauti za mtumaji na Reply-To, matokeo ya uthibitishaji yanayoaminika, viungo, njia ya ujumbe na viambatisho vyenye shaka.\n"
+        "- **Picha na nyaraka:** maandishi yanayoonekana, matokeo ya OCR, dalili za picha kutumika tena na kutolingana kwa maelezo. Kufanana kwa picha ni kidokezo, si uthibitisho wa wizi au umiliki mmoja.\n\n"
+        "**Jinsi ninavyofikia hitimisho**\n"
+        "Nachanganya taarifa unazotoa na ukaguzi unaofaa wa ndani, vyanzo vya nje vinavyopatikana na rekodi za Toroka zilizokaguliwa. Huangalia ubora wa chanzo, tarehe, uhuru wa vyanzo na kama rekodi mbili zinamhusu mtu, duka au domain ileile. Kisha hueleza ushahidi muhimu, maana yake na mambo yanayokinzana. Matokeo yanaweza kuwa hatari kubwa, yanatia shaka, hayajabainika au hakuna tishio linalojulikana. 'Haikupatikana' haimaanishi 'ni salama kwa uhakika'.\n\n"
+        "**Mambo nisiyoweza kufanya**\n"
+        "Siwezi kuingia kwenye akaunti binafsi za mitandao ya kijamii au barua pepe za mtu, kufichua mmiliki aliyesajiliwa wa nambari yoyote ya simu, kuthibitisha muamala binafsi wa M-PESA kwa picha pekee, au kuhakikisha kuwa muuzaji ni mwaminifu. Rekodi rasmi za biashara na ajira lazima zipatikane kupitia chanzo kilichoidhinishwa au rekodi iliyokaguliwa. Ukaguzi fulani wa moja kwa moja unaweza kukosekana ikiwa huduma husika haijaunganishwa.\n\n"
+        "**Faragha na usalama wako**\n"
+        "Unaweza kuanza bila kufungua akaunti. Usinitumie PIN, nywila, OTP, msimbo wa kurejesha akaunti au taarifa kamili za kadi. Kwa ukaguzi wa barua pepe, faili asili la `.eml` linafaa zaidi kuliko picha, lakini hakikisha halina taarifa nyeti usizotaka kushiriki.\n\n"
+        "Naweza kueleza matokeo, kulinganisha ofa mbili, kukusaidia kujua nini cha kuthibitisha baadaye, au kukuongoza kuchukua hatua salama ikiwa tayari ulibofya kiungo au ulituma pesa. Lengo langu ni kukusaidia kufanya uamuzi wenye taarifa bora—bila kukuaibisha wala kutoa shutuma zisizo na ushahidi."
+    )
 
 
 def _local_expert_replies(
@@ -1750,28 +1836,34 @@ def _local_expert_replies(
             ),
         )
 
-    # 26. Identity & Capabilities ("who are you", "what can you do", "wewe ni nani", "kazi yako")
-    if any(q in msg_low for q in ["who are you", "what are you", "what can you do", "wewe ni nani", "unafanya nini", "kazi yako", "tell me about yourself", "how do you work"]):
-        return (
-            (
-                "I am Toroka, an AI safety copilot built specifically for the Kenyan digital landscape:\n\n"
-                "- **Pattern Recognition**: Spotting advance fee traps, fake delivery fees, task scams, and fake SMS receipts.\n"
-                "- **Community Fraud Intelligence**: Cross-checking phone numbers, Tills, and Paybills against reviewed records.\n"
-                "- **Pattern Memory**: Recording newly reported scam patterns to warn fellow Kenyans.\n"
-                "- **Emergency Guidance**: Directing you on fast reversal steps (Safaricom 234/100, SMS to 456, free fraud reporting to 333).\n\n"
-                "Feel free to paste a suspicious message, seller details, or ask any question!"
-            ),
-            (
-                "Mimi ni Toroka, msaidizi wa AI aliyebobea katika ulinzi wa kidijitali nchini Kenya:\n\n"
-                "- **Kutambua Mbinu za Utapeli**: Kugundua ulaghai wa malipo ya mapema, kazi feki za mtandaoni, na SMS feki za M-PESA.\n"
-                "- **Hifadhidata ya Jamii**: Kukagua nambari za simu, Till, na Paybill dhidi ya rekodi zilizothibitishwa.\n"
-                "- **Kumbukumbu ya Utapeli**: Kuhifadhi mbinu mpya za ulaghai ili kuwalinda wananchi wengine.\n"
-                "- **Msaada wa Dharura**: Kukuelekeza jinsi ya kuomba reversal Safaricom (234/100, SMS 456, kuripoti bure kwa 333).\n\n"
-                "Jisikie huru kubandika ujumbe wenye shaka, maelezo ya muuzaji, au kuuliza swali lolote!"
-            ),
-        )
+    # 26. About Toroka and progressive capability explanations.
+    about_direct = bool(re.search(
+        r"\b(?:who\s+are\s+you|what\s+are\s+you|what\s+do\s+you\s+do|what\s+can\s+you\s+do|what\s+can\s+you\s+help\s+with|"
+        r"tell\s+me\s+about\s+(?:yourself|you)|tell\s+me\s+everything\s+about\s+you|how\s+do\s+you\s+work|"
+        r"what\s+is\s+toroka|explain\s+toroka|wewe\s+ni\s+nani|unafanya\s+nini|kazi\s+yako|"
+        r"niambie\s+kukuhusu|nieleze\s+toroka)\b", msg_low
+    ))
+    about_full = bool(re.search(r"\b(?:everything|all\s+the\s+details|full\s+details|in\s+detail|comprehensive|kwa\s+kina|not\s+enough|more\s+details)\b", msg_low)) or "i need more details" in msg_low
+    about_followup = bool(re.search(
+        r"^(?:tell\s+me\s+more|more\s+details|i\s+need\s+more\s+details|that'?s?\s+not\s+enough|"
+        r"that\s+is\s+not\s+enough|explain\s+more|go\s+deeper|elaborate|"
+        r"niambie\s+zaidi|nahitaji\s+maelezo\s+zaidi|hayo\s+hayatoshi)\s*[.!?]*$", msg_low
+    )) and _recently_discussed_toroka(history)
+    if about_direct or about_followup:
+        if about_full or any(x in msg_low for x in ["tell me everything", "all about you", "everything you can do"]):
+            level = 3
+        elif about_followup:
+            prior_about_turns = sum(
+                1 for item in (history or [])
+                if str(item.get("role") or "").lower() == "user"
+                and re.search(r"\b(?:who\s+are\s+you|what\s+(?:do|can)\s+you\s+do|tell\s+me\s+(?:more\s+)?about\s+(?:yourself|you)|tell\s+me\s+more|more\s+details|i\s+need\s+more\s+details|that'?s?\s+not\s+enough|wewe\s+ni\s+nani|unafanya\s+nini)\b", str(item.get("text") or "").lower())
+            )
+            level = 2 if prior_about_turns <= 1 else 3
+        else:
+            level = 2 if re.search(r"\b(?:how\s+do\s+you\s+work|what\s+is\s+toroka|explain\s+toroka|how\s+exactly)\b", msg_low) else 1
+        return _toroka_profile_replies(level)
 
-        # 26b. Comparison with ChatGPT / General AI ("difference between you and chatgpt", "difference from normal ai")
+    # 26b. Comparison with ChatGPT / General AI ("difference between you and chatgpt", "difference from normal ai")
     if any(q in msg_low for q in [
         "difference between you and chatgpt", "difference between you and a normal ai",
         "how are you different from chatgpt", "versus chatgpt", "compared to chatgpt",
@@ -1849,23 +1941,13 @@ def _local_expert_replies(
             ),
         )
 
-    # 30. Default Conversational Safety Response (Point form)
+    # 30. Natural default for questions not covered by a specialist intent.
     return (
         (
-            "I am here to protect your digital safety in Kenya.\n\n"
-            "Here is how we can proceed:\n"
-            "- **Paste an offer or message**: I will check it against official statements and fraud patterns.\n"
-            "- **Check a number or Till**: I will search reviewed reports to see if others were defrauded.\n"
-            "- **Ask a safety question**: Ask me about Safaricom reversals, online shopping rules, or red flags.\n\n"
-            "What would you like to check or ask about?"
+            "I can help with that. Tell me a little more about what you're trying to understand, or paste the message, link or details you're referring to. I'll answer the question directly and separate what I know from what still needs checking."
         ),
         (
-            "Tuko hapa kulinda usalama wako wa kidijitali nchini Kenya.\n\n"
-            "Hivi ndivyo tunavyoweza kuendelea:\n"
-            "- **Bandika ofa au ujumbe**: Nitausoma kwa vyanzo rasmi na kutambua dalili za ulaghai.\n"
-            "- **Kagua nambari au Till**: Nitatafuta ripoti zilizokaguliwa kuona kama kuna malalamiko.\n"
-            "- **Uliza swali la usalama**: Niulize kuhusu kurejesha miamala ya Safaricom, sheria za ununuzi, au tahadhari.\n\n"
-            "Je, ungependa tukague nini au una swali gani?"
+            "Naweza kukusaidia. Nieleze kidogo zaidi kuhusu unachotaka kuelewa, au bandika ujumbe, kiungo au maelezo unayorejelea. Nitakujibu moja kwa moja na kutenganisha ninachojua na kile ambacho bado kinahitaji kuthibitishwa."
         ),
     )
 
