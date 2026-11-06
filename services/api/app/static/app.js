@@ -1437,31 +1437,75 @@ function shouldUseCurrentCheckContext(text) {
   if (/\b(?:look into|investigate|check|verify|audit|shop|seller|store|duka|muuzaji|menswear|clothes|clothing|brand|product|order|buy|new message|another shop|different shop|another link|analyze|analyse|inspect|kagua|chunguza)\b/i.test(s)) return false;
   return /^(?:why|how come|explain|tell me more|more details|what did you find|what did you check|what does that mean|what should i do|what next|is it safe|is this safe|could this be|i already paid|i paid|i clicked|i shared|i sent money|and if|what about that|can you explain|kwa nini|mbona|nielezee|niambie zaidi|nifanye nini|nimeshalipa|nimelipa|nilituma pesa|nilibonyeza|ndiyo|hapana)\b/i.test(s) || ["this one", "that one", "the second one", "same one", "hii", "hiyo"].includes(s);
 }
+
+function renderDecisionCard(d) {
+  const card = h("section", { class: "decision-report", "aria-label": d.headline || "Investigation decision" });
+  const status = h("p", { class: "decision-headline", text: d.headline || "I could not reach a reliable conclusion yet." });
+  card.append(status);
+  const headers = d.headers || {};
+  const section = (title, items, tag = "ul", cls = "") => {
+    if (!Array.isArray(items) || !items.length) return;
+    card.append(h("h4", { text: title }));
+    card.append(h(tag, { class: cls }, items.map(item => h("li", { text: String(item) }))));
+  };
+  section(headers.hdr_found || "What I found", d.found);
+  section(headers.hdr_red || "Warning signs", d.red_flags);
+  section(headers.hdr_good || "Positive signs", d.good_signs);
+  section(headers.hdr_unknown || "What I could not check", d.could_not_check);
+  if (Array.isArray(d.before_you_pay) && d.before_you_pay.length) {
+    const advice = h("div", { class: "decision-safety" });
+    advice.append(h("h4", { text: headers.hdr_before || "Before you pay" }));
+    advice.append(h("ul", {}, d.before_you_pay.map(item => h("li", { text: String(item) }))));
+    card.append(advice);
+  }
+  section(headers.hdr_find || "Five checks you can do yourself", d.how_to_find_out, "ol", "decision-self-checks");
+  if (d.ask_the_seller) {
+    card.append(h("h4", { text: headers.hdr_ask || "A message you can send the seller" }));
+    const textarea = h("textarea", { readonly: true, rows: "5", "aria-label": headers.hdr_ask || "Message to seller" });
+    textarea.value = String(d.ask_the_seller);
+    const copy = h("button", { type: "button", class: "decision-copy", text: "Copy message" });
+    copy.addEventListener("click", async () => {
+      try { await navigator.clipboard.writeText(textarea.value); copy.textContent = "Copied"; }
+      catch (_) { textarea.focus(); textarea.select(); copy.textContent = "Select and copy"; }
+    });
+    card.append(textarea, copy);
+  }
+  if (Array.isArray(d.if_you_already_paid) && d.if_you_already_paid.length) {
+    card.append(h("details", { class: "decision-paid" },
+      h("summary", { text: headers.hdr_paid || "If you already paid" }),
+      h("ul", {}, d.if_you_already_paid.map(item => h("li", { text: String(item) })) )));
+  }
+  if (d.confidence_note) card.append(h("p", { class: "decision-confidence", text: d.confidence_note }));
+  return card;
+}
 async function renderUrlInvestigation(inv, replyText, actionChips) {
   current = { id: null, type: "url_investigation", data: inv };
   const m = botMsg();
+  if (inv.decision) m.body.append(renderDecisionCard(inv.decision));
   const band = inv.risk_band || "inconclusive";
   const pillLabel = band === "verified_official" ? "Verified Official" : (band === "high_risk" ? "High Risk" : (band === "suspicious_verify_first" ? "Caution" : (band === "no_known_threats_found" ? "No Known Threats Found" : "Inconclusive")));
-  m.body.append(h("div", {}, h("span", { class: "pill " + band }, pillIcon(band), h("span", { class: "pill-text", text: pillLabel }))));
-  
-  const pSum = h("p", { class: "check-summary" });
-  m.body.append(pSum);
-  if (isReplaying) {
-    pSum.textContent = inv.summary;
-  } else {
-    await stream(pSum, inv.summary);
+  if (!inv.decision) {
+    m.body.append(h("div", {}, h("span", { class: "pill " + band }, pillIcon(band), h("span", { class: "pill-text", text: pillLabel }))));
+    
+    const pSum = h("p", { class: "check-summary" });
+    m.body.append(pSum);
+    if (isReplaying) {
+      pSum.textContent = inv.summary;
+    } else {
+      await stream(pSum, inv.summary);
+    }
+
+    responseHighlights(m.body, inv.findings, 3);
   }
 
-  responseHighlights(m.body, inv.findings, 3);
-
-  if (inv.contradictions && inv.contradictions.length) {
+  if (!inv.decision && inv.contradictions && inv.contradictions.length) {
     const cBox = h("div", { class: "contradiction-callout" });
     cBox.append(h("strong", { text: (t("url_contradictions") || "Contradictions detected") + ": " }));
     inv.contradictions.forEach(c => cBox.append(h("p", { text: c })));
     m.body.append(cBox);
   }
 
-  if (inv.next_steps && inv.next_steps.length) {
+  if (!inv.decision && inv.next_steps && inv.next_steps.length) {
     const nsWrap = h("div", { class: "next-steps-wrap" },
       h("p", {}, h("strong", { "data-t-key": "r_next", text: t("r_next") })),
       h("ol", { class: "next-steps-list" }, inv.next_steps.map(s => h("li", { text: s })))
@@ -1471,14 +1515,14 @@ async function renderUrlInvestigation(inv, replyText, actionChips) {
 
   const det = (cls, tKey, title, ...kids) => m.body.append(h("details", { class: cls }, h("summary", { "data-t-key": tKey, text: title }), ...kids));
   
-  if (inv.findings && inv.findings.length) {
+  if (!inv.decision && inv.findings && inv.findings.length) {
     det("det-why", "r_why", t("r_why"), h("ul", {}, findingNodes(inv.findings)));
   }
   if (inv.investigation_intelligence) {
     intelligencePanels(m.body, { category: { used: inv.investigation_intelligence.category }, investigation_intelligence: inv.investigation_intelligence });
   }
 
-  if (inv.coverage && inv.coverage.length) {
+  if (!inv.decision && inv.coverage && inv.coverage.length) {
     const label = status => ({
       checked: t("cov_checked"),
       checked_match: t("cov_checked_match") || "Match found",
@@ -1500,7 +1544,7 @@ async function renderUrlInvestigation(inv, replyText, actionChips) {
     det("det-sources", "r_sources", t("r_sources"), h("ul", {}, inv.sources.map(s => h("li", {}, h("span", { text: s.statement + " " }), s.source_url ? h("a", { href: s.source_url, rel: "noopener noreferrer", target: "_blank", text: t("open_source") }) : null))));
   }
 
-  if (inv.limitations && inv.limitations.length) {
+  if (!inv.decision && inv.limitations && inv.limitations.length) {
     det("det-limits", "r_limits", t("r_limits"), h("ul", {}, inv.limitations.map(x => h("li", { text: x }))));
   }
 

@@ -688,7 +688,12 @@ def _next_steps(label, claimed, findings, had_cred, reg, category, shop, vmatche
         steps.append(NextStep("Ask the sender for details and confirm with the organisation through its official channels before acting."))
     if label == Label.NO_KNOWN_THREATS_FOUND:
         steps.append(NextStep("If money or personal details are involved, still confirm through the organisation's official channels."))
-    if category in ("job", "recruitment_overseas"):
+    # Specialist recruitment findings can identify an overseas-job case even
+    # when a linked URL's primary technical domain is phishing/account takeover.
+    is_recruitment_case = category in ("job", "recruitment_overseas") or any(
+        str(getattr(f, "code", "")).startswith("RECRUITMENT_") for f in findings
+    )
+    if is_recruitment_case:
         if label != Label.NO_KNOWN_THREATS_FOUND:
             steps.append(NextStep("Open the organisation's official website by typing its address yourself and look for the same vacancy. Do not use links from the message."))
         steps.append(NextStep("Never share email passwords, OTPs, or M-PESA PINs. Legitimate employers never ask for your account password."))

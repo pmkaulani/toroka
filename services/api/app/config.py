@@ -30,7 +30,7 @@ class Settings:
     google_places_api_key: str = ""  # Optional Google Places API (New), shop-location corroboration only.
     urlscan_api_key: str = ""  # Optional urlscan.io historical domain search; never submits user URLs.
     blocklist_path: str = ""
-    enable_link_fetch: bool = False
+    enable_link_fetch: bool = True
     enable_rdap: bool = False
     # Build 2 passive infrastructure intelligence is opt-in to avoid unexpected
     # third-party lookups. CT expansion is separately opt-in because it can be rate-limited.
@@ -56,6 +56,7 @@ class Settings:
     openai_api_key: str = ""
     anthropic_api_key: str = ""
     ai_model: str = "gemini-flash-lite-latest"
+    ai_timeout_seconds: float = 12.0
     # channels
     whatsapp_verify_token: str = ""
     whatsapp_app_secret: str = ""
@@ -105,7 +106,7 @@ class Settings:
         s = cls(env=g("SSI_ENV", "dev"), database_url=g("DATABASE_URL", cls.database_url), encryption_key=g("ENCRYPTION_KEY", ""),
                 hmac_key=g("HMAC_KEY", ""), diagnostics_api_key=g("DIAGNOSTICS_API_KEY", ""), storage_dir=g("STORAGE_DIR", cls.storage_dir), public_base_url=g("PUBLIC_BASE_URL", cls.public_base_url),
                 retention_days=int(g("RETENTION_DAYS", 7)), trust_proxy_headers=g("TRUST_PROXY_HEADERS") == "1",
-                webrisk_api_key=g("WEBRISK_API_KEY", ""), tavily_api_key=g("TAVILY_API_KEY", ""), weir_api_key=g("WEIR_API_KEY", ""), scrape_creators_api_key=g("SCRAPE_CREATORS_API_KEY", ""), intelligence_cache_ttl_seconds=max(0, min(int(g("INTELLIGENCE_CACHE_TTL_SECONDS", 900)), 86400)), google_places_api_key=g("GOOGLE_PLACES_API_KEY", ""), urlscan_api_key=g("URLSCAN_API_KEY", ""), blocklist_path=g("BLOCKLIST_PATH", ""), enable_link_fetch=g("ENABLE_LINK_FETCH") == "1",
+                webrisk_api_key=g("WEBRISK_API_KEY", ""), tavily_api_key=g("TAVILY_API_KEY", ""), weir_api_key=g("WEIR_API_KEY", ""), scrape_creators_api_key=g("SCRAPE_CREATORS_API_KEY", ""), intelligence_cache_ttl_seconds=max(0, min(int(g("INTELLIGENCE_CACHE_TTL_SECONDS", 900)), 86400)), google_places_api_key=g("GOOGLE_PLACES_API_KEY", ""), urlscan_api_key=g("URLSCAN_API_KEY", ""), blocklist_path=g("BLOCKLIST_PATH", ""), enable_link_fetch=g("ENABLE_LINK_FETCH", "1") != "0",
                 enable_rdap=g("ENABLE_RDAP") == "1", enable_domain_intelligence=g("ENABLE_DOMAIN_INTELLIGENCE") == "1",
                 certspotter_api_key=g("CERTSPOTTER_API_KEY", ""), domain_intel_include_subdomains=g("DOMAIN_INTEL_INCLUDE_SUBDOMAINS") == "1",
                 email_trusted_authserv_ids=tuple(x.strip().lower() for x in g("EMAIL_TRUSTED_AUTHSERV_IDS", "").split(",") if x.strip()),
@@ -115,6 +116,7 @@ class Settings:
                 at_shortcode=g("AT_SHORTCODE", ""), at_callback_secret=g("AT_CALLBACK_SECRET", ""),
                 gemini_api_key=g("GEMINI_API_KEY", ""), openai_api_key=g("OPENAI_API_KEY", ""), anthropic_api_key=g("ANTHROPIC_API_KEY", ""),
                 ai_model=g("AI_MODEL", "gemini-flash-lite-latest"),
+                ai_timeout_seconds=max(3.0, min(float(g("AI_TIMEOUT_SECONDS", "12")), 30.0)),
                 rl_checks=rl("RL_CHECKS", cls.rl_checks), rl_checks_user=rl("RL_CHECKS_USER", cls.rl_checks_user), rl_evidence=rl("RL_EVIDENCE", cls.rl_evidence),
                 rl_reports=rl("RL_REPORTS", cls.rl_reports), rl_search=rl("RL_SEARCH", cls.rl_search), rl_auth=rl("RL_AUTH", cls.rl_auth),
                 rl_appeals=rl("RL_APPEALS", cls.rl_appeals), rl_search_distinct=int(g("RL_SEARCH_DISTINCT", cls.rl_search_distinct)))

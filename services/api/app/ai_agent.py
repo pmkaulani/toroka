@@ -10,6 +10,7 @@ from __future__ import annotations
 import base64
 import json
 import logging
+import os
 import re
 from typing import Any
 
@@ -18,6 +19,7 @@ import httpx
 from .config import Settings
 
 logger = logging.getLogger("toroka.ai")
+AI_TIMEOUT_SECONDS = max(3.0, min(float(os.getenv("AI_TIMEOUT_SECONDS", "12")), 30.0))
 
 TOROKA_SYSTEM_PROMPT = """\
 You are Toroka, an evidence-led digital safety assistant serving people in Kenya.
@@ -175,7 +177,7 @@ def investigate_with_ai(
                 "contents": [{"parts": parts}],
                 "generationConfig": {"response_mime_type": "application/json", "temperature": 0.2},
             }
-            with httpx.Client(timeout=4.0) as client:
+            with httpx.Client(timeout=AI_TIMEOUT_SECONDS) as client:
                 res = client.post(url, json=payload, headers={"x-goog-api-key": settings.gemini_api_key})
                 if res.status_code == 200:
                     j = res.json()
@@ -208,7 +210,7 @@ def investigate_with_ai(
                 "temperature": 0.2,
             }
             headers = {"Authorization": f"Bearer {settings.openai_api_key}"}
-            with httpx.Client(timeout=4.0) as client:
+            with httpx.Client(timeout=AI_TIMEOUT_SECONDS) as client:
                 res = client.post(url, json=payload, headers=headers)
                 if res.status_code == 200:
                     j = res.json()

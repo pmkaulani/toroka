@@ -401,12 +401,13 @@ def test_system_diagnostics_accepts_only_dedicated_diagnostics_key(make_env):
 
 def test_blocked_internal_destination_is_not_labelled_as_a_scam(env):
     with env.db() as db:
-        # Direct fetching defaults off; regardless, security refusal is a limitation,
-        # not evidence that the submitted target is fraudulent.
+        # Safe fetching defaults on, but SSRF policy blocks loopback targets.
+        # A security refusal is a limitation, not evidence that the target is fraudulent.
         res = investigate_single_url("http://127.0.0.1:8768/private", db, env.ctx.crypto, env.settings, skip_cache=True)
         assert res.risk_band != "high_risk"
         assert not any(f.code == "RESTRICTED_DESTINATION_BLOCKED" for f in res.findings)
-        assert any(c.id == "safe_web_fetch" and c.status == "not_checked" for c in res.coverage)
+        assert any(c.id == "safe_web_fetch" and c.status in {"not_checked", "could_not_check"} for c in res.coverage)
+        assert any("security limitation" in item.lower() for item in res.limitations)
 
 def test_url_caching_behavior(env):
     cache = URLInvestigationCache.get_instance()

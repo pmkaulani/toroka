@@ -25,8 +25,12 @@ def test_assess_total_safe_and_consistent(text):
         if f.start is not None:
             assert 0 <= f.start <= f.end <= len(masked) and f.excerpt == masked[f.start:f.end].strip()
     assert not re.search(r"(?i)\b(scammer|fraudster|criminal)\b", a.summary + " ".join(f.plain_text + f.why_it_matters for f in a.findings))
+    output_blob = repr(asdict(a)).replace(a.checked_at, "").replace("\\n", " ").replace("0712345678", "")
     for m in re.finditer(r"(?i)\b(?:pin|otp|password|passcode|code|nywila)\b\s*(?:is|was|ni|:|=)?\s*(\d{4,8})\b", text):
-        assert m.group(1) not in repr(asdict(a)).replace(a.checked_at, "").replace("\\n", " ").replace("0712345678", "") or m.group(1) in text.replace(m.group(0), ""), "credential value leaked"
+        # Whole numeric token only: a PIN like 0712 must not be falsely matched
+        # inside an unrelated decimal probability such as 0.0712.
+        leaked = re.search(rf"(?<![\d.]){re.escape(m.group(1))}(?![\d.])", output_blob)
+        assert not leaked or m.group(1) in text.replace(m.group(0), ""), "credential value leaked"
     if a.label == Label.NO_KNOWN_THREATS_FOUND:
         assert not any(c.blocking and c.status.value != "checked" for c in a.coverage) and not a.findings
 

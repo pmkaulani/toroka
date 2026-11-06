@@ -16,6 +16,7 @@ Toroka helps individuals, shoppers, and businesses verify suspicious SMS message
   - 📞 **Look up a number or website:** M-PESA Till numbers, Paybills, phone numbers, domain names.
   - 🛡️ **I already paid or shared something:** Calm emergency triage and immediate action plan.
   - ✉️ **Full email headers:** Deep email forensic inspection (SPF/DKIM/DMARC, spoofing detection).
+- **Decision-First Link & Social Investigation:** Multi-platform URL parser (TikTok, Instagram, Facebook, X, WhatsApp), public TikTok oEmbed metadata context, SSRF-hardened safe website reads, and shopper-facing decision reports featuring warning signs, pre-payment advice, and copyable seller messages.
 - **Deep Kenyan Fraud Intelligence:** Purpose-built for local payment vectors:
   - M-PESA "wrong transfer" reversal scams and fake MPESA confirmation SMS.
   - Unregulated deposit requests and "pay delivery fee before dispatch" shop tactics.

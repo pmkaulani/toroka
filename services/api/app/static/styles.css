@@ -1962,3 +1962,21 @@ body.dark-theme .composer .box:focus-within { border-color: #4f9da3; }
 @media (prefers-reduced-motion: reduce) {
   .think-orbit, .think-copy, .dots::after { animation: none !important; }
 }
+
+
+/* Shopper decision report styles */
+.decision-report{margin:12px 0 16px;padding:4px 0 10px;border-bottom:1px solid var(--border,#e6e8eb);max-width:100%;overflow-wrap:anywhere}
+.decision-report .decision-headline{font-size:1.06rem;font-weight:650;line-height:1.5;margin:0 0 12px}
+.decision-report h4{font-size:.94rem;font-weight:650;margin:14px 0 6px}
+.decision-report ul,.decision-report ol{margin:5px 0 10px;padding-left:1.35rem}
+.decision-report li{margin:5px 0;line-height:1.52}
+.decision-safety{margin:14px 0;padding:12px 14px;border-left:3px solid var(--accent,#2b827c);background:var(--surface-soft,#f7f8f8);border-radius:0 10px 10px 0}
+.decision-report textarea{display:block;width:100%;max-width:100%;box-sizing:border-box;resize:vertical;border:1px solid var(--border-control,#d6dbe0);border-radius:10px;padding:11px;font:inherit;line-height:1.5;background:var(--surface,#fff);color:inherit}
+.decision-copy{margin:7px 0 2px;border:1px solid var(--border-control,#d6dbe0);border-radius:9px;padding:8px 12px;background:var(--surface,#fff);color:inherit;cursor:pointer}
+.decision-paid{margin:12px 0}
+.decision-paid summary{cursor:pointer;font-weight:600}
+.decision-confidence{font-size:.84rem;color:var(--muted,#687078);margin:12px 0 0}
+body.dark-theme .decision-safety{background:#161d20;border-left-color:#369b91}
+body.dark-theme .decision-report textarea{background:#101416;border-color:#354247;color:#e8eaed}
+body.dark-theme .decision-copy{background:#1b2427;border-color:#354247;color:#e8eaed}
+@media(max-width:420px){.decision-report .decision-headline{font-size:1rem}.decision-safety{padding:10px}}

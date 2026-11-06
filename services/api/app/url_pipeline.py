@@ -36,6 +36,7 @@ from . import db as m
 from .config import Settings
 from .public_search import public_search, manual_search_url, evaluate_search_relevance, filter_public_search_results
 from .security import Crypto
+from .platform_urls import parse_social_url
 
 logger = logging.getLogger("toroka.url_pipeline")
 
@@ -462,6 +463,10 @@ class PlatformProfile:
     canonical_url: str | None = None
     clean_handle: str | None = None
     tracking_params: dict[str, str] = field(default_factory=dict)
+    content_kind: str | None = None
+    content_id: str | None = None
+    needs_redirect: bool = False
+    phone: str | None = None
 
 
 _RESERVED_HANDLES = {
@@ -524,6 +529,23 @@ def parse_platform_profile(url_or_handle: str, platform_hint: str | None = None)
     raw = (url_or_handle or "").strip()
     if not raw:
         return PlatformProfile(False, "web", None, None, False, None)
+
+    # Parse real platform content URLs before the legacy profile-only patterns.
+    # This recognises TikTok videos/share links, Instagram posts/reels, Facebook
+    # marketplace items, X posts and WhatsApp deep links without scraping them.
+    social_link = parse_social_url(raw)
+    if social_link:
+        handle = social_link.handle
+        if social_link.content_kind == "group_invite" and social_link.content_id:
+            handle = social_link.content_id  # preserve the existing group-link identifier semantics
+        brand = _check_impersonation(handle, social_link.platform) if handle and social_link.platform != "whatsapp" else None
+        identifier = f"{social_link.platform}:{handle}" if handle else None
+        return PlatformProfile(
+            bool(handle), social_link.platform, handle, identifier, bool(brand), brand,
+            canonical_url=social_link.profile_url, clean_handle=handle,
+            content_kind=social_link.content_kind, content_id=social_link.content_id,
+            needs_redirect=social_link.needs_redirect, phone=social_link.phone,
+        )
 
     tracking_params: dict[str, str] = {}
     if "?" in raw:
@@ -645,6 +667,7 @@ class URLFinding:
     strength: str  # strong, supporting, weak
     evidence_type: str = "observed_data"
     source_url: str | None = None
+    polarity: str = "risk"  # positive findings are contextual and never increase risk
 
 
 @dataclass
@@ -693,6 +716,7 @@ class URLInvestigationResult:
     page_data: dict[str, Any] = field(default_factory=dict)
     steps_taken: list[dict[str, str]] = field(default_factory=list)
     ai_conversational_reply: str | None = None
+    decision: dict[str, Any] | None = None
 
 
 def _dict_to_result(cached: dict[str, Any]) -> URLInvestigationResult:
@@ -732,6 +756,7 @@ def _dict_to_result(cached: dict[str, Any]) -> URLInvestigationResult:
         page_data=cached.get("page_data", {}),
         steps_taken=cached.get("steps_taken", []),
         ai_conversational_reply=cached.get("ai_conversational_reply"),
+        decision=cached.get("decision"),
     )
 
 
@@ -782,11 +807,31 @@ def _sanitised_url_for_display(url: str) -> str:
     return safe
 
 def _canonical_profile_url(url: str) -> str:
-    """Drop tracking query parameters from supported profile URLs and canonicalise hosts."""
+    """Canonicalise known profiles/content links and remove tracking parameters."""
     profile = parse_platform_profile(url)
+    kind, content_id, handle = profile.content_kind, profile.content_id, profile.handle
+    if kind == "video" and profile.platform == "tiktok" and handle and content_id:
+        return f"https://www.tiktok.com/@{handle}/video/{content_id}"
+    if kind == "photo" and profile.platform == "tiktok" and handle and content_id:
+        return f"https://www.tiktok.com/@{handle}/photo/{content_id}"
+    if kind in {"post", "reel", "tv"} and profile.platform == "instagram" and content_id:
+        route = "p" if kind == "post" else "reel" if kind == "reel" else "tv"
+        if handle:
+            return f"https://www.instagram.com/{handle}/{route}/{content_id}/"
+        return f"https://www.instagram.com/{route}/{content_id}/"
+    if kind == "marketplace_item" and content_id:
+        return f"https://www.facebook.com/marketplace/item/{content_id}/"
+    if kind == "post" and profile.platform == "x" and handle and content_id:
+        return f"https://x.com/{handle}/status/{content_id}"
+    if kind == "short_link":
+        # Retain the share token in the path but never retain query parameters.
+        try:
+            parts = urlsplit(url)
+            return parts._replace(query="", fragment="").geturl()
+        except ValueError:
+            return url.split("?", 1)[0].split("#", 1)[0]
     if not profile.is_profile:
         return url
-    handle = profile.handle
     if profile.platform == "instagram" and handle:
         return f"https://www.instagram.com/{handle}/"
     if profile.platform == "tiktok" and handle:
@@ -830,13 +875,13 @@ def _synthesise_url_reply_for_request(
     """Generate a fresh, request-scoped explanation from cached evidence without cross-user leakage."""
     if not (settings.gemini_api_key or settings.openai_api_key):
         return None
+    import json
+    from .decision_report import build_decision, facts_from_result, ai_text_ok
+    report = result.decision or build_decision(facts_from_result(result, lang=language))
     evidence_summary = (
-        f"URL: {result.normalized_url}\nDomain: {result.domain}\nRisk Band: {result.risk_band}\n"
-        f"Summary: {result.summary}\nFindings: {[f.plain_text for f in result.findings]}\n"
-        f"Contradictions: {result.contradictions}\n"
-        f"Page Title: {result.page_data.get('title')}\n"
-        f"Page Text Excerpt: {result.page_data.get('visible_text_excerpt', '')[:400]}\n"
-        f"User Question/Context: {user_context}"
+        "Reword this deterministic Toroka decision report only. Never change the decision, add facts, "
+        "accuse a person, or omit the practical safety advice. If the decision is cant_tell_yet, say so clearly.\n\n"
+        "DECISION REPORT:\n" + json.dumps(report, ensure_ascii=False) + "\n\nREQUEST CONTEXT:\n" + _sanitise_url_in_text(user_context)
     )
     try:
         from .ai_agent import investigate_with_ai
@@ -847,7 +892,7 @@ def _synthesise_url_reply_for_request(
             public_sources=[asdict(source) for source in result.sources],
         )
         reply = ai_data.get("conversational_reply") if isinstance(ai_data, dict) else None
-        return str(reply) if reply else None
+        return str(reply)[:4000] if reply and ai_text_ok(str(reply), report["decision"]) else None
     except Exception as exc:
         logger.debug("Cached URL response synthesis failed safely: %s", type(exc).__name__)
         return None
@@ -945,6 +990,62 @@ def _execute_pipeline_steps(
         domain = parsed.registered_domain or parsed.host
 
     profile = parse_platform_profile(url)
+    page_data: dict[str, Any] = {}
+    social_meta_payload: dict[str, Any] | None = None
+    is_social_target = profile.platform in {"instagram", "tiktok", "facebook", "whatsapp", "x"}
+
+    # TikTok exposes public oEmbed for video/share links. This is metadata, not
+    # account verification. The endpoint host is fixed inside social_meta.py.
+    if profile.platform == "tiktok" and profile.content_kind in {"video", "photo", "short_link"}:
+        try:
+            from .social_meta import fetch_tiktok_oembed
+            social_meta_payload = fetch_tiktok_oembed(url)
+        except Exception as exc:
+            logger.debug("TikTok public metadata unavailable: %s", type(exc).__name__)
+        if social_meta_payload:
+            if social_meta_payload.get("handle") and not profile.handle:
+                original_kind, original_id = profile.content_kind, profile.content_id
+                resolved = parse_platform_profile(f"https://www.tiktok.com/@{social_meta_payload['handle']}")
+                resolved.content_kind, resolved.content_id = original_kind, original_id
+                profile = resolved
+                is_social_target = True
+            coverage.append(URLCoverageCheck(
+                id="social_oembed", name="Public TikTok post details", status="checked",
+                detail="TikTok returned public author and caption metadata. This does not verify account ownership or guarantee that the post is genuine.",
+                source_url=url,
+            ))
+            caption = str(social_meta_payload.get("caption") or "")
+            if caption:
+                try:
+                    from ssi_rules.signals import TEXT_RULES
+                    for rule in TEXT_RULES:
+                        for signal in rule(caption):
+                            strength = getattr(signal.strength, "value", str(signal.strength)).lower()
+                            findings.append(URLFinding(
+                                code=f"SOCIAL_CAPTION_{signal.code}",
+                                plain_text=f"The TikTok caption: {signal.plain_text}",
+                                why_it_matters=signal.why_it_matters,
+                                strength=strength,
+                                evidence_type="automated_observation",
+                                source_url=url,
+                                polarity="risk",
+                            ))
+                except Exception as exc:
+                    logger.debug("TikTok caption analysis unavailable: %s", type(exc).__name__)
+            sources.append(URLSourceRef(
+                id="tiktok-oembed-metadata",
+                statement=(f"TikTok public metadata identifies the author as {social_meta_payload.get('account_name') or 'an account'}"
+                           + (f" (@{social_meta_payload['handle']})" if social_meta_payload.get("handle") else "")
+                           + ". This is platform-provided post metadata, not independent identity verification."),
+                source_url=url, reviewer="TikTok public oEmbed metadata", last_verified_at=now_iso,
+            ))
+        else:
+            coverage.append(URLCoverageCheck(
+                id="social_oembed", name="Public TikTok post details", status="could_not_check",
+                detail="TikTok did not provide public preview details for this link. The post may be unavailable, restricted or unsupported.",
+                source_url=url,
+            ))
+
     steps_taken[-1]["status"] = "done"
 
     # ---------------------------------------------------------
@@ -1132,12 +1233,18 @@ def _execute_pipeline_steps(
         ))
 
     # Record Threat Feed Coverage
-    feed_statuses = [f"{st.name}: {st.http_status or st.error or 'ok'} ({st.item_count} entries)" for st in feed_mgr.statuses.values()]
+    feed_statuses = [
+        f"{st.name}: {st.http_status if st.http_status is not None else (st.error or ('available' if st.available else 'not refreshed'))} ({st.item_count} entries)"
+        for st in feed_mgr.statuses.values()
+    ]
+    feed_available = any(st.available for st in feed_mgr.statuses.values())
     coverage.append(URLCoverageCheck(
         id="threat_feeds",
-        name="Global Threat Feeds (OpenPhish, Blackbook, URLhaus)",
-        status="checked" if any(st.available for st in feed_mgr.statuses.values()) else "could_not_check",
-        detail="; ".join(feed_statuses),
+        name="Global Threat Feeds",
+        status="checked" if feed_available else "could_not_check",
+        detail=("Threat feeds were refreshed; no matching indicator was found in the available records." if feed_available and not threat_hit
+                else "A matching indicator was found in a threat feed." if threat_hit
+                else "No threat-feed source was available to complete this check. " + "; ".join(feed_statuses)),
     ))
 
     # Google Web Risk / Safe Browsing (Supports both Commercial Web Risk and 100% Free Safe Browsing)
@@ -1221,13 +1328,13 @@ def _execute_pipeline_steps(
     # Step D: Safe Web Fetch (SSRF-shielded, 512KB cap, no JS execution)
     # ---------------------------------------------------------
     steps_taken.append({"name": "Fetching safe page preview (SSRF-protected)", "status": "running"})
-    page_data: dict[str, Any] = {}
+    page_data = {"oembed": social_meta_payload} if social_meta_payload else {}
     
     # Fetch only when explicitly enabled in the environment. The SSRF-hardened
     # fetcher must still be deployed behind egress restrictions. Social platforms
     # may block direct automated inspection, so do not imply their profiles were read.
-    is_social = profile.is_profile and profile.platform in {"instagram", "tiktok", "facebook", "whatsapp", "x"}
-    should_fetch = bool(settings.enable_link_fetch) and (not is_social or profile.platform == "web")
+    is_social = is_social_target
+    should_fetch = bool(settings.enable_link_fetch) and not is_social
 
     if should_fetch:
         fetch_res: SafePageContent = safe_fetch_page(
@@ -1238,6 +1345,7 @@ def _execute_pipeline_steps(
             total_budget=8.0,
         )
         page_data = {
+            **({"oembed": social_meta_payload} if social_meta_payload else {}),
             "status": fetch_res.status.value,
             "final_url": fetch_res.final_url,
             "status_code": fetch_res.status_code,
@@ -1334,8 +1442,10 @@ def _execute_pipeline_steps(
     tavily_search_result = None
     manual_search_link = None
     query_target = f'"{domain}" reviews complaints scam Kenya'
-    if profile.is_profile and profile.handle:
-        query_target = f'"{profile.handle}" {profile.platform} reviews scam Kenya'
+    if profile.handle and profile.platform in {"instagram", "tiktok", "facebook", "whatsapp", "x"}:
+        query_target = f'"{profile.handle}" {profile.platform} reviews complaints scam Kenya'
+    elif is_social_target and profile.content_id:
+        query_target = f'"{profile.content_id}" {profile.platform} post complaints scam Kenya'
 
     manual_search_link = manual_search_url(query_target)
     retrieved_results: list[dict[str, str]] = []
@@ -1345,11 +1455,12 @@ def _execute_pipeline_steps(
         tavily_search_result = tavily_res
         retrieved_results = tavily_res.get("results", [])
 
+        search_identifier = profile.handle or (profile.content_id if is_social_target else domain) or domain
         ranked = filter_public_search_results(
             retrieved_results,
-            identifier=profile.handle if profile.handle else domain,
-            kind="handle" if profile.handle else "domain",
-            platform=profile.platform if profile.handle else None,
+            identifier=search_identifier,
+            kind="handle" if (profile.handle or is_social_target) else "domain",
+            platform=profile.platform if is_social_target else None,
             target_url=url,
         )
 
@@ -1442,6 +1553,24 @@ def _execute_pipeline_steps(
         limitations.append("Tavily live search is not configured. 1-click manual search link provided.")
     steps_taken[-1]["status"] = "done"
 
+    # Count only relevance-filtered search snippets that explicitly mention the exact target.
+    # An unrelated result or general scam-awareness article must never become a seller report.
+    public_mentions = None
+    if settings.tavily_api_key and tavily_search_result and tavily_search_result.get("status") in {"checked", "checked_no_match"}:
+        identifier = profile.handle or (profile.content_id if is_social_target else domain)
+        if identifier:
+            def _mentions_this_target(item: dict[str, Any]) -> bool:
+                text = " ".join(str(item.get(k) or "") for k in ("title", "snippet", "url")).casefold()
+                needle = str(identifier).casefold().lstrip("@")
+                if not needle:
+                    return False
+                return bool(re.search(rf"(?<![a-z0-9_.-])@?{re.escape(needle)}(?![a-z0-9_.-])", text))
+            from .decision_report import count_mentions
+            exact_snippets = [" ".join(str(item.get(k) or "") for k in ("title", "snippet")) for item in ranked["relevant_results"] if _mentions_this_target(item)]
+            public_mentions = count_mentions(exact_snippets)
+    if public_mentions is not None:
+        page_data["mentions"] = public_mentions
+
     # ---------------------------------------------------------
     # Step F & G: Platform-Specific Profile Inspection & Impersonation
     # ---------------------------------------------------------
@@ -1468,7 +1597,7 @@ def _execute_pipeline_steps(
         ))
 
     # Domain / Brand Contradiction (for domains, not social platforms)
-    if not profile.is_profile and not is_verified_official and not _matches_domain_claimed_by_official_registry(parsed.host if parsed else domain):
+    if not is_social_target and not is_verified_official and not _matches_domain_claimed_by_official_registry(parsed.host if parsed else domain):
         host_labels = [label for label in (parsed.host.lower().split(".") if parsed else domain.lower().split(".")) if label]
         suspicious_brand_suffixes = ("deals", "deal", "jobs", "job", "offers", "offer", "bonus", "promo", "promos", "support", "care", "verify", "secure", "login", "claim", "shop", "line", "reactivate", "reactivation", "account", "update", "reset", "reward", "rewards", "customer", "help", "gift", "free", "airtime", "prize", "win", "winner")
         for brand, official_handles in _KENYA_OFFICIAL_BRANDS.items():
@@ -1510,34 +1639,47 @@ def _execute_pipeline_steps(
                 break
 
     # Adapt coverage strictly for social shop investigations
-    if profile.is_profile:
+    if is_social_target:
         search_cov = next((c for c in coverage if c.id == "tavily_search"), None)
-        social_coverage = [
-            URLCoverageCheck(
+        social_coverage = []
+        # Preserve the earlier TikTok oEmbed result when replacing the generic
+        # coverage list with social-specific checks.
+        oembed_coverage = next((c for c in coverage if c.id == "social_oembed"), None)
+        if oembed_coverage:
+            social_coverage.append(oembed_coverage)
+        if profile.handle:
+            social_coverage.append(URLCoverageCheck(
                 id="profile_identity",
-                name="Platform Profile Identity",
+                name="Platform Account Link",
                 status="checked_match",
-                detail=f"Target account @{profile.handle} on {profile.platform.capitalize()} ({profile.canonical_url or url}). Unnecessary tracking parameters removed.",
+                detail=f"The link identifies @{profile.handle} on {profile.platform.capitalize()}. This identifies the account in the URL; it does not verify the account owner.",
                 provider=profile.platform.capitalize(),
                 query=f"@{profile.handle}",
                 results_retrieved=1,
                 results_relevant=1,
                 sources_inspected=1,
                 retrieval_timestamp=now_iso,
-            ),
+            ))
+        else:
+            social_coverage.append(URLCoverageCheck(
+                id="social_content_identity", name="Social post link", status="checked",
+                detail=f"The link points to a {profile.platform.capitalize()} {profile.content_kind or 'post'}; the URL alone does not identify who owns the account.",
+                provider=profile.platform.capitalize(), source_url=url,
+            ))
+        social_coverage.extend([
             URLCoverageCheck(
                 id="toroka_intel",
                 name="Toroka Records & Verified Registry",
                 status="checked_match" if toroka_match or is_verified_official else "checked_no_match",
-                detail=f"Moderated incident records match {profile.identifier} ({toroka_match['reports']} report(s))." if toroka_match else (f"Matches active verified record for {verified_name}." if is_verified_official else f"No verified registry records or moderated scam reports on file for {profile.identifier}."),
+                detail=(f"Moderated incident records match {profile.identifier or profile.content_kind or profile.platform} ({toroka_match['reports']} report(s))." if toroka_match else (f"Matches active verified record for {verified_name}." if is_verified_official else f"No verified registry records or moderated scam reports on file for {profile.identifier or (profile.platform + ':' + str(profile.content_kind or 'content') + ':' + str(profile.content_id or 'unknown'))}.")),
                 provider="Toroka Incident Database",
-                query=profile.identifier,
+                query=profile.identifier or profile.content_id,
                 results_retrieved=db_report_hits,
                 results_relevant=db_report_hits,
                 sources_inspected=1,
                 retrieval_timestamp=now_iso,
             ),
-        ]
+        ])
         if search_cov:
             social_coverage.append(search_cov)
         social_coverage.extend([
@@ -1592,14 +1734,15 @@ def _execute_pipeline_steps(
     feed_checked = any(c.id == "threat_feeds" and c.status == "checked" for c in coverage)
     known_check_completed = page_fetch_checked or search_checked or feed_checked or bool(threat_hit) or bool(campaign_hit)
 
-    if profile.is_profile:
+    if is_social_target:
         if has_authoritative_threat:
             risk_band = "high_risk"
             lead = next((f for f in findings if f.code in authoritative_threat_codes), None)
             if lead:
                 summary = f"High risk: a confirmed threat-intelligence source flagged this account. {lead.why_it_matters}"
             else:
-                summary = f"High risk: reviewed source-backed community reports flag @{profile.handle} on {profile.platform.capitalize()}."
+                target_label = f"@{profile.handle}" if profile.handle else f"this {profile.platform.capitalize()} post"
+                summary = f"High risk: reviewed source-backed community reports flag {target_label}."
             next_steps = [
                 f"Do not send money or share personal details with @{profile.handle}.",
                 "Check the verified incident reports and indicators below.",
@@ -1607,7 +1750,8 @@ def _execute_pipeline_steps(
             ]
         elif has_supporting_threat:
             risk_band = "suspicious_verify_first"
-            summary = f"Caution: suspicious signals or lookalike indicators detected for @{profile.handle} on {profile.platform.capitalize()}. Verify independently before transacting."
+            target_label = f"@{profile.handle}" if profile.handle else f"this {profile.platform.capitalize()} post"
+            summary = f"Caution: suspicious signals or lookalike indicators detected for {target_label}. Verify independently before transacting."
             next_steps = [
                 "Confirm the seller's identity through independent channels before making payments.",
                 "Verify whether an official business Till or Paybill is registered in the same business name.",
@@ -1625,11 +1769,11 @@ def _execute_pipeline_steps(
             # or an inaccessible profile cannot be escalated to fraud without evidence.
             risk_band = "inconclusive"
             summary = (
-                f"The {profile.platform.capitalize()} profile @{profile.handle or 'unknown'} was identified, "
-                "but direct profile inspection was unavailable and no strong, entity-specific threat evidence was found. "
-                "This is not a finding that the account is safe or fraudulent."
+                (f"The {profile.platform.capitalize()} account @{profile.handle} was identified" if profile.handle else f"A {profile.platform.capitalize()} {profile.content_kind or 'post'} link was identified")
+                + ", but the available checks did not establish whether the seller or post is genuine. This is not a finding that it is safe or fraudulent."
             )
-            limitations.append(f"Direct inspection of the @{profile.handle} {profile.platform.capitalize()} profile was unavailable due to platform restrictions.")
+            if profile.handle:
+                limitations.append(f"Direct inspection of the @{profile.handle} {profile.platform.capitalize()} profile was unavailable due to platform restrictions.")
             limitations.append("Public search returned no verified reports or complaints clearly tied to this exact account.")
             next_steps = [
                 "Share the specific product post, conversation, or payment request for a more targeted assessment.",
@@ -1705,33 +1849,9 @@ def _execute_pipeline_steps(
             "Verify the identity and payment recipient independently before sending money or credentials.",
         ]
 
-    # Contextual AI Synthesis via Gemini (Grounded explanation)
-    ai_reply = None
-    if settings.gemini_api_key or settings.openai_api_key:
-        try:
-            from .ai_agent import investigate_with_ai
-            evidence_summary = (
-                f"URL: {_sanitised_url_for_ai(url)}\nDomain: {domain}\nRisk Band: {risk_band}\n"
-                f"Findings: {[f.plain_text for f in findings]}\n"
-                f"Contradictions: {contradictions}\n"
-                f"Page Title: {page_data.get('title')}\n"
-                f"Page Text Excerpt: {page_data.get('visible_text_excerpt', '')[:400]}\n"
-                f"User Question/Context: {_sanitise_url_in_text(user_context)}"
-            )
-            ai_data = investigate_with_ai(
-                evidence_summary,
-                language=language,
-                settings=settings,
-                public_sources=[asdict(s) for s in sources],
-            )
-            if ai_data and ai_data.get("conversational_reply"):
-                ai_reply = ai_data["conversational_reply"]
-        except Exception as e:
-            logger.debug("AI synthesis failed safely: %s", e)
-
     steps_taken[-1]["status"] = "done"
 
-    return URLInvestigationResult(
+    result = URLInvestigationResult(
         target_url=url,
         normalized_url=url,
         domain=domain,
@@ -1746,8 +1866,40 @@ def _execute_pipeline_steps(
         next_steps=next_steps,
         page_data=page_data,
         steps_taken=steps_taken,
-        ai_conversational_reply=ai_reply,
     )
+
+    # Decision language is deterministic and derives only from the existing rules-engine band.
+    from .decision_report import build_decision, facts_from_result, ai_text_ok
+    result.decision = build_decision(facts_from_result(result, lang=language))
+    result.summary = result.decision["headline"]
+    result.next_steps = (result.decision["how_to_find_out"][:3] or []) + result.decision["before_you_pay"]
+
+    # AI may only reword the deterministic report. It cannot select or change the decision.
+    if settings.gemini_api_key or settings.openai_api_key:
+        try:
+            from .ai_agent import investigate_with_ai
+            import json
+            evidence_summary = (
+                "Reword the following deterministic Toroka decision report only. "
+                "Do not change the decision, invent evidence, call anyone a scammer, or omit the safety steps. "
+                "If the decision is cant_tell_yet, say so plainly and lead with how the user can find out. "
+                "Return a concise conversational_reply in the requested language.\n\nDECISION REPORT:\n"
+                + json.dumps(result.decision, ensure_ascii=False)
+                + "\n\nREQUEST CONTEXT:\n" + _sanitise_url_in_text(user_context)
+            )
+            ai_data = investigate_with_ai(
+                evidence_summary, language=language, settings=settings,
+                public_sources=[asdict(source) for source in result.sources],
+            )
+            candidate = ai_data.get("conversational_reply") if isinstance(ai_data, dict) else None
+            if candidate and ai_text_ok(str(candidate), result.decision["decision"]):
+                result.ai_conversational_reply = str(candidate).strip()[:4000]
+            elif candidate:
+                logger.warning("Discarded AI URL wording that contradicted deterministic decision")
+        except Exception as exc:
+            logger.debug("AI synthesis failed safely: %s", type(exc).__name__)
+
+    return result
 
 
 def _build_error_fallback(url: str, err_msg: str, language: str) -> URLInvestigationResult:
