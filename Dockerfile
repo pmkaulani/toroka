@@ -23,5 +23,4 @@ ENV PYTHONPATH=/app/packages/rules:/app/packages/connectors:/app/services/api \
 USER ssi
 EXPOSE 8000
 
-HEALTHCHECK CMD python -c "import urllib.request, os; p = os.environ.get('PORT', '8000'); urllib.request.urlopen(f'http://localhost:{p}/v1/health')"
-CMD ["sh", "-c", "cd services/api && alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
+CMD ["sh", "-c", "cd services/api && alembic upgrade head && exec uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]

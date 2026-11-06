@@ -5,6 +5,10 @@ services:
     plan: free
     healthCheckPath: /v1/health
     envVars:
+      - key: PORT
+        value: "8000"
+      - key: WEB_CONCURRENCY
+        value: "1"
       - key: SSI_ENV
         value: prod
       - key: DATABASE_URL
