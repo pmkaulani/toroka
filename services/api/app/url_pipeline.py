@@ -31,6 +31,7 @@ from ssi_rules import normalize as nz
 from ssi_rules.registry import load_registry as load_official_registry
 from ssi_rules.vocabulary import CoverageStatus, EvidenceType, Strength
 from ssi_connectors.url_fetcher import safe_fetch_page, SafePageContent
+from ssi_connectors.marketplace import identify_marketplace, normalize_product_data
 
 from . import db as m
 from .config import Settings
@@ -530,6 +531,19 @@ def parse_platform_profile(url_or_handle: str, platform_hint: str | None = None)
     if not raw:
         return PlatformProfile(False, "web", None, None, False, None)
 
+    tracking_params: dict[str, str] = {}
+    if "?" in raw:
+        base_part, query_part = raw.split("?", 1)
+        from urllib.parse import parse_qsl
+        for k, v in parse_qsl(query_part, keep_blank_values=True):
+            tracking_params[k] = v
+        clean_raw = base_part.rstrip("/")
+    else:
+        clean_raw = raw.rstrip("/")
+
+    if "#" in clean_raw:
+        clean_raw = clean_raw.split("#", 1)[0]
+
     # Parse real platform content URLs before the legacy profile-only patterns.
     # This recognises TikTok videos/share links, Instagram posts/reels, Facebook
     # marketplace items, X posts and WhatsApp deep links without scraping them.
@@ -540,25 +554,18 @@ def parse_platform_profile(url_or_handle: str, platform_hint: str | None = None)
             handle = social_link.content_id  # preserve the existing group-link identifier semantics
         brand = _check_impersonation(handle, social_link.platform) if handle and social_link.platform != "whatsapp" else None
         identifier = f"{social_link.platform}:{handle}" if handle else None
+        can_url = social_link.profile_url
+        if can_url and social_link.content_kind == "profile":
+            can_url = can_url.rstrip("/")
         return PlatformProfile(
             bool(handle), social_link.platform, handle, identifier, bool(brand), brand,
-            canonical_url=social_link.profile_url, clean_handle=handle,
+            canonical_url=can_url, clean_handle=handle,
+            tracking_params=tracking_params,
             content_kind=social_link.content_kind, content_id=social_link.content_id,
             needs_redirect=social_link.needs_redirect, phone=social_link.phone,
         )
 
-    tracking_params: dict[str, str] = {}
-    if "?" in raw:
-        base_part, query_part = raw.split("?", 1)
-        from urllib.parse import parse_qsl
-        for k, v in parse_qsl(query_part, keep_blank_values=True):
-            tracking_params[k] = v
-        raw = base_part.rstrip("/")
-    else:
-        raw = raw.rstrip("/")
-
-    if "#" in raw:
-        raw = raw.split("#", 1)[0]
+    raw = clean_raw
 
     # 1. Instagram Profile
     m_ig = re.search(r"(?i)(?:https?://)?(?:www\.)?instagram\.com/@?([a-zA-Z0-9_.-]{2,50})$", raw)
@@ -990,7 +997,7 @@ def _execute_pipeline_steps(
         domain = parsed.registered_domain or parsed.host
 
     profile = parse_platform_profile(url)
-    page_data: dict[str, Any] = {}
+    marketplace_context = identify_marketplace(url)
     social_meta_payload: dict[str, Any] | None = None
     is_social_target = profile.platform in {"instagram", "tiktok", "facebook", "whatsapp", "x"}
 
@@ -1329,6 +1336,14 @@ def _execute_pipeline_steps(
     # ---------------------------------------------------------
     steps_taken.append({"name": "Fetching safe page preview (SSRF-protected)", "status": "running"})
     page_data = {"oembed": social_meta_payload} if social_meta_payload else {}
+    if marketplace_context.get("is_marketplace"):
+        # Keep marketplace identity visible even when direct fetching is disabled
+        # or the platform refuses automated access.
+        page_data["marketplace"] = {
+            **marketplace_context,
+            "page_read": False,
+            "product": {"detected": False, "extraction_status": "not_attempted", "method": "none"},
+        }
     
     # Fetch only when explicitly enabled in the environment. The SSRF-hardened
     # fetcher must still be deployed behind egress restrictions. Social platforms
@@ -1346,12 +1361,20 @@ def _execute_pipeline_steps(
         )
         page_data = {
             **({"oembed": social_meta_payload} if social_meta_payload else {}),
+            **({"marketplace": page_data["marketplace"]} if page_data.get("marketplace") else {}),
             "status": fetch_res.status.value,
             "final_url": fetch_res.final_url,
             "status_code": fetch_res.status_code,
             "title": fetch_res.title,
             "description": fetch_res.meta_description,
-            "visible_text_excerpt": fetch_res.visible_text[:800],
+            "visible_text_excerpt": fetch_res.visible_text[:1800],
+            "canonical_url": _sanitised_url_for_display(fetch_res.canonical_url) if fetch_res.canonical_url else None,
+            "product_data": {
+                **normalize_product_data(fetch_res.product_data),
+                "canonical_url": _sanitised_url_for_display(fetch_res.product_data.get("canonical_url")) if fetch_res.product_data.get("canonical_url") else None,
+                "images": [_sanitised_url_for_display(image_url) for image_url in (fetch_res.product_data.get("images") or [])],
+            },
+            "extraction_notes": fetch_res.extraction_notes[:5],
             "phones": fetch_res.phones,
             "emails": fetch_res.emails,
             "whatsapp_links": fetch_res.whatsapp_links,
@@ -1364,13 +1387,72 @@ def _execute_pipeline_steps(
             "fetch_time_ms": round(fetch_res.fetch_time_ms, 1),
         }
 
-        cov_status = "checked" if fetch_res.status == CS.CHECKED else ("could_not_check" if fetch_res.status == CS.COULD_NOT_CHECK else "not_checked")
+        if fetch_res.status == CS.CHECKED:
+            cov_status = "checked"
+        elif fetch_res.status == CS.NOT_FOUND:
+            cov_status = "not_found"
+        elif fetch_res.status == CS.INACCESSIBLE:
+            cov_status = "blocked_by_platform"
+        elif fetch_res.status == CS.NOT_APPLICABLE:
+            cov_status = "not_checked"
+        else:
+            cov_status = "could_not_check"
         coverage.append(URLCoverageCheck(
             id="safe_web_fetch",
             name="Safe Web Content Inspection",
             status=cov_status,
             detail=fetch_res.reason,
         ))
+
+        # Marketplace domain recognition is context only. It is not seller verification.
+        if marketplace_context.get("is_marketplace"):
+            product = normalize_product_data(fetch_res.product_data)
+            marketplace_payload = {
+                **marketplace_context,
+                "page_read": fetch_res.status == CS.CHECKED,
+                "product_detected": bool(product.get("detected")),
+                "product_extraction_status": product.get("extraction_status", "not_detected"),
+                "seller_detected": bool(product.get("seller_name")),
+                "seller_verification": "not_verified",
+                "product": product,
+            }
+            if product.get("canonical_url"):
+                marketplace_payload["product"]["canonical_url"] = _sanitised_url_for_display(product["canonical_url"])
+            marketplace_payload["product"]["images"] = [
+                _sanitised_url_for_display(image_url) for image_url in (product.get("images") or [])
+            ]
+            page_data["marketplace"] = marketplace_payload
+            if fetch_res.status == CS.CHECKED and product.get("detected"):
+                detail = (
+                    f"{marketplace_context['name']} listing page was read. Product metadata was extracted using "
+                    f"{product.get('method')}; seller identity and transaction fulfilment were not independently verified."
+                )
+                marketplace_status = "checked" if product.get("extraction_status") == "complete" else "partial"
+            elif fetch_res.status == CS.CHECKED:
+                detail = "The marketplace page returned readable HTML, but no structured product details could be extracted. The page may require JavaScript or restrict product metadata."
+                marketplace_status = "partial"
+                limitations.append("The marketplace page loaded, but Toroka could not extract reliable product details from the returned HTML.")
+            else:
+                detail = "Marketplace listing details were not available because the page itself could not be inspected. The access failure is not evidence of fraud."
+                marketplace_status = "could_not_check"
+                limitations.append(f"Toroka identified the {marketplace_context['name']} marketplace URL, but could not read the listing content ({fetch_res.reason}).")
+            coverage.append(URLCoverageCheck(
+                id="marketplace_product_details",
+                name="Marketplace product details",
+                status=marketplace_status,
+                detail=detail,
+                source_url=_sanitised_url_for_display(fetch_res.final_url or url),
+            ))
+            if product.get("detected"):
+                sources.append(URLSourceRef(
+                    id="marketplace-product-metadata",
+                    statement=(f"The {marketplace_context['name']} page exposed product metadata "
+                               f"({product.get('method')}). This confirms only what the page displayed; "
+                               "it does not verify the seller, stock, delivery or authenticity."),
+                    source_url=_sanitised_url_for_display(fetch_res.final_url or url),
+                    reviewer="Marketplace page structured metadata",
+                    last_verified_at=now_iso,
+                ))
 
         # A security control blocking a destination is not evidence that the target is a scam.
         if fetch_res.reason and (fetch_res.reason.startswith("blocked:") or "validation failed" in fetch_res.reason.lower() or "unusual port" in fetch_res.reason.lower() or "internal hostname" in fetch_res.reason.lower() or "binary download blocked" in fetch_res.reason.lower()):
@@ -1433,6 +1515,25 @@ def _execute_pipeline_steps(
                 detail=f"Direct fetch bypassed for platform-specific {profile.platform.capitalize()} profile; the platform could restrict access.",
             ))
             limitations.append(f"The {profile.platform.capitalize()} profile was not directly fetched.")
+    # Always expose marketplace access limitations, including when link fetching is disabled.
+    if marketplace_context.get("is_marketplace"):
+        if not any(check.id == "marketplace_product_details" for check in coverage):
+            coverage.append(URLCoverageCheck(
+                id="marketplace_product_details",
+                name="Marketplace product details",
+                status="not_checked",
+                detail="Toroka identified the marketplace host, but direct page inspection was not performed in this environment.",
+                source_url=_sanitised_url_for_display(url),
+            ))
+            limitations.append("Toroka identified the marketplace platform but did not retrieve the specific listing contents.")
+        coverage.append(URLCoverageCheck(
+            id="marketplace_seller_verification",
+            name="Independent seller verification",
+            status="not_checked",
+            detail="The seller's legal identity, seller account history and fulfilment record are not independently verified by identifying the marketplace domain or reading its product metadata.",
+            source_url=_sanitised_url_for_display(url),
+        ))
+
     steps_taken[-1]["status"] = "done"
 
     # ---------------------------------------------------------
@@ -1442,6 +1543,12 @@ def _execute_pipeline_steps(
     tavily_search_result = None
     manual_search_link = None
     query_target = f'"{domain}" reviews complaints scam Kenya'
+    if marketplace_context.get("is_marketplace"):
+        mp = page_data.get("marketplace") or {}
+        product = mp.get("product") or {}
+        search_terms = [str(value).strip() for value in (product.get("name"), product.get("seller_name"), product.get("sku")) if value]
+        if search_terms:
+            query_target = " ".join(f'"{term[:100]}"' for term in search_terms[:3]) + f' "{domain}" reviews complaints scam Kenya'
     if profile.handle and profile.platform in {"instagram", "tiktok", "facebook", "whatsapp", "x"}:
         query_target = f'"{profile.handle}" {profile.platform} reviews complaints scam Kenya'
     elif is_social_target and profile.content_id:
@@ -1455,11 +1562,18 @@ def _execute_pipeline_steps(
         tavily_search_result = tavily_res
         retrieved_results = tavily_res.get("results", [])
 
+        marketplace_data = page_data.get("marketplace") or {}
+        marketplace_product = marketplace_data.get("product") or {}
         search_identifier = profile.handle or (profile.content_id if is_social_target else domain) or domain
+        search_kind = "handle" if (profile.handle or is_social_target) else "domain"
+        if marketplace_context.get("is_marketplace") and marketplace_product.get("seller_name"):
+            # Search leads must still mention the exact marketplace domain to avoid conflating sellers.
+            search_identifier = domain
+            search_kind = "domain"
         ranked = filter_public_search_results(
             retrieved_results,
             identifier=search_identifier,
-            kind="handle" if (profile.handle or is_social_target) else "domain",
+            kind=search_kind,
             platform=profile.platform if is_social_target else None,
             target_url=url,
         )
@@ -1824,13 +1938,32 @@ def _execute_pipeline_steps(
             "Check the intended recipient, transaction terms and available buyer protection; payment in advance alone is not proof of fraud.",
             "If the link claims to represent an organisation, contact it through details obtained independently of the message.",
         ]
-    elif is_verified_official:
+    elif is_verified_official and not marketplace_context.get("is_marketplace"):
         risk_band = "verified_official"
         summary = f"The exact site identity matches a current, human-reviewed record for {verified_name or domain}. This does not verify every offer or message on the site."
         next_steps = [
             f"The website identity matches a reviewed record for '{verified_name or domain}'.",
             "Verify the specific offer, requested action and payment recipient separately.",
             "Never share your PIN, password or OTP, even if a page appears official.",
+        ]
+    elif marketplace_context.get("is_marketplace"):
+        # A recognised marketplace host does not verify a third-party seller or a listing.
+        # Keep the outcome inconclusive unless independent evidence supports another band.
+        risk_band = "inconclusive"
+        mp_data = page_data.get("marketplace") or {}
+        product = mp_data.get("product") or {}
+        item_label = product.get("name") or "this marketplace listing"
+        seller_note = f" The page identifies the seller as {product['seller_name']}, but that name has not been independently verified." if product.get("seller_name") else " The seller identity could not be independently established from the page data."
+        product_note = " Product details were extracted from the page." if product.get("detected") else " The listing's product details could not be reliably extracted."
+        summary = (
+            f"Toroka identified this as a {marketplace_context['name']} marketplace link, but that only establishes the platform hosting the listing—not whether {item_label} or its seller is trustworthy."
+            + product_note + seller_note
+        )
+        next_steps = [
+            "Keep payment inside the marketplace's official checkout and buyer-protection process; do not follow a seller's request to pay through a separate link or personal account.",
+            "Check the seller's own rating, recent reviews, order history and return terms on the marketplace before ordering.",
+            "Confirm the exact product variant, total price, delivery cost and refund conditions in the official listing.",
+            "Do not share your M-PESA PIN, bank password or one-time password (OTP).",
         ]
     elif known_check_completed:
         risk_band = "no_known_threats_found"

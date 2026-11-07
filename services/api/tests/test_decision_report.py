@@ -124,3 +124,25 @@ def test_internal_fetch_error_details_are_not_echoed_to_shopper():
     }], None)
     assert "169.254.169.254" not in result[0]
     assert "metadata" not in result[0].casefold()
+
+
+def test_marketplace_evidence_is_available_in_swahili():
+    from types import SimpleNamespace
+    from app.decision_report import facts_from_result, build_decision
+
+    result = SimpleNamespace(
+        platform_profile=SimpleNamespace(platform="web", handle=None, clean_handle=None),
+        domain="jumia.co.ke", risk_band="inconclusive", findings=[], contradictions=[],
+        coverage=[SimpleNamespace(id="marketplace_seller_verification", name="Seller identity", status="not_checked", detail="not verified")],
+        page_data={
+            "marketplace": {
+                "is_marketplace": True, "name": "Jumia", "page_read": True,
+                "product": {"detected": True, "name": "Headphones X200", "price": 3499, "currency": "KES", "seller_name": "Acme Digital"},
+            },
+        },
+    )
+    facts = facts_from_result(result, "sw")
+    report = build_decision(facts, "sw")
+    assert any("Jukwaa la mauzo limetambuliwa" in item for item in report["found"])
+    assert any("Bidhaa inayoonyeshwa" in item for item in report["found"])
+    assert any("haijathibitisha muuzaji kivyake" in item for item in report["could_not_check"])

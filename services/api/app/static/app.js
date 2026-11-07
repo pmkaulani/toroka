@@ -1438,10 +1438,87 @@ function shouldUseCurrentCheckContext(text) {
   return /^(?:why|how come|explain|tell me more|more details|what did you find|what did you check|what does that mean|what should i do|what next|is it safe|is this safe|could this be|i already paid|i paid|i clicked|i shared|i sent money|and if|what about that|can you explain|kwa nini|mbona|nielezee|niambie zaidi|nifanye nini|nimeshalipa|nimelipa|nilituma pesa|nilibonyeza|ndiyo|hapana)\b/i.test(s) || ["this one", "that one", "the second one", "same one", "hii", "hiyo"].includes(s);
 }
 
+function renderMarketplacePanel(marketplace, product) {
+  if (!marketplace || !marketplace.name) return null;
+  const sw = lang === "sw";
+  const copy = sw ? {
+    kicker: "TANGAZO LA SOKO",
+    note: "Jukwaa limetambuliwa kupitia kiungo. Hii haithibitishi muuzaji binafsi, uhalisi wa bidhaa au uwasilishaji wake.",
+    price: "Bei iliyoonyeshwa", brand: "Chapa", sku: "Nambari ya bidhaa",
+    availability: "Upatikanaji ulioonyeshwa", seller: "Muuzaji aliyeonyeshwa",
+    sellerRating: "Ukadiriaji wa muuzaji", productRating: "Ukadiriaji wa bidhaa",
+    ratings: "ukadiriaji", reviewsTitle: "Maoni yaliyoonyeshwa kwenye tangazo",
+    reviewNote: "Haya ni maoni yaliyotolewa na ukurasa; hayajathibitishwa kivyake.",
+    delivery: "Ukurasa una maneno kuhusu uwasilishaji", returns: "Ukurasa una maneno kuhusu kurejesha bidhaa au pesa",
+    readTerms: "Soma masharti halisi kabla ya kuagiza.",
+    partial: "Ukurasa ulirudisha HTML inayosomeka, lakini Toroka haikuweza kutoa maelezo ya bidhaa yaliyopangwa. Hili linaweza kutokea pale jukwaa linapopakia data kwa JavaScript au kuzuia maudhui ya ukurasa.",
+    unread: "Toroka imetambua jukwaa kupitia URL, lakini haikuweza kusoma yaliyomo kwenye tangazo. Hakuna maelezo ya bidhaa au muuzaji yaliyokisiwa.",
+    sellerCaveat: "Uthibitishaji wa muuzaji: haujafanywa kivyake. Lipa kupitia mfumo rasmi wa malipo na ulinzi wa mnunuzi wa jukwaa pekee."
+  } : {
+    kicker: "MARKETPLACE LISTING",
+    note: "The platform was identified from the link. This does not verify the individual seller, the product's authenticity or successful delivery.",
+    price: "Price shown", brand: "Brand", sku: "Product reference",
+    availability: "Availability shown", seller: "Seller shown",
+    sellerRating: "Seller rating shown", productRating: "Product rating shown",
+    ratings: "ratings", reviewsTitle: "Review text displayed on the listing",
+    reviewNote: "These are excerpts supplied by the page, not independently verified customer reviews.",
+    delivery: "Delivery wording appears on the page", returns: "Return or refund wording appears on the page",
+    readTerms: "Read the actual terms before ordering.",
+    partial: "The page returned readable HTML, but Toroka could not extract structured product details. This can happen when a marketplace loads listing data with JavaScript or restricts automated page content.",
+    unread: "Toroka could identify the marketplace from the URL, but could not read the listing contents. No product or seller details are being assumed.",
+    sellerCaveat: "Seller verification: not independently verified. Keep payment inside the marketplace's official checkout and buyer-protection process."
+  };
+  const panel = h("section", { class: "marketplace-evidence", "aria-label": sw ? "Maelezo ya tangazo la sokoni" : "Marketplace listing details" });
+  panel.append(h("div", { class: "marketplace-evidence-kicker", text: copy.kicker }));
+  panel.append(h("h4", { class: "marketplace-evidence-title", text: marketplace.name }));
+  panel.append(h("p", { class: "marketplace-evidence-note", text: copy.note }));
+
+  const data = product && typeof product === "object" ? product : {};
+  if (data.detected) {
+    if (data.name) panel.append(h("h5", { class: "marketplace-product-name", text: data.name }));
+    const rows = [];
+    if (data.price !== null && data.price !== undefined && Number.isFinite(Number(data.price))) {
+      const amount = Number(data.price).toLocaleString(undefined, { maximumFractionDigits: 2 });
+      rows.push([copy.price, `${data.currency || (sw ? "Bei" : "Price")} ${amount}`]);
+    }
+    if (data.brand) rows.push([copy.brand, data.brand]);
+    if (data.sku) rows.push([copy.sku, data.sku]);
+    if (data.availability) rows.push([copy.availability, data.availability]);
+    if (data.seller_name) rows.push([copy.seller, data.seller_name]);
+    if (data.seller_rating !== null && data.seller_rating !== undefined) rows.push([copy.sellerRating, `${data.seller_rating}/5`]);
+    if (data.aggregate_rating !== null && data.aggregate_rating !== undefined) {
+      const count = data.rating_count !== null && data.rating_count !== undefined ? ` (${data.rating_count} ${copy.ratings})` : "";
+      rows.push([copy.productRating, `${data.aggregate_rating}/5${count}`]);
+    }
+    if (rows.length) {
+      const list = h("dl", { class: "marketplace-product-facts" });
+      for (const [label, value] of rows) list.append(h("div", { class: "marketplace-product-fact" }, h("dt", { text: label }), h("dd", { text: String(value) })));
+      panel.append(list);
+    }
+    if (data.description) panel.append(h("p", { class: "marketplace-product-description", text: data.description }));
+    if (data.delivery_terms_found || data.return_terms_found) {
+      const terms = [];
+      if (data.delivery_terms_found) terms.push(copy.delivery);
+      if (data.return_terms_found) terms.push(copy.returns);
+      panel.append(h("p", { class: "marketplace-product-terms", text: terms.join(" · ") + `. ${copy.readTerms}` }));
+    }
+    if (Array.isArray(data.review_excerpts) && data.review_excerpts.length) {
+      panel.append(h("h5", { class: "marketplace-reviews-title", text: copy.reviewsTitle }));
+      panel.append(h("ul", { class: "marketplace-review-excerpts" }, data.review_excerpts.map(item => h("li", { text: String(item) }))));
+      panel.append(h("p", { class: "marketplace-evidence-note", text: copy.reviewNote }));
+    }
+  } else {
+    panel.append(h("p", { class: "marketplace-evidence-unavailable", text: marketplace.page_read ? copy.partial : copy.unread }));
+  }
+  panel.append(h("p", { class: "marketplace-seller-caveat", text: copy.sellerCaveat }));
+  return panel;
+}
 function renderDecisionCard(d) {
   const card = h("section", { class: "decision-report", "aria-label": d.headline || "Investigation decision" });
   const status = h("p", { class: "decision-headline", text: d.headline || "I could not reach a reliable conclusion yet." });
   card.append(status);
+  const marketplacePanel = renderMarketplacePanel(d.marketplace, d.product);
+  if (marketplacePanel) card.append(marketplacePanel);
   const headers = d.headers || {};
   const section = (title, items, tag = "ul", cls = "") => {
     if (!Array.isArray(items) || !items.length) return;

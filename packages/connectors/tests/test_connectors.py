@@ -182,3 +182,97 @@ def test_senders_post_expected_requests_and_swallow_failures():
     assert channels.AfricasTalkingSender("sandbox", "KEY", transport=httpx.MockTransport(h)).send_text("254712345678", "hi")
     assert seen[1].headers["apikey"] == "KEY" and b"%2B254712345678" in seen[1].content
     assert not channels.WhatsAppSender("T", "1", transport=httpx.MockTransport(lambda r: httpx.Response(500))).send_text("1", "x")
+
+
+def test_marketplace_fetch_extracts_product_offer_seller_and_rating_from_jsonld():
+    from ssi_connectors.url_fetcher import safe_fetch_page
+    from ssi_rules.vocabulary import CoverageStatus
+
+    html = '''<!doctype html><html><head>
+      <title>Wireless Headphones - Jumia</title>
+      <meta property="og:description" content="Wireless headphones with noise reduction">
+      <link rel="canonical" href="https://www.jumia.co.ke/wireless-headphones-123.html">
+      <script type="application/ld+json">{
+        "@context":"https://schema.org",
+        "@type":"Product",
+        "name":"Wireless Headphones X200",
+        "description":"Bluetooth headphones with noise reduction",
+        "sku":"X200-KE",
+        "brand":{"@type":"Brand","name":"SoundMax"},
+        "image":["https://images.example.test/x200.jpg"],
+        "aggregateRating":{"@type":"AggregateRating","ratingValue":"4.2","ratingCount":"84"},
+        "offers":{"@type":"Offer","price":"3499","priceCurrency":"KES","availability":"https://schema.org/InStock",
+          "seller":{"@type":"Organization","name":"Acme Digital","aggregateRating":{"@type":"AggregateRating","ratingValue":"4.6"}}},
+        "review":[{"@type":"Review","reviewBody":"Battery life is good for daily use."}]
+      }</script>
+    </head><body><main>Delivery information and returns policy available.</main></body></html>'''
+
+    transport = httpx.MockTransport(lambda request: httpx.Response(
+        200, headers={"content-type": "text/html; charset=utf-8"}, text=html
+    ))
+    result = safe_fetch_page(
+        "https://www.jumia.co.ke/wireless-headphones-123.html",
+        transport=transport,
+        resolver=PUBLIC,
+    )
+
+    assert result.status == CoverageStatus.CHECKED
+    product = result.product_data
+    assert product["detected"] is True
+    assert product["extraction_status"] == "complete"
+    assert product["name"] == "Wireless Headphones X200"
+    assert product["price"] == 3499.0 and product["currency"] == "KES"
+    assert product["seller_name"] == "Acme Digital"
+    assert product["seller_rating"] == "4.6"
+    assert product["aggregate_rating"] == "4.2"
+    assert product["rating_count"] == "84"
+    assert product["availability"] == "InStock"
+    assert product["sku"] == "X200-KE"
+    assert product["canonical_url"].endswith("wireless-headphones-123.html")
+    assert product["review_excerpts"] == ["Battery life is good for daily use."]
+    assert product["delivery_terms_found"] and product["return_terms_found"]
+    assert "Wireless Headphones X200" not in result.visible_text  # JSON-LD is not rendered as visible page text.
+
+
+@pytest.mark.parametrize(
+    "status,expected,reason_fragment",
+    [
+        (401, CS.INACCESSIBLE, "denied automated access"),
+        (403, CS.INACCESSIBLE, "denied automated access"),
+        (429, CS.INACCESSIBLE, "rate-limited"),
+        (404, CS.NOT_FOUND, "not found"),
+        (410, CS.NOT_FOUND, "not found"),
+        (500, CS.COULD_NOT_CHECK, "HTTP 500"),
+    ],
+)
+def test_safe_fetch_never_treats_http_error_pages_as_successful_inspections(status, expected, reason_fragment):
+    transport = httpx.MockTransport(lambda request: httpx.Response(status, headers={"content-type": "text/html"}, text="Access denied"))
+    from ssi_connectors.url_fetcher import safe_fetch_page
+    result = safe_fetch_page(
+        "https://shop.example.test/item/123",
+        transport=transport,
+        resolver=PUBLIC,
+    )
+    assert result.status == expected
+    assert result.status_code == status
+    assert reason_fragment in result.reason
+    assert not result.visible_text
+
+
+def test_marketplace_host_detection_uses_domain_boundaries():
+    from ssi_connectors.marketplace import identify_marketplace
+
+    assert identify_marketplace("https://www.jumia.co.ke/product/123")["name"] == "Jumia"
+    assert identify_marketplace("https://seller.kilimall.co.ke/item/123")["name"] == "Kilimall"
+    assert identify_marketplace("https://notjumia.co.ke/product/123")["is_marketplace"] is False
+    assert identify_marketplace("https://jumia.co.ke.attacker.example/product/123")["is_marketplace"] is False
+
+
+def test_jsonld_walker_is_bounded_for_deeply_nested_page_data():
+    from ssi_connectors.url_fetcher import _jsonld_nodes
+
+    nested = {"@type": "Thing"}
+    for _ in range(40):
+        nested = {"nested": nested}
+    nodes = list(_jsonld_nodes(nested))
+    assert len(nodes) <= 17

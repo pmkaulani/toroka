@@ -1966,6 +1966,22 @@ body.dark-theme .composer .box:focus-within { border-color: #4f9da3; }
 
 /* Shopper decision report styles */
 .decision-report{margin:12px 0 16px;padding:4px 0 10px;border-bottom:1px solid var(--border,#e6e8eb);max-width:100%;overflow-wrap:anywhere}
+.marketplace-evidence{margin:12px 0 15px;padding:14px;border:1px solid var(--border,#e6e8eb);border-radius:13px;background:var(--surface-soft,#f7f8f8);overflow-wrap:anywhere}
+.marketplace-evidence-kicker{font-size:.68rem;font-weight:750;letter-spacing:.09em;color:var(--muted,#667078)}
+.marketplace-evidence-title{font-size:1rem;font-weight:700;margin:4px 0 5px}
+.marketplace-evidence-note,.marketplace-product-description,.marketplace-product-terms,.marketplace-seller-caveat,.marketplace-evidence-unavailable{font-size:.86rem;line-height:1.5;margin:7px 0;color:var(--muted,#667078)}
+.marketplace-product-name{font-size:.96rem;font-weight:650;margin:12px 0 8px}
+.marketplace-product-facts{display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:8px;margin:8px 0}
+.marketplace-product-fact{min-width:0;padding:8px 10px;border-radius:9px;background:var(--surface,#fff);border:1px solid var(--border,#e6e8eb)}
+.marketplace-product-fact dt{font-size:.72rem;color:var(--muted,#667078);margin-bottom:3px}
+.marketplace-product-fact dd{font-size:.88rem;font-weight:600;margin:0;overflow-wrap:anywhere}
+.marketplace-seller-caveat{padding-top:8px;border-top:1px solid var(--border,#e6e8eb);color:var(--text,#222)}
+.marketplace-reviews-title{font-size:.86rem;font-weight:650;margin:10px 0 4px}
+.marketplace-review-excerpts{margin:4px 0 8px;padding-left:1.2rem;font-size:.84rem;line-height:1.45}
+.marketplace-review-excerpts li{margin:4px 0}
+body.dark-theme .marketplace-evidence{background:#161d20;border-color:#354247}
+body.dark-theme .marketplace-product-fact{background:#101416;border-color:#354247}
+body.dark-theme .marketplace-seller-caveat{color:#e8eaed}
 .decision-report .decision-headline{font-size:1.06rem;font-weight:650;line-height:1.5;margin:0 0 12px}
 .decision-report h4{font-size:.94rem;font-weight:650;margin:14px 0 6px}
 .decision-report ul,.decision-report ol{margin:5px 0 10px;padding-left:1.35rem}

@@ -100,7 +100,7 @@ def test_safe_shop_page_fetch_is_enabled_by_default():
     assert Settings().enable_link_fetch is True
 
 
-@pytest.mark.parametrize("link", [LINKS[0], LINKS[3], LINKS[5]])
+@pytest.mark.parametrize("link", [LINKS[0], LINKS[3], LINKS[5], "https://www.jumia.co.ke/wireless-headphones-123.html"])
 def test_normal_chat_returns_the_same_decision_first_url_report(env, monkeypatch, link):
     env.settings.enable_link_fetch = False
     manager = ThreatFeedManager.get_instance()
@@ -116,6 +116,8 @@ def test_normal_chat_returns_the_same_decision_first_url_report(env, monkeypatch
     public_report = json.dumps(investigation["decision"]).casefold()
     for internal in ("not_configured", "api_key", "tavily", "gemini", "organisation"):
         assert internal not in public_report
+    if "jumia.co.ke" in link:
+        assert investigation["decision"]["marketplace"]["name"] == "Jumia"
 
 
 def test_decision_report_hides_unsanitised_raw_findings_panel():
@@ -123,3 +125,102 @@ def test_decision_report_hides_unsanitised_raw_findings_panel():
     app_js = Path(__file__).parents[1] / "app" / "static" / "app.js"
     source = app_js.read_text(encoding="utf-8")
     assert "if (!inv.decision && inv.findings && inv.findings.length)" in source
+
+
+def test_jumia_listing_report_shows_extracted_product_but_does_not_trust_seller(env, monkeypatch):
+    from ssi_connectors.url_fetcher import SafePageContent
+    from ssi_rules.vocabulary import CoverageStatus
+    from app.url_pipeline import invalidate_url_cache
+
+    invalidate_url_cache()
+    env.settings.enable_link_fetch = True
+    manager = ThreatFeedManager.get_instance()
+    monkeypatch.setattr(manager, "refresh_feeds", lambda **kwargs: None)
+    monkeypatch.setattr(manager, "check", lambda *args, **kwargs: None)
+    monkeypatch.setattr("app.url_pipeline.safe_fetch_page", lambda url, **kwargs: SafePageContent(
+        status=CoverageStatus.CHECKED,
+        final_url=url,
+        status_code=200,
+        title="Wireless Headphones X200 | Jumia",
+        product_data={
+            "detected": True,
+            "extraction_status": "complete",
+            "method": "json_ld",
+            "name": "Wireless Headphones X200",
+            "description": "Bluetooth headphones with noise reduction",
+            "brand": "SoundMax",
+            "sku": "X200-KE",
+            "price": 3499,
+            "currency": "KES",
+            "availability": "InStock",
+            "seller_name": "Acme Digital",
+            "seller_rating": 4.6,
+            "aggregate_rating": 4.2,
+            "rating_count": 84,
+            "review_count": 84,
+            "images": ["https://images.example.test/x200.jpg?width=500"],
+            "review_excerpts": ["Battery life is good for daily use."],
+            "delivery_terms_found": True,
+            "return_terms_found": True,
+        },
+    ))
+
+    response = env.client.post("/v1/investigate/url", json={
+        "url": "https://www.jumia.co.ke/wireless-headphones-123.html", "language": "en"
+    })
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["risk_band"] == "inconclusive"
+    assert payload["page_data"]["marketplace"]["name"] == "Jumia"
+    assert payload["page_data"]["marketplace"]["product"]["name"] == "Wireless Headphones X200"
+    decision = payload["decision"]
+    assert decision["marketplace"]["name"] == "Jumia"
+    assert decision["product"]["seller_name"] == "Acme Digital"
+    assert decision["product"]["aggregate_rating"] == 4.2
+    assert any("Price shown on the listing: KES 3499" in item for item in decision["found"])
+    assert any("has not been independently verified" in item for item in decision["could_not_check"])
+    assert "does not establish" in decision["headline"].lower()
+
+
+def test_jumia_page_denied_by_403_is_reported_as_unread_not_checked(env, monkeypatch):
+    from ssi_connectors.url_fetcher import SafePageContent
+    from ssi_rules.vocabulary import CoverageStatus
+
+    env.settings.enable_link_fetch = True
+    manager = ThreatFeedManager.get_instance()
+    monkeypatch.setattr(manager, "refresh_feeds", lambda **kwargs: None)
+    monkeypatch.setattr(manager, "check", lambda *args, **kwargs: None)
+    monkeypatch.setattr("app.url_pipeline.safe_fetch_page", lambda url, **kwargs: SafePageContent(
+        status=CoverageStatus.INACCESSIBLE,
+        final_url=url,
+        status_code=403,
+        reason="Website denied automated access (HTTP 403); page content was not inspected.",
+    ))
+
+    response = env.client.post("/v1/investigate/url", json={
+        "url": "https://www.jumia.co.ke/product/blocked-123", "language": "en"
+    })
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["risk_band"] == "inconclusive"
+    assert payload["page_data"]["status"] == "inaccessible"
+    fetch = next(item for item in payload["coverage"] if item["id"] == "safe_web_fetch")
+    assert fetch["status"] == "blocked_by_platform"
+    assert any("could not read the listing" in text.lower() for text in payload["limitations"])
+
+
+def test_jumia_platform_still_identified_when_page_fetch_is_disabled(env, monkeypatch):
+    env.settings.enable_link_fetch = False
+    manager = ThreatFeedManager.get_instance()
+    monkeypatch.setattr(manager, "refresh_feeds", lambda **kwargs: None)
+    monkeypatch.setattr(manager, "check", lambda *args, **kwargs: None)
+
+    response = env.client.post("/v1/investigate/url", json={
+        "url": "https://www.jumia.co.ke/product/example-123", "language": "en"
+    })
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["page_data"]["marketplace"]["name"] == "Jumia"
+    assert payload["page_data"]["marketplace"]["page_read"] is False
+    assert payload["decision"]["marketplace"]["name"] == "Jumia"
+    assert payload["decision"]["product"]["detected"] is False

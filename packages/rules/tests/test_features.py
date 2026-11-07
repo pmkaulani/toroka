@@ -204,3 +204,24 @@ def test_swahili_localisation_falls_back_honestly():
     en = localize(d, "en")
     assert en["summary"] == d["summary"] and en["label_text"] == "Suspicious: verify first"
     assert localize(d, "fr")["language"] == "en"
+
+
+def test_marketplace_product_urls_enter_online_shopping_category():
+    from ssi_rules.normalize import parse_url
+
+    url = "https://www.jumia.co.ke/wireless-headphones-123.html"
+    parsed = parse_url(url)
+    assert parsed is not None
+    guess = detect_category("Please check this listing: " + url, [parsed], [], [])
+    assert guess.investigation_category == "online_shopping"
+    assert guess.suggested == "shop"
+
+
+def test_fake_marketplace_name_inside_an_unrelated_domain_does_not_trigger_shopping_category():
+    from ssi_rules.normalize import parse_url
+
+    url = "https://jumia.co.ke.fake-shop.example/product/123"
+    parsed = parse_url(url)
+    assert parsed is not None
+    guess = detect_category("Please check: " + url, [parsed], [], [])
+    assert guess.investigation_category != "online_shopping"

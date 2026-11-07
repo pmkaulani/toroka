@@ -17,6 +17,7 @@ Toroka helps individuals, shoppers, and businesses verify suspicious SMS message
   - 🛡️ **I already paid or shared something:** Calm emergency triage and immediate action plan.
   - ✉️ **Full email headers:** Deep email forensic inspection (SPF/DKIM/DMARC, spoofing detection).
 - **Decision-First Link & Social Investigation:** Multi-platform URL parser (TikTok, Instagram, Facebook, X, WhatsApp), public TikTok oEmbed metadata context, SSRF-hardened safe website reads, and shopper-facing decision reports featuring warning signs, pre-payment advice, and copyable seller messages.
+- **Marketplace Product Investigations:** Recognises Jumia, Kilimall, Jiji, Masoko, Pigiame and selected global marketplaces; extracts publicly exposed product and seller-page metadata while explicitly separating platform identity from independent seller verification.
 - **Deep Kenyan Fraud Intelligence:** Purpose-built for local payment vectors:
   - M-PESA "wrong transfer" reversal scams and fake MPESA confirmation SMS.
   - Unregulated deposit requests and "pay delivery fee before dispatch" shop tactics.
@@ -26,6 +27,8 @@ Toroka helps individuals, shoppers, and businesses verify suspicious SMS message
 - **Bilingual (English & Kiswahili):** Full UI and investigation support in both English and Kiswahili (`EN` / `SW` toggle).
 
 ---
+
+Marketplace extraction scope and limitations are documented in [`docs/MARKETPLACE_INVESTIGATIONS.md`](./docs/MARKETPLACE_INVESTIGATIONS.md).
 
 ## 🧭 Verdicts & Assessment Policy
 

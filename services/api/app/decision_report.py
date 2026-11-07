@@ -43,6 +43,8 @@ PUBLIC_CHECK_NAMES = {
     "payment_evidence": "Payment recipient details",
     "business_links": "Business website details",
     "toroka_intel": "Previous Toroka reports",
+    "marketplace_product_details": "Marketplace product details",
+    "marketplace_seller_verification": "Seller identity",
 }
 
 T = {
@@ -134,12 +136,19 @@ def who(facts: dict[str, Any], tr: dict[str, str]) -> str:
         return tr["who_account"].format(platform=(facts.get("platform") or "social").title(), handle=facts.get("handle") or "")
     if kind == "social_post":
         return tr["who_post"].format(platform=(facts.get("platform") or "social").title())
+    if kind == "marketplace_listing":
+        product_name = facts.get("product", {}).get("name")
+        if tr == T["sw"]:
+            item = f"bidhaa {product_name} kwenye " if product_name else "tangazo kwenye "
+            return f"{item}{facts.get('marketplace_name') or 'jukwaa hili'}"
+        item = f"{product_name} on " if product_name else "a listing on "
+        return f"{item}{facts.get('marketplace_name') or 'this marketplace'}"
     if facts.get("domain"):
         return tr["who_site"].format(domain=str(facts["domain"]))
     return tr["who_other"]
 
 
-def plain_unknowns(items: list[dict[str, Any]], platform: str | None) -> list[str]:
+def plain_unknowns(items: list[dict[str, Any]], platform: str | None, lang: str = "en") -> list[str]:
     output: list[str] = []
     for item in items or []:
         status = str(item.get("status", "could_not_check"))
@@ -157,6 +166,30 @@ def plain_unknowns(items: list[dict[str, Any]], platform: str | None) -> list[st
                 "Website content: I did not open this address because Toroka's safety checks "
                 "identified a private or restricted network destination. This restriction is "
                 "not evidence that the website is fraudulent."
+            )
+        elif check_id == "marketplace_seller_verification":
+            line = (
+                "Utambulisho wa muuzaji: jina au ukadiriaji unaoonyeshwa kwenye tangazo umetolewa na ukurasa; Toroka haijathibitisha muuzaji kivyake."
+                if lang == "sw" else
+                "Seller identity: the name or rating shown on a marketplace listing is page-provided information; the seller has not been independently verified by Toroka."
+            )
+        elif check_id == "marketplace_product_details" and status in {"not_checked", "could_not_check", "partial"}:
+            line = (
+                "Maelezo ya bidhaa: Toroka imetambua jukwaa, lakini haikuweza kusoma au kuthibitisha maelezo yote ya tangazo."
+                if lang == "sw" else
+                "Product details: Toroka identified the marketplace, but could not read or extract all listing details."
+            )
+        elif check_id == "safe_web_fetch" and status == "blocked_by_platform":
+            line = (
+                "Maudhui ya tovuti: tovuti imezuia au kupunguza ukaguzi wa kiotomatiki, kwa hiyo Toroka haikusoma ukurasa. Hii si ushahidi wa ulaghai."
+                if lang == "sw" else
+                "Website content: the site denied or rate-limited automated inspection, so Toroka did not read the page. This is not evidence of fraud."
+            )
+        elif check_id == "safe_web_fetch" and status == "not_found":
+            line = (
+                "Maudhui ya tovuti: ukurasa haukupatikana; Toroka haikuweza kukagua tangazo."
+                if lang == "sw" else
+                "Website content: the requested page returned a not-found response; Toroka could not inspect the listing."
             )
         elif check_id == "safe_web_fetch" and platform:
             what = "Full profile details"
@@ -213,7 +246,7 @@ def build_decision(facts: dict[str, Any], lang: str = "en") -> dict[str, Any]:
     red = list(dict.fromkeys(str(x) for x in red if x))
     good = list(dict.fromkeys(str(x) for x in good if x))
     found = list(dict.fromkeys(str(x) for x in found if x))
-    unknowns = plain_unknowns(facts.get("unknowns") or [], facts.get("platform"))
+    unknowns = plain_unknowns(facts.get("unknowns") or [], facts.get("platform"), lang)
 
     before = [tr["no_advance"], tr["before_2"], tr["before_3"], tr["before_4"], tr["before_5"]]
     find_steps = _self_checks() if decision in {"cant_tell_yet", "pause_and_verify"} or facts.get("kind") in {"social_account", "social_post"} else []
@@ -240,6 +273,13 @@ def build_decision(facts: dict[str, Any], lang: str = "en") -> dict[str, Any]:
         )
         headers["hdr_ask"] = "A message you can send the recruiter" if lang != "sw" else "Ujumbe wa kumtumia wakala wa ajira"
     headline = tr[decision].format(who=who(facts, tr))
+    if facts.get("kind") == "marketplace_listing" and decision == "cant_tell_yet":
+        item = facts.get("product", {}).get("name") or "this listing"
+        headline = (
+            f"I identified {item} on {facts.get('marketplace_name')}, but the marketplace domain does not establish that its individual seller or listing is trustworthy. Check the seller and keep payment inside the platform."
+            if lang != "sw" else
+            f"Nimetambua {item} kwenye {facts.get('marketplace_name')}, lakini jina la jukwaa halithibitishi uaminifu wa muuzaji au tangazo hili. Hakiki muuzaji na fanya malipo ndani ya jukwaa."
+        )
     if facts.get("risk_band") == "verified_official" and facts.get("domain"):
         domain = str(facts["domain"]).lower()
         registrable_label = domain.split(".", 1)[0]
@@ -255,6 +295,8 @@ def build_decision(facts: dict[str, Any], lang: str = "en") -> dict[str, Any]:
         "decision": decision,
         "headline": headline,
         "subject": {"kind": facts.get("kind"), "platform": facts.get("platform"), "handle": facts.get("handle"), "domain": facts.get("domain")},
+        "marketplace": facts.get("marketplace"),
+        "product": facts.get("product") if facts.get("marketplace") else None,
         "found": found,
         "red_flags": red,
         "good_signs": good,
@@ -272,8 +314,10 @@ def facts_from_result(result: Any, lang: str = "en") -> dict[str, Any]:
     profile = getattr(result, "platform_profile", None)
     platform = getattr(profile, "platform", None)
     handle = getattr(profile, "handle", None) or getattr(profile, "clean_handle", None)
-    kind = "social_account" if platform in {"tiktok", "instagram", "facebook", "x", "whatsapp"} and handle else "social_post" if platform in {"tiktok", "instagram", "facebook", "x", "whatsapp"} else "shop_site" if getattr(result, "domain", None) else "other_site"
     page_data = getattr(result, "page_data", {}) or {}
+    marketplace = page_data.get("marketplace") or {}
+    product = marketplace.get("product") or {}
+    kind = "social_account" if platform in {"tiktok", "instagram", "facebook", "x", "whatsapp"} and handle else "social_post" if platform in {"tiktok", "instagram", "facebook", "x", "whatsapp"} else "marketplace_listing" if marketplace.get("is_marketplace") else "shop_site" if getattr(result, "domain", None) else "other_site"
     oembed = page_data.get("oembed") or {}
     found = []
     if oembed.get("account_name"):
@@ -286,6 +330,59 @@ def facts_from_result(result: Any, lang: str = "en") -> dict[str, Any]:
         found.append(_shopper_text(f"Website page title: {str(page_data['title'])[:180]}.") )
     if page_data.get("description"):
         found.append(_shopper_text(f"Website description: {str(page_data['description'])[:220]}.") )
+    if marketplace.get("is_marketplace"):
+        if lang == "sw":
+            found.append(_shopper_text(
+                f"Jukwaa la mauzo limetambuliwa: {marketplace.get('name')}. Hii inatambua jukwaa pekee; haithibitishi muuzaji au tangazo binafsi."
+            ))
+            if product.get("name"):
+                found.append(_shopper_text(f"Bidhaa inayoonyeshwa kwenye tangazo: {product['name']}."))
+            if product.get("price") is not None:
+                price = f"{product.get('currency') or 'Bei'} {product['price']:g}"
+                found.append(_shopper_text(f"Bei inayoonyeshwa kwenye tangazo: {price}."))
+            if product.get("brand"):
+                found.append(_shopper_text(f"Chapa inayoonyeshwa: {product['brand']}."))
+            if product.get("sku"):
+                found.append(_shopper_text(f"Nambari ya bidhaa inayoonyeshwa: {product['sku']}."))
+            if product.get("availability"):
+                found.append(_shopper_text(f"Upatikanaji unaoonyeshwa: {product['availability']}."))
+            if product.get("seller_name"):
+                found.append(_shopper_text(f"Jina la muuzaji linaloonyeshwa: {product['seller_name']}. Hili si uthibitisho huru wa utambulisho wa muuzaji."))
+            if product.get("seller_rating") is not None:
+                found.append(_shopper_text(f"Ukadiriaji wa muuzaji unaoonyeshwa: {product['seller_rating']:g}/5. Ukadiriaji huu haujathibitishwa kivyake."))
+            if product.get("aggregate_rating") is not None:
+                count = f" kutoka kwa ukadiriaji {product['rating_count']}" if product.get("rating_count") is not None else ""
+                found.append(_shopper_text(f"Ukadiriaji wa bidhaa unaoonyeshwa: {product['aggregate_rating']:g}/5{count}. Huu si uthibitisho wa uhalisi au uwasilishaji."))
+            if product.get("description"):
+                found.append(_shopper_text(f"Maelezo ya bidhaa yaliyoonyeshwa: {product['description'][:300]}."))
+            for review in product.get("review_excerpts") or []:
+                found.append(_shopper_text(f"Maoni yaliyoonyeshwa kwenye tangazo: “{str(review)[:200]}”. Hayajathibitishwa kivyake."))
+        else:
+            found.append(_shopper_text(
+                f"Marketplace identified: {marketplace.get('name')}. This identifies the hosting platform only; it does not verify the individual seller or listing."
+            ))
+            if product.get("name"):
+                found.append(_shopper_text(f"Product shown on the listing: {product['name']}."))
+            if product.get("price") is not None:
+                price = f"{product.get('currency') or 'Price'} {product['price']:g}"
+                found.append(_shopper_text(f"Price shown on the listing: {price}."))
+            if product.get("brand"):
+                found.append(_shopper_text(f"Brand shown on the listing: {product['brand']}."))
+            if product.get("sku"):
+                found.append(_shopper_text(f"Product reference shown: {product['sku']}."))
+            if product.get("availability"):
+                found.append(_shopper_text(f"Availability shown on the listing: {product['availability']}."))
+            if product.get("seller_name"):
+                found.append(_shopper_text(f"Seller name shown on the listing: {product['seller_name']}. This is not independent seller verification."))
+            if product.get("seller_rating") is not None:
+                found.append(_shopper_text(f"Seller rating shown on the listing: {product['seller_rating']:g}/5. This rating has not been independently verified."))
+            if product.get("aggregate_rating") is not None:
+                count = f" from {product['rating_count']} rating(s)" if product.get("rating_count") is not None else ""
+                found.append(_shopper_text(f"Product rating shown on the listing: {product['aggregate_rating']:g}/5{count}. Ratings are displayed-platform data, not proof of authenticity or fulfilment."))
+            if product.get("description"):
+                found.append(_shopper_text(f"Product description shown: {product['description'][:300]}."))
+            for review in product.get("review_excerpts") or []:
+                found.append(_shopper_text(f"Review text displayed on the listing: “{str(review)[:200]}”. This has not been independently verified."))
     visible_text = re.sub(r"\s+", " ", str(page_data.get("visible_text_excerpt") or "")).strip()
     if visible_text:
         found.append(_shopper_text(f"Visible text on the website: “{visible_text[:280]}”.") )
@@ -308,6 +405,9 @@ def facts_from_result(result: Any, lang: str = "en") -> dict[str, Any]:
     unknowns = [{"id": getattr(check, "id", ""), "what": getattr(check, "name", ""), "status": getattr(check, "status", "could_not_check"), "detail": getattr(check, "detail", "")} for check in coverage]
     return {
         "kind": kind, "platform": platform, "handle": handle, "domain": getattr(result, "domain", None),
+        "marketplace": {"name": marketplace.get("name"), "page_read": marketplace.get("page_read", False), "seller_detected": marketplace.get("seller_detected", False)} if marketplace.get("is_marketplace") else None,
+        "marketplace_name": marketplace.get("name"),
+        "product": {key: product.get(key) for key in ("detected", "extraction_status", "name", "description", "brand", "sku", "price", "currency", "availability", "seller_name", "seller_rating", "aggregate_rating", "rating_count", "review_count", "delivery_terms_found", "return_terms_found")},
         "risk_band": getattr(result, "risk_band", "inconclusive"), "red_flags": red, "good_signs": good,
         "found": found, "unknowns": unknowns, "mentions": page_data.get("mentions"),
         # Post oEmbed is not a profile inspection; followers, comments and account

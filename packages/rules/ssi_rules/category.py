@@ -18,6 +18,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from enum import Enum
+from urllib.parse import urlsplit
 
 
 class InvestigationCategory(str, Enum):
@@ -81,6 +82,10 @@ _KW: dict[str, re.Pattern] = {
         r"reversal|reverse\s+(?:the\s+)?(?:transaction|sms|money)|fuliza|"
         r"overdrawn|mpesa\s+pin|mpesa\s+balance|confirmed\.\s*ksh|wrong\s+recipient|"
         r"reversal\s+request|send\s+back)\b"
+    ),
+    InvestigationCategory.ONLINE_SHOPPING.value: re.compile(
+        r"(?i)\b(?:online\s+shopping|shopping\s+cart|add\s+to\s+cart|checkout|"
+        r"product\s+listing|marketplace\s+listing|buy\s+online|e-?commerce)\b"
     ),
     InvestigationCategory.SOCIAL_SELLER.value: re.compile(
         r"(?i)\b(?:instagram|tiktok|facebook|marketplace|dm\s+to\s+order|delivery|"
@@ -153,6 +158,39 @@ def detect_category(text: str, urls: list | None = None, phones: list | None = N
     # Contextual boosts
     if payment_ids:
         scores[InvestigationCategory.MPESA_PAYMENT.value] = scores.get(InvestigationCategory.MPESA_PAYMENT.value, 0) + 2
+
+    # A marketplace product URL should enter the shopping workflow even when the
+    # pasted message contains no words such as "shop", "seller" or "product".
+    # Match DNS boundaries, not loose substrings (e.g. not fake-jumia.example).
+    marketplace_domains = (
+        "jumia.co.ke", "jumia.com", "jumia.com.ng", "jumia.com.gh", "jumia.ug",
+        "jumia.dz", "jumia.ma", "jumia.ci", "jumia.sn", "jumia.com.eg", "jumia.com.tn",
+        "kilimall.co.ke", "kilimall.com", "jiji.co.ke", "jiji.ng", "jiji.ug",
+        "masoko.com", "pigiame.co.ke", "amazon.com", "amazon.co.uk", "amazon.de",
+        "amazon.fr", "amazon.it", "amazon.es", "amazon.ae", "amazon.in",
+        "ebay.com", "ebay.co.uk", "ebay.de", "ebay.com.au", "aliexpress.com",
+        "temu.com", "shein.com",
+    )
+    candidate_urls = []
+    for candidate in urls:
+        raw = getattr(candidate, "original", None) or (candidate if isinstance(candidate, str) else "")
+        if raw:
+            candidate_urls.append(str(raw))
+    candidate_urls.extend(re.findall(r"(?i)(?:https?://|www\.)[^\s<>\"'()]+", text))
+    marketplace_match = False
+    for raw_url in candidate_urls:
+        candidate = raw_url if re.match(r"(?i)^https?://", raw_url) else "https://" + raw_url
+        try:
+            host = (urlsplit(candidate).hostname or "").lower().rstrip(".")
+        except ValueError:
+            continue
+        if any(host == domain or host.endswith("." + domain) for domain in marketplace_domains):
+            marketplace_match = True
+            break
+    if marketplace_match:
+        scores[InvestigationCategory.ONLINE_SHOPPING.value] = max(
+            scores.get(InvestigationCategory.ONLINE_SHOPPING.value, 0), 3
+        )
 
     # Job and Grant claims outrank generic payment or message mentions
     recruitment_cat = InvestigationCategory.RECRUITMENT_OVERSEAS.value
