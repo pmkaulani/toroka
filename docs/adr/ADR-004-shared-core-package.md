@@ -1,0 +1,7 @@
+# ADR-004: Extract product-neutral primitives into `packages/core` (`toroka_core`)
+
+- Status: accepted
+- Context: The evidence model, source-independent scoring, relationship graph, timeline, case memory and email forensics are not specific to scam checking. A second product (Toroka Enterprise, insider-risk investigation) needs them, but forking the consumer app would split the evidence discipline in two.
+- Decision: Move them to `packages/core/toroka_core` (stdlib-only apart from optional `idna`, `dns`, `dkim`). Leave **alias shims** at every old import path (`toroka_evidence.*`, `toroka_phase3.identity_graph`, `toroka_phase3.timeline`, `toroka_phase7.case_memory`, `toroka_email_forensics.analyzer`). A shim replaces itself in `sys.modules` with the core module, so old and new paths are the *same object* and monkeypatching keeps working. Scoring and engine wording are injected through `ScoringPolicy` and `EngineProfile`; the defaults reproduce the shopper behaviour exactly.
+- Consequences: Consumer code and tests are unchanged and are the regression net (`packages/core/tests` also asserts shim identity and that core imports without the consumer app on the path). `app/evidence_graph.py` is now a thin wrapper that injects the connectors' `normalize_domain`. New products depend on `toroka_core` only. The consumer `build4/campaigns.py` stays DB-coupled; new products use `toroka_core.graph.clustering`.
+- Rule: nothing in `toroka_core` may import `app`, `ssi_rules` or `ssi_connectors`.

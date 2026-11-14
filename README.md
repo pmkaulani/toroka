@@ -203,9 +203,9 @@ Key configuration options:
 ```bash
 # Set PYTHONPATH
 # Windows (PowerShell):
-$env:PYTHONPATH = "packages/rules;packages/connectors;services/api"
+$env:PYTHONPATH = "packages/core;packages/rules;packages/connectors;services/api"
 # Linux/macOS:
-export PYTHONPATH="packages/rules:packages/connectors:services/api"
+export PYTHONPATH="packages/core:packages/rules:packages/connectors:services/api"
 
 # Run migrations
 alembic -c services/api/alembic.ini upgrade head
@@ -223,7 +223,7 @@ The codebase maintains rigorous automated test coverage across unit, integration
 
 ```bash
 # Run core test suites
-pytest services/api/tests/ packages/rules/tests/ packages/connectors/tests/ -q
+pytest services/api/tests/ packages/core/tests/ packages/rules/tests/ packages/connectors/tests/ -q
 
 # Run conversational AI & chat tests
 pytest services/api/tests/test_conversation_about_toroka.py -v

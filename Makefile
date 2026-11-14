@@ -2,8 +2,8 @@
 PY ?= python3
 export DATABASE_URL ?= sqlite:///$(CURDIR)/ssi.db
 export STORAGE_DIR ?= $(CURDIR)/evidence_store
-PP = packages/rules:packages/connectors:services/api
-CLI = cd services/api && PYTHONPATH=../../packages/rules:../../packages/connectors:. $(PY) -m app.cli
+PP = packages/core:packages/rules:packages/connectors:services/api
+CLI = cd services/api && PYTHONPATH=../../packages/core:../../packages/rules:../../packages/connectors:. $(PY) -m app.cli
 
 install:
 	pip install -r requirements.txt
@@ -18,7 +18,7 @@ browser:                   # real Chromium: layout, keyboard, accessibility (axe
 run:
 	PYTHONPATH=$(PP) $(PY) -m uvicorn app.main:app --app-dir services/api --reload --port 8000
 migrate:
-	cd services/api && PYTHONPATH=../../packages/rules:../../packages/connectors:. $(PY) -m alembic upgrade head
+	cd services/api && PYTHONPATH=../../packages/core:../../packages/rules:../../packages/connectors:. $(PY) -m alembic upgrade head
 user:                      # make user EMAIL=you@example.com [ROLE=moderator|admin]   (password: env SSI_NEW_PASSWORD, or prompted)
 	$(CLI) create-user --email $(EMAIL) --role $(or $(ROLE),moderator)
 registry-due:

@@ -19,7 +19,7 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // ---------- server ----------
 import { randomBytes } from "node:crypto";
-const serverEnv = { ...process.env, SSI_ENV: "dev", DATABASE_URL: `sqlite:///${tmp}/br.db`, STORAGE_DIR: `${tmp}/ev`, PYTHONPATH: path.join(root, "packages/rules") + ":" + path.join(root, "packages/connectors") + ":" + path.join(root, "services/api"),
+const serverEnv = { ...process.env, SSI_ENV: "dev", DATABASE_URL: `sqlite:///${tmp}/br.db`, STORAGE_DIR: `${tmp}/ev`, PYTHONPATH: path.join(root, "packages/core") + ":" + path.join(root, "packages/rules") + ":" + path.join(root, "packages/connectors") + ":" + path.join(root, "services/api"),
   ENCRYPTION_KEY: randomBytes(32).toString("base64").replace(/\+/g, "-").replace(/\//g, "_"), HMAC_KEY: randomBytes(32).toString("hex"),
   RL_CHECKS: "5000/3600", RL_EVIDENCE: "5000/3600", RL_REPORTS: "5000/3600", RL_SEARCH: "5000/3600", RL_SEARCH_DISTINCT: "1000", DEV_ECHO_CODES: "1" };
 const server = spawn(process.env.SSI_PY || "python3", ["-m", "uvicorn", "app.main:app", "--app-dir", "services/api", "--port", PORT, "--log-level", "warning"], { cwd: root, stdio: ["ignore", "ignore", "pipe"], env: serverEnv });

@@ -40,7 +40,7 @@ def main():
     tmp = tempfile.mkdtemp(prefix="ssi-live-")
     from cryptography.fernet import Fernet
     env = {**os.environ, "SSI_ENV": "dev", "DATABASE_URL": f"sqlite:///{tmp}/live.db", "STORAGE_DIR": f"{tmp}/ev", "ENCRYPTION_KEY": Fernet.generate_key().decode(), "HMAC_KEY": secrets.token_hex(32),
-           "PYTHONPATH": os.pathsep.join(os.path.join(ROOT, p) for p in ("packages/rules", "packages/connectors", "services/api")), "DEV_ECHO_CODES": "1",
+           "PYTHONPATH": os.pathsep.join(os.path.join(ROOT, p) for p in ("packages/core", "packages/rules", "packages/connectors", "services/api")), "DEV_ECHO_CODES": "1",
            "WHATSAPP_APP_SECRET": "shh", "WHATSAPP_VERIFY_TOKEN": "vt", "AT_CALLBACK_SECRET": "s3cret",
            "RL_CHECKS": "100000/3600", "RL_EVIDENCE": "100000/3600", "RL_REPORTS": "100000/3600", "RL_SEARCH": "100000/3600", "RL_SEARCH_DISTINCT": "100000", "RL_AUTH": "100000/900", "RL_APPEALS": "100000/3600"}
     log = open(f"{tmp}/server.log", "w")
