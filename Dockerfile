@@ -15,7 +15,7 @@ COPY services ./services
 
 RUN chown -R ssi:ssi /app /data
 
-ENV PYTHONPATH=/app/packages/core:/app/packages/rules:/app/packages/connectors:/app/services/api \
+ENV PYTHONPATH=/app/packages/core:/app/packages/enterprise:/app/packages/rules:/app/packages/connectors:/app/services/api \
     PYTHONUNBUFFERED=1 \
     DATABASE_URL="sqlite:////data/ssi.db" \
     STORAGE_DIR="/data/evidence"
