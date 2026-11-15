@@ -7,6 +7,7 @@ import { CaseRegisterView } from "./components/CaseRegisterView";
 import { DataReadinessView } from "./components/DataReadinessView";
 import { Header } from "./components/Header";
 import { IntegrationsView } from "./components/IntegrationsView";
+import { InvestigationView } from "./components/InvestigationView";
 import { MyCasesView } from "./components/MyCasesView";
 import { OverviewView } from "./components/OverviewView";
 import { ReviewQueuesView } from "./components/ReviewQueuesView";
@@ -79,6 +80,13 @@ export const App: React.FC = () => {
         )}
 
         <button
+          className={`wb-tab ${activeTab === "intelligence" ? "active" : ""}`}
+          onClick={() => setActiveTab("intelligence")}
+        >
+          Fraud Intelligence
+        </button>
+
+        <button
           className={`wb-tab ${activeTab === "data-readiness" ? "active" : ""}`}
           onClick={() => setActiveTab("data-readiness")}
         >
@@ -108,18 +116,28 @@ export const App: React.FC = () => {
         {activeTab === "my-cases" && <MyCasesView onSelectCase={(id) => setSelectedCaseId(id)} />}
         {activeTab === "cases" && <CaseRegisterView onSelectCase={(id) => setSelectedCaseId(id)} />}
         {activeTab === "review-queues" && <ReviewQueuesView />}
+        {activeTab === "intelligence" && (
+          <InvestigationView
+            initialCaseId={selectedCaseId}
+            onSelectCase={(id) => setSelectedCaseId(id)}
+          />
+        )}
         {activeTab === "data-readiness" && <DataReadinessView />}
         {activeTab === "integrations" && <IntegrationsView />}
         {activeTab === "audit-trail" && <AuditTrailView />}
       </main>
 
       {/* Case Inspection Modal */}
-      {selectedCaseId && (
+      {selectedCaseId && activeTab !== "intelligence" && (
         <CaseDetailModal
           caseId={selectedCaseId}
           onClose={() => setSelectedCaseId(null)}
           onConsumeReveal={(pseudonym, plaintext, consumedAt) => {
             setRevealedData({ pseudonym, plaintext, consumedAt });
+          }}
+          onOpenIntelligence={(id) => {
+            setSelectedCaseId(id);
+            setActiveTab("intelligence");
           }}
         />
       )}

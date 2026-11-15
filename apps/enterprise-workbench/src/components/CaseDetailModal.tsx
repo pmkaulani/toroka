@@ -6,12 +6,14 @@ interface CaseDetailModalProps {
   caseId: string;
   onClose: () => void;
   onConsumeReveal: (pseudonym: string, plaintext: string, consumedAt: string) => void;
+  onOpenIntelligence?: (caseId: string) => void;
 }
 
 export const CaseDetailModal: React.FC<CaseDetailModalProps> = ({
   caseId,
   onClose,
   onConsumeReveal,
+  onOpenIntelligence,
 }) => {
   const persona = getCurrentPersona();
   const [caseData, setCaseData] = useState<CaseDetail | null>(null);
@@ -187,18 +189,32 @@ export const CaseDetailModal: React.FC<CaseDetailModalProps> = ({
               <span className="code-mono">{caseData.installation_id}</span>
             </p>
           </div>
-          <button
-            onClick={onClose}
-            style={{
-              background: "transparent",
-              border: "none",
-              color: "var(--text-muted)",
-              cursor: "pointer",
-              fontSize: 20,
-            }}
-          >
-            ✕
-          </button>
+          <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+            {onOpenIntelligence && (
+              <button
+                className="wb-btn"
+                onClick={() => {
+                  onOpenIntelligence(caseData.id);
+                  onClose();
+                }}
+                style={{ fontSize: 12, padding: "4px 10px" }}
+              >
+                Cross-System Intelligence →
+              </button>
+            )}
+            <button
+              onClick={onClose}
+              style={{
+                background: "transparent",
+                border: "none",
+                color: "var(--text-muted)",
+                cursor: "pointer",
+                fontSize: 20,
+              }}
+            >
+              ✕
+            </button>
+          </div>
         </div>
 
         {/* Body */}

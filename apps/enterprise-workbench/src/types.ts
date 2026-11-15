@@ -228,3 +228,93 @@ export interface QualityAssessment {
     explanation: string;
   }>;
 }
+
+export interface IntelligenceEvent {
+  event_id: string;
+  installation_id: string;
+  event_type: string;
+  event_time: string;
+  actor?: string | null;
+  subject?: string | null;
+  source_system?: string | null;
+  source_record_id?: string | null;
+  entities: string[];
+  attributes: Record<string, unknown>;
+  provenance_digest?: string | null;
+}
+
+export interface Relationship {
+  id?: string | null;
+  installation_id: string;
+  source_type: string;
+  source_id: string;
+  target_type: string;
+  target_id: string;
+  relationship_type: string;
+  first_seen?: string | null;
+  last_seen?: string | null;
+  confidence: number;
+  source_system?: string | null;
+  source_record_id?: string | null;
+  attributes: Record<string, unknown>;
+}
+
+export interface CorrelationSignal {
+  signal_id: string;
+  signal_type: string;
+  severity: "info" | "low" | "medium" | "high" | "critical";
+  title: string;
+  explanation: string;
+  event_ids: string[];
+  confidence: number;
+  evidence: Array<Record<string, unknown>>;
+  alternative_explanations: string[];
+  missing_evidence: string[];
+  created_at?: string | null;
+}
+
+export interface InvestigationHypothesis {
+  hypothesis_id: string;
+  installation_id: string;
+  case_id: string;
+  title: string;
+  description: string;
+  status: "open" | "supported" | "weakened" | "disproven";
+  supporting_signal_ids: string[];
+  contradicting_signal_ids: string[];
+  confidence: number;
+  investigator_note?: string | null;
+  created_at?: string;
+  updated_at?: string | null;
+}
+
+export interface InvestigationSummary {
+  finding: string;
+  confidence: number;
+  supporting_facts: string[];
+  alternative_explanations: string[];
+  missing_evidence: string[];
+  requires_human_review: boolean;
+}
+
+export interface InvestigationBundle {
+  investigation_id: string;
+  installation_id: string;
+  case_id?: string | null;
+  anchor_event_ids: string[];
+  events: IntelligenceEvent[];
+  relationships: Relationship[];
+  signals: CorrelationSignal[];
+  hypotheses: InvestigationHypothesis[];
+  missing_evidence: string[];
+  summary: InvestigationSummary;
+  created_at: string;
+}
+
+export interface CorrelateCaseResponse {
+  case_id: string;
+  events_evaluated: number;
+  signals_detected: number;
+  signals: CorrelationSignal[];
+  investigation_bundle_id: string;
+}

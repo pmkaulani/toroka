@@ -7,11 +7,17 @@ import {
   ClosureProposal,
   Connector,
   ConnectorHealth,
+  CorrelateCaseResponse,
+  CorrelationSignal,
   DataContractResponse,
   IntegrationJob,
+  IntelligenceEvent,
+  InvestigationBundle,
+  InvestigationHypothesis,
   Persona,
   QualityAssessment,
   ReconciliationReport,
+  Relationship,
   RevealRequest,
   WorkbenchOverview,
 } from "./types";
@@ -243,4 +249,46 @@ export const api = {
     const q = connectorId ? `?connector_id=${encodeURIComponent(connectorId)}` : "";
     return request<QualityAssessment>(`/api/enterprise/v1/integrations/quality${q}`);
   },
+
+  getCaseInvestigation: (caseId: string): Promise<InvestigationBundle> =>
+    request<InvestigationBundle>(`/api/enterprise/v1/intelligence/cases/${encodeURIComponent(caseId)}/investigation`),
+
+  correlateCase: (
+    caseId: string,
+    payload: { window_before_minutes?: number; window_after_minutes?: number } = {}
+  ): Promise<CorrelateCaseResponse> =>
+    request<CorrelateCaseResponse>(`/api/enterprise/v1/intelligence/cases/${encodeURIComponent(caseId)}/correlate`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  saveCaseHypothesis: (
+    caseId: string,
+    payload: {
+      hypothesis_id: string;
+      title: string;
+      description: string;
+      status: string;
+      supporting_signal_ids?: string[];
+      contradicting_signal_ids?: string[];
+      confidence?: number;
+      investigator_note?: string;
+    }
+  ): Promise<InvestigationHypothesis> =>
+    request<InvestigationHypothesis>(`/api/enterprise/v1/intelligence/cases/${encodeURIComponent(caseId)}/hypotheses`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  listCaseHypotheses: (caseId: string): Promise<InvestigationHypothesis[]> =>
+    request<InvestigationHypothesis[]>(`/api/enterprise/v1/intelligence/cases/${encodeURIComponent(caseId)}/hypotheses`),
+
+  getCaseRelationships: (caseId: string): Promise<Relationship[]> =>
+    request<Relationship[]>(`/api/enterprise/v1/intelligence/cases/${encodeURIComponent(caseId)}/relationships`),
+
+  getIntelligenceTimeline: (caseId: string): Promise<IntelligenceEvent[]> =>
+    request<IntelligenceEvent[]>(`/api/enterprise/v1/intelligence/cases/${encodeURIComponent(caseId)}/timeline`),
+
+  listCorrelationSignals: (limit: number = 50): Promise<CorrelationSignal[]> =>
+    request<CorrelationSignal[]>(`/api/enterprise/v1/intelligence/signals?limit=${limit}`),
 };

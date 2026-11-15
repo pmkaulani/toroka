@@ -24,6 +24,7 @@ from .routers.contract import router as contract_router
 from .routers.governance import router as governance_router
 from .routers.integration_events import router as integration_events_router
 from .routers.integrations import router as integrations_router
+from .routers.intelligence import router as intelligence_router
 from .routers.reveals import router as reveals_router
 from .routers.runs import router as runs_router
 from .routers.system import router as system_router
@@ -70,10 +71,12 @@ def create_app(
     app.state.engine = build_engine(settings.database_url, production=production)
     app.state.session_factory = build_session_factory(app.state.engine)
 
-    # In development/testing with SQLite, ensure integration tables exist
+    # In development/testing with SQLite, ensure integration and intelligence tables exist
     if "sqlite" in settings.database_url:
         from toroka_enterprise.integrations.models import IntegrationBase
         IntegrationBase.metadata.create_all(app.state.engine)
+        from toroka_enterprise.intelligence.models import IntelligenceBase
+        IntelligenceBase.metadata.create_all(app.state.engine)
 
     # Identity vault client setup
     if settings.vault_service_url:
@@ -161,6 +164,7 @@ def create_app(
     app.include_router(governance_router)
     app.include_router(integrations_router)
     app.include_router(integration_events_router)
+    app.include_router(intelligence_router)
 
     # Mount static Enterprise Workbench if dist exists
     workbench_dist = Path(__file__).resolve().parents[3] / "apps" / "enterprise-workbench" / "dist"
