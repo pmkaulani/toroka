@@ -96,13 +96,24 @@ class RevealService:
     def list_pending(
         self,
         principal: EnterprisePrincipal,
+        installation_id: str | None = None,
         *,
         limit: int = 50,
         offset: int = 0,
     ) -> list[RevealRequest]:
         if ROLE_AUTHORISER not in principal.roles and ROLE_INVESTIGATOR not in principal.roles:
             raise PermissionError("Permission denied.")
-        return self.reveals.list_pending(limit=limit, offset=offset)
+
+        requested_by = None
+        if ROLE_INVESTIGATOR in principal.roles and ROLE_AUTHORISER not in principal.roles:
+            requested_by = principal.subject
+
+        return self.reveals.list_pending(
+            installation_id=installation_id,
+            requested_by=requested_by,
+            limit=limit,
+            offset=offset,
+        )
 
     def approve_reveal(
         self,

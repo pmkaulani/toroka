@@ -59,15 +59,24 @@ def to_domain_principal(
     )
 
 
-def assert_dual_approval(investigator_id: str, authoriser_id: str) -> None:
-    """Enforce strict separation between investigator requester and authoriser.
+def assert_dual_approval(
+    requester_id: str,
+    authoriser_id: str,
+    *,
+    action_name: str = "identity reveal",
+) -> None:
+    """Enforce strict separation between requester and authoriser.
 
     Holding multiple roles does not permit self-approval.
     """
-    if not investigator_id or not authoriser_id:
+    if not requester_id or not authoriser_id:
         raise PermissionError("Both investigator and authoriser IDs are required.")
 
-    if investigator_id.strip() == authoriser_id.strip():
+    if requester_id.strip() == authoriser_id.strip():
+        if action_name == "identity reveal":
+            raise PermissionError(
+                "Self-approval blocked: an investigator cannot approve their own identity reveal."
+            )
         raise PermissionError(
-            "Self-approval blocked: an investigator cannot approve their own identity reveal."
+            f"Self-approval blocked: an authoriser cannot approve their own {action_name}."
         )

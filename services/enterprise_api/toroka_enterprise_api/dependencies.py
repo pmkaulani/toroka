@@ -65,3 +65,14 @@ def get_run_service(
     db: Session = Depends(get_db),
 ) -> RunService:
     return RunService(db)
+
+
+def get_settings(request: Request):
+    return getattr(request.app.state, "settings", None)
+
+
+def get_installation_id(request: Request) -> str:
+    settings = getattr(request.app.state, "settings", None)
+    if settings is not None and hasattr(settings, "installation_id"):
+        return settings.installation_id
+    return "toroka-default-installation"

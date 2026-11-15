@@ -120,6 +120,9 @@ class EnterpriseCase(Base):
     reveal_requests: Mapped[list[RevealRequest]] = relationship(
         "RevealRequest", back_populates="case", cascade="all, delete-orphan"
     )
+    closure_proposals: Mapped[list[CaseClosureProposal]] = relationship(
+        "CaseClosureProposal", back_populates="case", cascade="all, delete-orphan"
+    )
 
 
 class CaseAssignment(Base):
@@ -237,6 +240,62 @@ class RevealRequest(Base):
     )
 
 
+class CaseClosureProposal(Base):
+    __tablename__ = "enterprise_case_closure_proposals"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('pending','approved','rejected','withdrawn')",
+            name="ck_closure_status",
+        ),
+        Index(
+            "ix_closure_case_status",
+            "case_id",
+            "status",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=new_id
+    )
+    case_id: Mapped[str] = mapped_column(
+        ForeignKey("enterprise_cases.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    requested_by: Mapped[str] = mapped_column(
+        String(255), nullable=False
+    )
+    disposition: Mapped[str] = mapped_column(
+        String(64), nullable=False
+    )
+    closing_note: Mapped[str] = mapped_column(
+        Text, nullable=False
+    )
+    alternatives_considered: Mapped[str | None] = mapped_column(
+        Text, nullable=True
+    )
+    expected_case_version: Mapped[int] = mapped_column(
+        Integer, nullable=False
+    )
+    status: Mapped[str] = mapped_column(
+        String(24), nullable=False, default="pending"
+    )
+    reviewed_by: Mapped[str | None] = mapped_column(
+        String(255), nullable=True
+    )
+    review_note: Mapped[str | None] = mapped_column(
+        Text, nullable=True
+    )
+    requested_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, nullable=False
+    )
+    reviewed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    case: Mapped[EnterpriseCase] = relationship(
+        "EnterpriseCase", back_populates="closure_proposals"
+    )
+
+
 class AuditHead(Base):
     __tablename__ = "enterprise_audit_heads"
 
@@ -297,6 +356,9 @@ class RunRecord(Base):
 
     id: Mapped[str] = mapped_column(
         String(36), primary_key=True, default=new_id
+    )
+    installation_id: Mapped[str] = mapped_column(
+        String(100), nullable=False, default="toroka-default-installation", index=True
     )
     manifest_id: Mapped[str] = mapped_column(
         String(64), unique=True, nullable=False

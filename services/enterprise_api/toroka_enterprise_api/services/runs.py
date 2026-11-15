@@ -20,22 +20,24 @@ class RunService:
     def list_runs(
         self,
         principal: EnterprisePrincipal,
+        installation_id: str | None = None,
         *,
         limit: int = 50,
         offset: int = 0,
     ) -> list[RunRecord]:
         if not principal.roles.intersection(BANK_ROLES):
             raise PermissionError("Permission denied.")
-        return self.runs.list_runs(limit=limit, offset=offset)
+        return self.runs.list_runs(installation_id=installation_id, limit=limit, offset=offset)
 
     def get_run(
         self,
         principal: EnterprisePrincipal,
         manifest_id: str,
+        installation_id: str | None = None,
     ) -> RunRecord:
         if not principal.roles.intersection(BANK_ROLES):
             raise PermissionError("Permission denied.")
-        run = self.runs.get_by_manifest_id(manifest_id)
+        run = self.runs.get_by_manifest_id(manifest_id, installation_id=installation_id)
         if run is None:
             raise LookupError(f"Run manifest '{manifest_id}' not found")
         return run
@@ -53,11 +55,12 @@ class RunService:
         if not manifest_id:
             raise ValueError("Manifest dictionary must contain 'manifest_id'")
 
-        existing = self.runs.get_by_manifest_id(manifest_id)
+        existing = self.runs.get_by_manifest_id(manifest_id, installation_id=installation_id)
         if existing:
             return existing
 
         run = RunRecord(
+            installation_id=installation_id,
             manifest_id=manifest_id,
             manifest=manifest,
             result_digest=result_digest,

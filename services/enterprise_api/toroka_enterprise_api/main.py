@@ -1,12 +1,15 @@
 """Toroka Enterprise API application assembly."""
 from __future__ import annotations
 
+from pathlib import Path
 import uuid
 from contextlib import asynccontextmanager
 
 from cryptography.fernet import Fernet
 from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from jwt import PyJWKClient
 
 from .config import EnterpriseSettings
@@ -14,6 +17,7 @@ from .persistence.database import build_engine, build_session_factory
 from .persistence.vault import FernetVaultCipher
 from .routers.cases import router as cases_router
 from .routers.contract import router as contract_router
+from .routers.governance import router as governance_router
 from .routers.reveals import router as reveals_router
 from .routers.runs import router as runs_router
 from .routers.system import router as system_router
@@ -80,12 +84,27 @@ def create_app(
         else None
     )
 
+    # Enable CORS for institutional workbench and development tooling
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
     # Include API Routers
     app.include_router(system_router)
     app.include_router(contract_router)
     app.include_router(cases_router)
     app.include_router(reveals_router)
     app.include_router(runs_router)
+    app.include_router(governance_router)
+
+    # Mount static Enterprise Workbench if dist exists
+    workbench_dist = Path(__file__).resolve().parents[3] / "apps" / "enterprise-workbench" / "dist"
+    if workbench_dist.is_dir():
+        app.mount("/workbench", StaticFiles(directory=str(workbench_dist), html=True), name="workbench")
 
     @app.middleware("http")
     async def security_and_correlation_headers(request: Request, call_next):

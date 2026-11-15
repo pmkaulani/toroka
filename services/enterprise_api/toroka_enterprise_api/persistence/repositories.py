@@ -8,6 +8,7 @@ from .models import (
     AuditHead,
     AuditRecord,
     CaseAssignment,
+    CaseClosureProposal,
     CaseNote,
     EnterpriseCase,
     RevealRequest,
@@ -130,6 +131,54 @@ class CaseNoteRepository:
         return note
 
 
+class ClosureProposalRepository:
+    def __init__(self, db: Session):
+        self.db = db
+
+    def get_by_id(
+        self, proposal_id: str, *, for_update: bool = False
+    ) -> CaseClosureProposal | None:
+        stmt = select(CaseClosureProposal).where(CaseClosureProposal.id == proposal_id)
+        if for_update:
+            stmt = stmt.with_for_update()
+        return self.db.execute(stmt).scalar_one_or_none()
+
+    def get_pending_for_case(self, case_id: str) -> CaseClosureProposal | None:
+        stmt = select(CaseClosureProposal).where(
+            CaseClosureProposal.case_id == case_id,
+            CaseClosureProposal.status == "pending",
+        )
+        return self.db.execute(stmt).scalar_one_or_none()
+
+    def list_pending(
+        self,
+        installation_id: str | None = None,
+        *,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list[CaseClosureProposal]:
+        stmt = select(CaseClosureProposal).where(CaseClosureProposal.status == "pending")
+        if installation_id:
+            stmt = stmt.join(EnterpriseCase, CaseClosureProposal.case_id == EnterpriseCase.id).where(
+                EnterpriseCase.installation_id == installation_id
+            )
+        stmt = stmt.order_by(CaseClosureProposal.requested_at.asc()).limit(limit).offset(offset)
+        return list(self.db.execute(stmt).scalars().all())
+
+    def list_by_case(self, case_id: str) -> list[CaseClosureProposal]:
+        stmt = (
+            select(CaseClosureProposal)
+            .where(CaseClosureProposal.case_id == case_id)
+            .order_by(CaseClosureProposal.requested_at.desc())
+        )
+        return list(self.db.execute(stmt).scalars().all())
+
+    def create(self, proposal: CaseClosureProposal) -> CaseClosureProposal:
+        self.db.add(proposal)
+        self.db.flush()
+        return proposal
+
+
 class RevealRepository:
     def __init__(self, db: Session):
         self.db = db
@@ -143,12 +192,22 @@ class RevealRepository:
         return self.db.execute(stmt).scalar_one_or_none()
 
     def list_pending(
-        self, *, limit: int = 50, offset: int = 0
+        self,
+        installation_id: str | None = None,
+        *,
+        requested_by: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
     ) -> list[RevealRequest]:
+        stmt = select(RevealRequest).where(RevealRequest.status == "pending")
+        if installation_id:
+            stmt = stmt.join(EnterpriseCase, RevealRequest.case_id == EnterpriseCase.id).where(
+                EnterpriseCase.installation_id == installation_id
+            )
+        if requested_by:
+            stmt = stmt.where(RevealRequest.requested_by == requested_by)
         stmt = (
-            select(RevealRequest)
-            .where(RevealRequest.status == "pending")
-            .order_by(RevealRequest.created_at.asc())
+            stmt.order_by(RevealRequest.created_at.asc())
             .limit(limit)
             .offset(offset)
         )
@@ -172,14 +231,26 @@ class RunRepository:
     def __init__(self, db: Session):
         self.db = db
 
-    def get_by_manifest_id(self, manifest_id: str) -> RunRecord | None:
+    def get_by_manifest_id(
+        self, manifest_id: str, installation_id: str | None = None
+    ) -> RunRecord | None:
         stmt = select(RunRecord).where(RunRecord.manifest_id == manifest_id)
+        if installation_id:
+            stmt = stmt.where(RunRecord.installation_id == installation_id)
         return self.db.execute(stmt).scalar_one_or_none()
 
-    def list_runs(self, *, limit: int = 50, offset: int = 0) -> list[RunRecord]:
+    def list_runs(
+        self,
+        installation_id: str | None = None,
+        *,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list[RunRecord]:
+        stmt = select(RunRecord)
+        if installation_id:
+            stmt = stmt.where(RunRecord.installation_id == installation_id)
         stmt = (
-            select(RunRecord)
-            .order_by(RunRecord.created_at.desc())
+            stmt.order_by(RunRecord.created_at.desc())
             .limit(limit)
             .offset(offset)
         )

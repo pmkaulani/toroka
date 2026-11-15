@@ -16,6 +16,7 @@ GENESIS_HASH = "0" * 64
 # Never log raw employee IDs, raw customer accounts, passwords, bearer tokens, or decrypted identities
 ALLOWED_METADATA_KEYS = frozenset({
     "case_id",
+    "proposal_id",
     "manifest_id",
     "pseudonym",
     "reason",
@@ -26,6 +27,10 @@ ALLOWED_METADATA_KEYS = frozenset({
     "actor_role",
     "status",
     "version",
+    "expected_case_version",
+    "reviewed_by",
+    "review_note",
+    "requested_by",
     "count",
     "error",
     "error_type",
@@ -69,9 +74,13 @@ def append_audit(
     ).scalar_one_or_none()
 
     if head is None:
-        raise RuntimeError(
-            f"Audit head for installation '{installation_id}' has not been initialised"
+        head = AuditHead(
+            installation_id=installation_id,
+            last_sequence=0,
+            last_hash=GENESIS_HASH,
         )
+        db.add(head)
+        db.flush()
 
     now = datetime.now(timezone.utc)
     sequence = head.last_sequence + 1

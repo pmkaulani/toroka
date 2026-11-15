@@ -4,7 +4,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from ..auth import EnterprisePrincipal, get_current_principal
-from ..dependencies import get_run_service
+from ..dependencies import get_installation_id, get_run_service
 from ..schemas import RunDetailResponse, RunSummaryResponse
 from ..services.runs import RunService
 
@@ -20,9 +20,15 @@ def list_runs(
     offset: int = Query(0, ge=0),
     principal: EnterprisePrincipal = Depends(get_current_principal),
     run_service: RunService = Depends(get_run_service),
+    installation_id: str = Depends(get_installation_id),
 ):
     try:
-        runs = run_service.list_runs(principal, limit=limit, offset=offset)
+        runs = run_service.list_runs(
+            principal,
+            installation_id=installation_id,
+            limit=limit,
+            offset=offset,
+        )
         return [RunSummaryResponse.model_validate(r) for r in runs]
     except PermissionError as exc:
         raise HTTPException(status.HTTP_403_FORBIDDEN, detail=str(exc))
@@ -33,9 +39,14 @@ def get_run(
     manifest_id: str,
     principal: EnterprisePrincipal = Depends(get_current_principal),
     run_service: RunService = Depends(get_run_service),
+    installation_id: str = Depends(get_installation_id),
 ):
     try:
-        run = run_service.get_run(principal, manifest_id)
+        run = run_service.get_run(
+            principal,
+            manifest_id,
+            installation_id=installation_id,
+        )
         return RunDetailResponse.model_validate(run)
     except LookupError:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Run not found")

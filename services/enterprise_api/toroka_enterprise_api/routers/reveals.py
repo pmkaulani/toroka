@@ -4,7 +4,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from ..auth import EnterprisePrincipal, get_current_principal
-from ..dependencies import get_reveal_service
+from ..dependencies import get_installation_id, get_reveal_service
 from ..persistence.models import utc_now
 from ..schemas import (
     RevealConsumeResponse,
@@ -54,9 +54,15 @@ def list_pending_reveal_requests(
     offset: int = Query(0, ge=0),
     principal: EnterprisePrincipal = Depends(get_current_principal),
     reveal_service: RevealService = Depends(get_reveal_service),
+    installation_id: str = Depends(get_installation_id),
 ):
     try:
-        requests = reveal_service.list_pending(principal, limit=limit, offset=offset)
+        requests = reveal_service.list_pending(
+            principal,
+            installation_id=installation_id,
+            limit=limit,
+            offset=offset,
+        )
         return [RevealRequestResponse.model_validate(r) for r in requests]
     except PermissionError as exc:
         raise HTTPException(status.HTTP_403_FORBIDDEN, detail=str(exc))

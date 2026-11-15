@@ -6,14 +6,18 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from ..auth import EnterprisePrincipal, get_current_principal
-from ..dependencies import get_case_service
+from ..dependencies import get_case_service, get_installation_id
 from ..schemas import (
     CaseAssignRequest,
     CaseAssignmentResponse,
     CaseCloseRequest,
     CaseDetailResponse,
+    CaseIntakeRequest,
+    CaseIntakeResponse,
     CaseListResponse,
     CaseSummaryResponse,
+    ClosureProposalCreate,
+    ClosureProposalResponse,
     NoteCreateRequest,
     NoteResponse,
 )
@@ -25,6 +29,30 @@ router = APIRouter(
 )
 
 
+@router.post("/intake", response_model=CaseIntakeResponse, status_code=status.HTTP_201_CREATED)
+def intake_cases_from_run(
+    req: CaseIntakeRequest,
+    principal: EnterprisePrincipal = Depends(get_current_principal),
+    case_service: CaseService = Depends(get_case_service),
+    installation_id: str = Depends(get_installation_id),
+):
+    try:
+        res = case_service.intake_from_run(
+            principal,
+            installation_id=installation_id,
+            manifest_id=req.manifest_id,
+            leads=req.leads,
+            assign_to_subject=req.assign_to_subject,
+        )
+        return CaseIntakeResponse(**res)
+    except LookupError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail=str(exc))
+    except PermissionError as exc:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(exc))
+
+
 @router.get("", response_model=CaseListResponse)
 def list_cases(
     status_filter: str | None = Query(None, alias="status"),
@@ -32,11 +60,12 @@ def list_cases(
     offset: int = Query(0, ge=0),
     principal: EnterprisePrincipal = Depends(get_current_principal),
     case_service: CaseService = Depends(get_case_service),
+    installation_id: str = Depends(get_installation_id),
 ):
     try:
         cases, total = case_service.list_cases(
             principal,
-            installation_id="toroka-default-installation",
+            installation_id=installation_id,
             status=status_filter,
             limit=limit,
             offset=offset,
@@ -164,3 +193,50 @@ def close_case(
         raise HTTPException(status.HTTP_403_FORBIDDEN, detail=str(exc))
     except ValueError as exc:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(exc))
+
+
+@router.post(
+    "/{case_id}/propose-closure",
+    response_model=ClosureProposalResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def propose_case_closure(
+    case_id: str,
+    req: ClosureProposalCreate,
+    principal: EnterprisePrincipal = Depends(get_current_principal),
+    case_service: CaseService = Depends(get_case_service),
+):
+    try:
+        proposal = case_service.propose_closure(
+            principal,
+            case_id,
+            disposition=req.disposition,
+            closing_note=req.closing_note,
+            alternatives_considered=req.alternatives_considered,
+            expected_case_version=req.expected_case_version,
+        )
+        return ClosureProposalResponse.model_validate(proposal)
+    except LookupError:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Case not found")
+    except PermissionError as exc:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(exc))
+
+
+@router.get(
+    "/{case_id}/closure-proposals",
+    response_model=list[ClosureProposalResponse],
+)
+def list_case_closure_proposals(
+    case_id: str,
+    principal: EnterprisePrincipal = Depends(get_current_principal),
+    case_service: CaseService = Depends(get_case_service),
+):
+    try:
+        proposals = case_service.list_case_closure_proposals(principal, case_id)
+        return [ClosureProposalResponse.model_validate(p) for p in proposals]
+    except LookupError:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Case not found")
+    except PermissionError as exc:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, detail=str(exc))

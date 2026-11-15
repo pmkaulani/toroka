@@ -16,10 +16,12 @@ from ..permissions import (
     ROLE_DATA_STEWARD,
     ROLE_INVESTIGATOR,
     ROLE_SYSTEM_ADMINISTRATOR,
+    assert_dual_approval,
 )
 from ..persistence.audit import append_audit
 from ..persistence.models import (
     CaseAssignment,
+    CaseClosureProposal,
     CaseNote,
     EnterpriseCase,
     calculate_dedupe_key,
@@ -29,6 +31,8 @@ from ..persistence.repositories import (
     CaseAssignmentRepository,
     CaseNoteRepository,
     CaseRepository,
+    ClosureProposalRepository,
+    RunRepository,
 )
 
 VALID_DISPOSITIONS = {
@@ -44,6 +48,8 @@ class CaseService:
         self.cases = CaseRepository(db)
         self.assignments = CaseAssignmentRepository(db)
         self.notes = CaseNoteRepository(db)
+        self.closure_proposals = ClosureProposalRepository(db)
+        self.runs = RunRepository(db)
 
     def _assert_can_access_cases(self, principal: EnterprisePrincipal) -> None:
         if ROLE_DATA_STEWARD in principal.roles or ROLE_SYSTEM_ADMINISTRATOR in principal.roles:
@@ -317,3 +323,281 @@ class CaseService:
         )
         self.db.commit()
         return case
+
+    def propose_closure(
+        self,
+        principal: EnterprisePrincipal,
+        case_id: str,
+        *,
+        disposition: str,
+        closing_note: str,
+        alternatives_considered: str,
+        expected_case_version: int,
+    ) -> CaseClosureProposal:
+        self._assert_can_access_cases(principal)
+        case = self.get_case(principal, case_id)
+        self._assert_can_mutate_case(principal, case)
+
+        if case.status == "closed":
+            raise ValueError("Cannot propose closure on a closed case")
+
+        if disposition not in VALID_DISPOSITIONS:
+            raise ValueError(
+                f"Invalid disposition '{disposition}'. Must be one of {sorted(VALID_DISPOSITIONS)}"
+            )
+
+        if not closing_note or not closing_note.strip():
+            raise ValueError("Closing note is required to propose case closure")
+
+        if not alternatives_considered or not alternatives_considered.strip():
+            raise ValueError(
+                "Documenting alternative explanations considered is mandatory before proposing closure"
+            )
+
+        if case.version != expected_case_version:
+            raise ValueError(
+                f"Concurrent modification conflict: expected version {expected_case_version}, but case is at version {case.version}"
+            )
+
+        existing = self.closure_proposals.get_pending_for_case(case_id)
+        if existing:
+            raise ValueError("A closure proposal is already pending for this case")
+
+        proposal = CaseClosureProposal(
+            case_id=case_id,
+            requested_by=principal.subject,
+            disposition=disposition,
+            closing_note=closing_note.strip(),
+            alternatives_considered=alternatives_considered.strip(),
+            expected_case_version=case.version,
+            status="pending",
+        )
+        self.closure_proposals.create(proposal)
+
+        append_audit(
+            self.db,
+            installation_id=case.installation_id,
+            actor_subject=principal.subject,
+            actor_role="investigator" if ROLE_INVESTIGATOR in principal.roles else "authoriser",
+            action="closure_proposed",
+            target_type="case_closure_proposal",
+            target_id=proposal.id,
+            safe_metadata={
+                "case_id": case_id,
+                "proposal_id": proposal.id,
+                "disposition": disposition,
+                "expected_case_version": case.version,
+            },
+        )
+        self.db.commit()
+        return proposal
+
+    def review_closure(
+        self,
+        principal: EnterprisePrincipal,
+        proposal_id: str,
+        *,
+        approve: bool,
+        review_note: str | None = None,
+    ) -> CaseClosureProposal:
+        self._assert_can_access_cases(principal)
+        if ROLE_AUTHORISER not in principal.roles:
+            raise PermissionError("Only authorisers can review case closure proposals.")
+
+        proposal = self.closure_proposals.get_by_id(proposal_id, for_update=True)
+        if proposal is None:
+            raise LookupError("Closure proposal not found")
+
+        if proposal.status != "pending":
+            raise ValueError(f"Closure proposal has already been processed (current status: '{proposal.status}')")
+
+        # Dual approval: maker != checker
+        assert_dual_approval(
+            proposal.requested_by,
+            principal.subject,
+            action_name="case closure proposal",
+        )
+
+        case = self.cases.get_by_id(proposal.case_id, for_update=True)
+        if case is None:
+            raise LookupError("Associated case not found")
+
+        now = utc_now()
+        if approve:
+            if case.status == "closed":
+                raise ValueError("Case is already closed")
+
+            if case.version != proposal.expected_case_version:
+                raise ValueError(
+                    f"Concurrent modification conflict: expected version {proposal.expected_case_version}, but case is at version {case.version}"
+                )
+
+            case.status = "closed"
+            case.disposition = proposal.disposition
+            case.closing_note = proposal.closing_note
+            case.alternatives_considered = proposal.alternatives_considered
+            case.closed_at = now
+            case.updated_at = now
+            case.version += 1
+
+            proposal.status = "approved"
+            proposal.reviewed_by = principal.subject
+            proposal.review_note = review_note.strip() if review_note else None
+            proposal.reviewed_at = now
+
+            append_audit(
+                self.db,
+                installation_id=case.installation_id,
+                actor_subject=principal.subject,
+                actor_role="authoriser",
+                action="closure_approved",
+                target_type="case_closure_proposal",
+                target_id=proposal.id,
+                safe_metadata={
+                    "case_id": case.id,
+                    "proposal_id": proposal.id,
+                    "disposition": case.disposition,
+                    "version": case.version,
+                    "reviewed_by": principal.subject,
+                },
+            )
+        else:
+            proposal.status = "rejected"
+            proposal.reviewed_by = principal.subject
+            proposal.review_note = review_note.strip() if review_note else "Rejected without comment"
+            proposal.reviewed_at = now
+
+            append_audit(
+                self.db,
+                installation_id=case.installation_id,
+                actor_subject=principal.subject,
+                actor_role="authoriser",
+                action="closure_rejected",
+                target_type="case_closure_proposal",
+                target_id=proposal.id,
+                safe_metadata={
+                    "case_id": case.id,
+                    "proposal_id": proposal.id,
+                    "reviewed_by": principal.subject,
+                    "review_note": proposal.review_note,
+                },
+            )
+
+        self.db.commit()
+        return proposal
+
+    def list_pending_closure_proposals(
+        self,
+        principal: EnterprisePrincipal,
+        installation_id: str,
+        *,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list[CaseClosureProposal]:
+        self._assert_can_access_cases(principal)
+        if ROLE_AUTHORISER not in principal.roles:
+            raise PermissionError("Only authorisers can view the pending closure review queue.")
+        return self.closure_proposals.list_pending(installation_id, limit=limit, offset=offset)
+
+    def list_case_closure_proposals(
+        self,
+        principal: EnterprisePrincipal,
+        case_id: str,
+    ) -> list[CaseClosureProposal]:
+        self._assert_can_access_cases(principal)
+        self.get_case(principal, case_id)
+        return self.closure_proposals.list_by_case(case_id)
+
+    def intake_from_run(
+        self,
+        principal: EnterprisePrincipal,
+        *,
+        installation_id: str,
+        manifest_id: str,
+        leads: list[dict[str, Any]] | None = None,
+        assign_to_subject: str | None = None,
+    ) -> dict[str, Any]:
+        if not principal.roles.intersection(CASEWORK_ROLES) and ROLE_SYSTEM_ADMINISTRATOR not in principal.roles:
+            raise PermissionError("Permission denied.")
+
+        run = self.runs.get_by_manifest_id(manifest_id)
+        if run is None:
+            raise LookupError(f"Run manifest '{manifest_id}' not found. Cannot intake cases from an unverified run.")
+
+        intake_leads = leads
+        if intake_leads is None:
+            manifest_dict = run.manifest if isinstance(run.manifest, dict) else {}
+            intake_leads = manifest_dict.get("leads") or manifest_dict.get("results") or []
+
+        if not intake_leads:
+            return {
+                "manifest_id": manifest_id,
+                "created_count": 0,
+                "existing_count": 0,
+                "case_ids": [],
+            }
+
+        created_count = 0
+        existing_count = 0
+        case_ids: list[str] = []
+
+        for lead in intake_leads:
+            focus = lead.get("focus") or lead.get("target") or "unknown_focus"
+            label = lead.get("label") or lead.get("verdict") or "REVIEW"
+            dedupe = calculate_dedupe_key(installation_id, manifest_id, focus)
+
+            existing = self.cases.get_by_dedupe_key(installation_id, dedupe)
+            if existing:
+                existing_count += 1
+                case_ids.append(existing.id)
+                continue
+
+            snapshot_canon = json.dumps(lead, sort_keys=True, separators=(",", ":"))
+            snapshot_hash = hashlib.sha256(snapshot_canon.encode("utf-8")).hexdigest()
+
+            case = EnterpriseCase(
+                installation_id=installation_id,
+                dedupe_key=dedupe,
+                label=label,
+                focus=focus,
+                snapshot=lead,
+                snapshot_sha256=snapshot_hash,
+                manifest_id=manifest_id,
+                created_by=principal.subject,
+                status="open",
+            )
+            self.cases.create(case)
+
+            assignee = assign_to_subject or principal.subject
+            assignment = CaseAssignment(
+                case_id=case.id,
+                assigned_subject=assignee,
+                assignment_role="investigator",
+                assigned_by=principal.subject,
+            )
+            self.assignments.create(assignment)
+
+            append_audit(
+                self.db,
+                installation_id=installation_id,
+                actor_subject=principal.subject,
+                actor_role="investigator" if ROLE_INVESTIGATOR in principal.roles else ("authoriser" if ROLE_AUTHORISER in principal.roles else "system_administrator"),
+                action="case_created",
+                target_type="case",
+                target_id=case.id,
+                safe_metadata={
+                    "case_id": case.id,
+                    "manifest_id": manifest_id,
+                    "assigned_subject": assignee,
+                },
+            )
+            created_count += 1
+            case_ids.append(case.id)
+
+        self.db.commit()
+        return {
+            "manifest_id": manifest_id,
+            "created_count": created_count,
+            "existing_count": existing_count,
+            "case_ids": case_ids,
+        }

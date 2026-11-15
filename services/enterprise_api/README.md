@@ -1,44 +1,47 @@
-# Toroka Enterprise API (Bank Pilot Operations Layer — Phase 3.2)
+# Toroka Enterprise API & Workbench (Bank Pilot Operations Layer — Phase 3.3)
 
-The Toroka Enterprise API is a standalone, bank-facing operations service that interfaces with the Toroka Enterprise investigation engine. It establishes a secure, bank-controlled identity and access boundary separate from the consumer Toroka application, backed by durable transactional persistence and an isolated identity vault.
+The Toroka Enterprise API is a standalone, bank-facing operations service that interfaces with the Toroka Enterprise investigation engine. It establishes a secure, bank-controlled identity and access boundary separate from the consumer Toroka application, backed by durable transactional persistence, an isolated identity vault, and a dedicated **Investigator & Authoriser Workbench** (`apps/enterprise-workbench`).
 
 ---
 
 ## 1. Architectural Separation
 
 ```
+apps/
+└── enterprise-workbench/      # Institutional React + TypeScript workbench (mounted at /workbench)
 services/
 ├── api/                       # Consumer Toroka API (independent user model, sessions)
 └── enterprise_api/            # Bank-facing Enterprise operations API
     ├── toroka_enterprise_api/
     │   ├── __init__.py
-    │   ├── main.py            # App factory, connection pooling, correlation ID & security headers
+    │   ├── main.py            # App factory, static workbench mount, CORS, correlation ID & security headers
     │   ├── config.py          # EnterpriseSettings with strict validation (PostgreSQL in prod)
     │   ├── auth.py            # OIDC JWT signature, JWKS retrieval, development adapter
-    │   ├── permissions.py     # Role model, casework principal adapter, dual-approval
-    │   ├── schemas.py         # Pydantic request/response models
-    │   ├── dependencies.py    # Database session, vault, and service dependencies
+    │   ├── permissions.py     # Role model, casework principal adapter, maker-checker dual-approval
+    │   ├── schemas.py         # Pydantic request/response models (closure, intake, overview, timeline)
+    │   ├── dependencies.py    # Database session, vault, installation_id, and service dependencies
     │   ├── persistence/       # Operational persistence & isolated vault
     │   │   ├── database.py    # Engine and sessionmaker factory
-    │   │   ├── models.py      # SQLAlchemy 2.0 operational models (Cases, Notes, Audit, Runs)
-    │   │   ├── repositories.py# CaseRepository, RevealRepository, RunRepository, etc.
-    │   │   ├── audit.py       # Append-only hash chain audit log with allowlist filtering
+    │   │   ├── models.py      # Operational models (Cases, Notes, Closure Proposals, Audit, Runs)
+    │   │   ├── repositories.py# CaseRepository, ClosureProposalRepository, RevealRepository, RunRepository
+    │   │   ├── audit.py       # Append-only hash chain audit log with allowlist filtering & verification
     │   │   └── vault.py       # Isolated VaultRecord, VaultCipher protocol, Fernet implementation
     │   ├── services/          # Transaction-owning application services
-    │   │   ├── cases.py       # CaseService (assignments, notes, closing with alternatives)
+    │   │   ├── cases.py       # CaseService (assignments, notes, maker-checker closures, trusted intake)
     │   │   ├── reveals.py     # RevealService (row-locked dual approval & single-use consumption)
-    │   │   └── runs.py        # RunService (manifest & result digest persistence)
+    │   │   └── runs.py        # RunService (manifest & result digest persistence, installation scoping)
     │   └── routers/
     │       ├── system.py      # /health/live, /health/ready, /me, /capabilities
     │       ├── contract.py    # /data-contract, /detectors
-    │       ├── cases.py       # Casework & notes endpoints
+    │       ├── cases.py       # Casework, notes, intake & proposal endpoints
+    │       ├── governance.py  # Maker-checker closure review, overview, case timeline, audit verification
     │       ├── reveals.py     # Identity reveal request, approval & consumption endpoints
     │       └── runs.py        # Manifest & run endpoints
-    ├── migrations/            # Operational database Alembic migrations
+    ├── migrations/            # Operational database Alembic migrations (001, 002)
     ├── vault_migrations/      # Dedicated Identity Vault Alembic migrations
     ├── alembic.ini            # Operational database migration configuration
     ├── vault_alembic.ini      # Identity Vault migration configuration
-    └── tests/                 # Dedicated Enterprise API test suite (58 tests)
+    └── tests/                 # Dedicated Enterprise API test suite (63 tests)
 ```
 
 ### Key Architectural Boundaries:
@@ -190,3 +193,26 @@ In production deployments:
 4. Callers must pass standard `Authorization: Bearer <JWT>` tokens.
 5. All requests receive `Cache-Control: no-store`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, `X-Frame-Options: DENY`, and an `X-Correlation-ID`.
 6. Interactive API documentation (`/docs`, `/redoc`) is disabled automatically.
+
+---
+
+## 6. Investigator & Authoriser Workbench (Phase 3.3)
+
+The Enterprise Workbench (`apps/enterprise-workbench`) provides an institutional banking frontend for authorized personnel:
+
+- **Investigator Workspace**: View assigned cases, evaluate provenance digests, append immutable chronological notes, request single-use identity unmasking, and submit closure recommendations with documented alternatives.
+- **Authoriser Workspace**: Maker-checker review queues for pending identity reveals and case closures. Dual-approval enforcement logically prevents self-approval.
+- **Auditor Workspace**: Read-only access to case registers, chronological event timelines (`/cases/{id}/timeline`), and full cryptographic hash chain verification from Genesis to Head (`/audit/verify`).
+- **Data Steward Workspace**: Visibility into Data Contract v2.0.0 feeds, fields, and the detector readiness matrix (READY / DEGRADED / BLOCKED). Technical data steward role is blocked (HTTP 403) from casework, identities, and notes.
+
+### Running Workbench Locally:
+```bash
+# Run standalone Vite development server with proxy to API
+cd apps/enterprise-workbench
+npm run dev
+
+# Or serve production build directly mounted at /workbench from Enterprise API
+uv run uvicorn toroka_enterprise_api.main:create_app_from_env --factory --app-dir services/enterprise_api --port 8101
+# Open http://127.0.0.1:8101/workbench/
+```
+

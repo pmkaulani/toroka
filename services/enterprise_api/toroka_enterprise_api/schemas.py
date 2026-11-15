@@ -120,3 +120,80 @@ class RunSummaryResponse(BaseModel):
 
 class RunDetailResponse(RunSummaryResponse):
     manifest: dict[str, Any]
+
+
+class ClosureProposalCreate(BaseModel):
+    disposition: str = Field(min_length=1, max_length=64)
+    closing_note: str = Field(min_length=1, max_length=10000)
+    alternatives_considered: str = Field(min_length=1, max_length=10000)
+    expected_case_version: int = Field(ge=1)
+
+
+class ClosureProposalResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    case_id: str
+    requested_by: str
+    disposition: str
+    closing_note: str
+    alternatives_considered: str | None = None
+    expected_case_version: int
+    status: str
+    reviewed_by: str | None = None
+    review_note: str | None = None
+    requested_at: datetime
+    reviewed_at: datetime | None = None
+
+
+class ClosureReviewRequest(BaseModel):
+    approve: bool
+    review_note: str | None = Field(default=None, max_length=2000)
+
+
+class CaseIntakeRequest(BaseModel):
+    manifest_id: str = Field(min_length=1, max_length=64)
+    leads: list[dict[str, Any]] | None = None
+    assign_to_subject: str | None = Field(default=None, max_length=255)
+
+
+class CaseIntakeResponse(BaseModel):
+    manifest_id: str
+    created_count: int
+    existing_count: int
+    case_ids: list[str]
+
+
+class WorkbenchOverviewResponse(BaseModel):
+    role: str
+    installation_id: str
+    open_cases_count: int
+    closed_cases_count: int
+    assigned_cases_count: int
+    pending_reveals_count: int
+    pending_closures_count: int
+    recent_runs_count: int
+    audit_records_count: int
+    contract_version: str
+
+
+class AuditTimelineItemResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    sequence: int
+    event_id: str
+    action: str
+    actor_subject: str
+    actor_role: str
+    target_type: str
+    target_id: str | None = None
+    safe_metadata: dict[str, Any]
+    created_at: datetime
+
+
+class AuditVerificationResponse(BaseModel):
+    installation_id: str
+    valid: bool
+    head_hash: str
+    records_verified: int
+    error: str | None = None
