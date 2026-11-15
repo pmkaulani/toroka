@@ -44,3 +44,5 @@ packages/rules/ssi_rules/ml/data/feedback_queue.jsonl
 
 # GitHub Workflows (avoid OAuth workflow scope requirement)
 .github/
+
+.toroka-enterprise-hardening-backup/

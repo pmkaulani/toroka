@@ -94,7 +94,7 @@ def test_unmapped_codes_are_counted_and_the_detector_is_flagged_not_silently_bli
 
     d, truth = canon
 
-    toml = export(d, tmp_path, "A").replace('"CUS-MOB-CHG" = "contact_change"\n', "")
+    toml = export(d, tmp_path, "A").replace('"CUS-MOB-CHG" = "contact_change"\n', "").replace('"CARD_NEW" = "card_issue"\n', "")
 
     ds, q, scan, ps = run(tmp_path, toml)
 
@@ -104,7 +104,7 @@ def test_unmapped_codes_are_counted_and_the_detector_is_flagged_not_silently_bli
 
     cov = {r["detector"]: r for r in coverage_report(ds)}
 
-    assert cov["auth_channel_change"]["status"] == "check" and "contact_change" in cov["auth_channel_change"]["reason"]
+    assert cov["auth_channel_change"]["status"] in ("check", "degraded") and "contact_change" in cov["auth_channel_change"]["reason"]
 
     assert evaluate(scan, truth, ps.vault)["found"] < 9            # and the gap is visible, not hidden
 

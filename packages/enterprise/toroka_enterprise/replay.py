@@ -69,9 +69,10 @@ class _Builder:
         self.rows["service_requests"].append({"request_id": f"R{self.n['req']:06d}", "customer_id": cust, "staff_id": staff,
                                               "opened_at": _t(opened), "closed_at": _t(closed) if closed else "", "kind": kind})
 
-    def instruction(self, cust, kind, ts):
+    def instruction(self, cust, kind, ts, recorded_at=None):
         self.n["ins"] += 1
-        self.rows["instructions"].append({"instruction_id": f"I{self.n['ins']:06d}", "customer_id": cust, "kind": kind, "received_at": _t(ts)})
+        self.rows["instructions"].append({"instruction_id": f"I{self.n['ins']:06d}", "customer_id": cust, "kind": kind,
+                                           "received_at": _t(ts), "recorded_at": _t(recorded_at) if recorded_at else ""})
 
     def payment(self, cust, ts, amount, channel="mobile", ben=None):
         self.n["pay"] += 1
@@ -155,8 +156,10 @@ def generate(out_dir: str | Path, seed: int = 7, n_staff: int = 80, n_customers:
         sid = rng.choice(facing)
         c = rng.choice(sorted(b.portfolio[sid]))
         ts = b.work_ts(rng.randint(2, days - 10))
-        after = k < 5   # hard negative: instruction logged AFTER the change (still inside the 48h window)
-        b.instruction(c, "contact_change", ts + timedelta(hours=rng.randint(10, 36)) if after else ts - timedelta(hours=rng.randint(1, 30)))
+        after = k < 5   # hard negative: instruction is entered into the system AFTER the change
+        received = ts - timedelta(hours=rng.randint(1, 30))
+        recorded = ts + timedelta(hours=rng.randint(10, 36)) if after else received
+        b.instruction(c, "contact_change", received, recorded_at=recorded)
         b.event(ts, sid, "profile_view", c)
         b.event(ts + timedelta(minutes=4), sid, "contact_change", c)
         if k % 3 == 0:

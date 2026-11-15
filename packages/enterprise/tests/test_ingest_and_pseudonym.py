@@ -15,6 +15,9 @@ def test_pseudonyms_are_deterministic_kind_specific_and_keyed():
     a, b = Pseudonymiser("a" * 40), Pseudonymiser("b" * 40)
 
     assert a.ref("stf", "S1") == a.ref("stf", "S1") != a.ref("cus", "S1") != b.ref("stf", "S1")
+    assert a.ref("bank_account", "S1") != a.ref("cus", "S1")
+    assert len(a.ref("bank_account", "S1").split("-", 1)[1]) == 32
+    assert a.ref("bank_account", "S1") == a.ref("bank_account", "S1")
 
     assert a.ref("stf", " ") is None and a.vault[a.ref("stf", "S1")] == "S1"
 
@@ -112,3 +115,22 @@ def test_decimal_and_comma_amounts_parsed_correctly(tmp_path):
 
     assert ds.postings[0].amount == 725280
 
+
+
+
+def test_rejected_rows_and_unmapped_codes_degrade_feed_health(tmp_path):
+    f = base_feeds()
+    f["audit_log"] = [
+        {"ts": ts(hours=i), "account_id": "A-S2", "action": "profile_view", "customer_id": "C-X"}
+        for i in range(18)
+    ] + [
+        {"ts": "not-a-date", "account_id": "A-S2", "action": "profile_view", "customer_id": "C-X"}
+        for _ in range(2)
+    ]
+    ds, q, _, _ = scan(tmp_path, f)
+    assert q.feed_health["audit_log"]["status"] == "degraded"
+    assert q.feed_health["audit_log"]["rejection_rate"] == 0.1
+    assert "audit" in ds.degraded_feeds
+    from toroka_enterprise.coverage import coverage_report
+    coverage = {row["detector"]: row for row in coverage_report(ds)}
+    assert coverage["access_justification"]["status"] == "degraded"

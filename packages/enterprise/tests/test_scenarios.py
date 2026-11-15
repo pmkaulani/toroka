@@ -1,4 +1,4 @@
-from toroka_enterprise.scenarios import Rules
+from toroka_enterprise.scenarios import Rules, AuthChannelChange, Focus, PostingIntegrity
 from .helpers import base_feeds, labels, scan, ts
 
 
@@ -8,7 +8,8 @@ def otp_feeds(with_instruction=False, with_ticket=False, payments=True):
                       {"ts": ts(minutes=3), "account_id": "A-S2", "action": "contact_change", "customer_id": "C-X"},
                       {"ts": ts(minutes=9), "account_id": "A-S2", "action": "card_issue", "customer_id": "C-X"}]
     if with_instruction:
-        f["instructions"] = [{"instruction_id": "I1", "customer_id": "C-X", "kind": "contact_change", "received_at": ts(hours=-2)}]
+        f["instructions"] = [{"instruction_id": "I1", "customer_id": "C-X", "kind": "contact_change", "received_at": ts(hours=-2)},
+                              {"instruction_id": "I2", "customer_id": "C-X", "kind": "card_issue", "received_at": ts(hours=-2)}]
     if with_ticket:
         f["service_requests"].append({"request_id": "R-T", "customer_id": "C-X", "staff_id": "S2", "opened_at": ts(hours=-3), "closed_at": "", "kind": "service"})
     if payments:
@@ -116,3 +117,25 @@ def test_entitlement_with_empty_audit_events_does_not_raise():
     evs = p.run(Focus('S1'))
     assert len(evs) == 1
     assert evs[0].polarity == 'risk'
+
+
+
+def test_instruction_received_after_operation_does_not_retroactively_authorise_it(tmp_path):
+    f = base_feeds()
+    f["audit_log"] = [{"ts": ts(), "account_id": "A-S2", "action": "contact_change", "customer_id": "C-X"}]
+    f["instructions"] = [{"instruction_id": "I-LATE", "customer_id": "C-X", "kind": "contact_change",
+                          "received_at": ts(hours=1), "recorded_at": ts(hours=2)}]
+    ds, _, _, ps = scan(tmp_path, f)
+    evs = AuthChannelChange(ds, Rules()).run(Focus(ps.ref("stf", "S2"), ps.ref("cus", "C-X")))
+    assert any(e.polarity == "risk" for e in evs)
+
+
+def test_unresolved_approver_is_context_not_independent_approval(tmp_path):
+    f = base_feeds()
+    f["postings"] = [{"posting_id": "L-UNKNOWN", "ts": ts(), "ledger": "SUSPENSE", "counter_party": "C-X",
+                      "amount": "10000", "entered_by_account": "A-S1", "approved_by_account": "A-NOT-IN-ACCOUNT-FEED",
+                      "manual": "true", "narrative": "OTHER"}]
+    ds, _, _, ps = scan(tmp_path, f)
+    evs = PostingIntegrity(ds, Rules()).run(Focus(ps.ref("stf", "S1")))
+    assert evs and all(e.polarity == "context" for e in evs)
+    assert any("could not be mapped" in e.summary for e in evs)

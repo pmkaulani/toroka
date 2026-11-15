@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 
 EAT = timezone(timedelta(hours=3))  # Kenya observes no DST; applied to exports that carry no UTC offset
 
-SENSITIVE_ACTIONS = frozenset({"contact_change", "card_issue", "beneficiary_add", "limit_change", "account_reactivate"})
+SENSITIVE_ACTIONS = frozenset({"contact_change", "mobile_change", "card_issue", "beneficiary_add", "limit_change", "account_reactivate"})
 
 
 def parse_ts(value: str, naive_tz: timezone = EAT) -> datetime:
@@ -65,6 +65,8 @@ class Instruction:
     customer_ref: str
     kind: str
     received_at: datetime
+    # Actual source-system entry time; it may be later than customer receipt.
+    recorded_at: datetime | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -113,6 +115,8 @@ class Dataset:
     available: set[str] = field(default_factory=set)       # feeds actually supplied
     crm_gap_branches: set[str] = field(default_factory=set)
     absent_fields: set[str] = field(default_factory=set)   # canonical columns the source system does not supply at all
+    feed_quality: dict[str, dict] = field(default_factory=dict)
+    degraded_feeds: set[str] = field(default_factory=set)
 
     def __post_init__(self) -> None:
         self.reindex()

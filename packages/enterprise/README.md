@@ -11,6 +11,7 @@ Built on `toroka_core` (shared with the consumer app): typed evidence, source-in
 | `profile.py` | Insider scoring policy and wording: no time decay on case evidence; **no single rule hit can take the "critical" shortcut**; review-state labels instead of risk verdicts |
 | `scan.py` | Candidate focuses -> `EvidenceEngine` -> surfaced leads (PRIORITY REVIEW / REVIEW / CONFLICTING RECORDS) |
 | `casework.py`, `audit.py` | RBAC case store, **dual-approval identity reveal** (different user, written reason, single use, 24h expiry), closing requires the alternative explanations considered; hash-chained append-only audit log |
+| `manifest.py`, `report.py` | Run manifests, reproduce, and the HTML investigation report |
 | `coverage.py`, `discover.py` | Per-detector coverage on a given bank's data; mapping suggester (drafts only) |
 | `foreign.py`, `replay.py` | Foreign-shaped test exports; synthetic extracts with injected patterns drawn from public cases, plus hard negatives and an evaluation harness |
 
@@ -18,7 +19,7 @@ Built on `toroka_core` (shared with the consumer app): typed evidence, source-in
 ```
 export PYTHONPATH=../smart-scam-identifier/packages/core:.     # or TOROKA_CORE_PATH for tests
 python -m toroka_enterprise demo            # synthetic end-to-end
-python -m pytest -q                         # 33 tests
+python -m pytest -q                         # 40 tests
 TOROKA_ENT_SECRET=... TOROKA_ENT_VAULT_KEY=$(python -m toroka_enterprise keygen) \
   python -m toroka_enterprise scan --data ./extracts --out ./out
 ```
@@ -36,6 +37,14 @@ Three behaviours make this safe on unfamiliar data: **unmapped codes are counted
 Minimum data per detector: access justification needs the audit log with customer ids plus portfolio assignments (CRM tickets strengthen it); contact-change needs audit events plus customer instructions; account lifecycle needs customer status/dormancy plus reactivation events and instructions; suspense and payroll checks need ledger postings with maker/checker (payroll also needs the HR roster with salary accounts); entitlement checks need the system-account list (leavers also need the HR roster).
 
 Proof, with limits: two deliberately foreign exports (pipe-delimited with `dd/mm/yyyy` dates and vendor-style codes; tab-delimited with epoch seconds and dotted codes) produce findings identical to the canonical run. Both styles are **invented by me**, so this shows the mechanism works, not that any real vendor's export is covered. The suggester is a heuristic that matched all five audit-log columns on both invented styles; expect to correct it by hand on real exports. Not supported: fixed-width, XML/JSON or direct database reads; files are loaded in memory (very large audit logs need a streaming reader).
+
+## Reproducibility and investigation reports
+Every scan writes `run.json`: a **manifest** (SHA-256 of each source file, mapping hash, scoring-policy hash, thresholds, tool version, key *fingerprint* never the key, ingest time) and a **result digest**. `reproduce` re-runs from the manifest and reports one of: identical; source files differ (named, and described as a different analysis, not a failed reproduction); configuration differs; or inputs and configuration match but the result differs (a non-determinism bug). A source record is cited by feed, file hash and row number; row-level hashes are not stored.
+```
+TOROKA_ENT_SECRET=... python -m toroka_enterprise reproduce --data ./extracts --mapping mapping.toml --out ./out
+python -m toroka_enterprise report --out ./out --lead 1          # or --all; scan/demo also write ./out/reports/*.html
+```
+Each report is a single self-contained HTML file: assessment, an evidence map by independent source, a chronological table of what the records show, inferences kept separate from facts, what could not be checked, alternative explanations to rule out, next steps, provenance, and a reviewer sign-off block. All bank-supplied strings are HTML-escaped (tested with a hostile record id).
 
 ## What the synthetic result does and does not mean
 The demo finds 9/9 injected patterns with 0 false review leads (also across 20 seeds). The injected patterns are the ones the providers were written for and the benign data comes from my own generator, so this is a **regression harness, not evidence of real-world performance**. Two things it does show: switching the CRM-gap gating off produces false leads from the one branch whose CRM isn't integrated, so data-quality gating is load-bearing; and the tests fail when guards are removed (mutation-checked).

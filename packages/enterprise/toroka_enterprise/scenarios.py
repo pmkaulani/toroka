@@ -101,18 +101,15 @@ def justified_by_request(ds: Dataset, rules: Rules, staff: str, customer: str, t
 
 
 def instruction_near(ds: Dataset, rules: Rules, customer: str, ts: datetime, kinds: frozenset[str] | None = None):
-
     window = timedelta(hours=rules.instruction_window_hours)
-
-    for i in ds.instructions_by_customer.get(customer, []):
-
-        if (kinds is None or i.kind in kinds) and abs(i.received_at - ts) <= window:
-
-            return i
-
+    for instruction in ds.instructions_by_customer.get(customer, []):
+        # received_at is the time the customer supplied the instruction.
+        # recorded_at is source-system entry time and cannot retroactively
+        # authorise an earlier operation.
+        age = ts - instruction.received_at
+        if (kinds is None or instruction.kind in kinds) and timedelta(0) <= age <= window:
+            return instruction
     return None
-
-
 
 
 
@@ -308,7 +305,7 @@ class AuthChannelChange(_Provider):
 
         evs = [e for e in ds.events_by_customer.get(f.customer_ref, [])
 
-               if e.action == "contact_change" and ds.staff_of(e.account_ref) == f.staff_ref]
+               if e.action in {"contact_change", "mobile_change"} and ds.staff_of(e.account_ref) == f.staff_ref]
 
         if not evs:
 
@@ -347,215 +344,184 @@ class AuthChannelChange(_Provider):
 
 
 class AccountLifecycle(_Provider):
-
     name = "account_lifecycle"
-
     requires = frozenset({"audit", "customers", "instructions"})
-
     KINDS = frozenset({"reactivation", "account_reactivation"})
 
-
-
     def run(self, f: Focus) -> list[Evidence]:
-
         ds, r = self.ds, self.rules
-
-        evs = [e for e in ds.events_by_customer.get(f.customer_ref, [])
-
-               if e.action == "account_reactivate" and ds.staff_of(e.account_ref) == f.staff_ref]
-
-        cust = ds.customers.get(f.customer_ref)
-
-        if not evs or not cust:
-
+        events = [e for e in ds.events_by_customer.get(f.customer_ref, [])
+                  if e.action == "account_reactivate" and ds.staff_of(e.account_ref) == f.staff_ref]
+        customer = ds.customers.get(f.customer_ref)
+        if not events or not customer:
             return []
-
-        e = evs[0]
-
-        dormant = cust.status == "dormant" or (cust.dormant_since is not None and cust.dormant_since <= e.ts)
-
+        event = events[0]
+        dormant = customer.status == "dormant" or (customer.dormant_since is not None and customer.dormant_since <= event.ts)
         if not dormant:
-
             return []
 
-        refs, out = [f"audit_log:{e.row}"], []
-
-        if cust.deceased_flag:
-
+        refs = [f"audit_log:{event.row}"]
+        out = []
+        if customer.deceased_flag:
             out.append(_ev("Customer master", "customer_master", "customer_master", "risk",
-
                            "A dormant account flagged as belonging to a deceased customer was reactivated.",
-
                            "Deceased and dormant accounts are a repeat target in public insider cases.",
+                           4, 0.9, 0.85, event.ts,
+                           ["The flag depends on the death record having reached the bank."], f.label(), refs))
 
-                           4, 0.9, 0.85, e.ts, ["The flag depends on the death record having reached the bank."], f.label(), refs))
-
-        inst = instruction_near(ds, r, f.customer_ref, e.ts, self.KINDS)
-
-        if inst:
-
+        instruction = instruction_near(ds, r, f.customer_ref, event.ts, self.KINDS)
+        if instruction:
             out.append(_ev("Customer instruction register", "customer_instruction", "customer_instruction", "support",
-
-                           "Reactivation is backed by a customer instruction on file.", "A documented request is the normal basis for reactivation.",
-
-                           3, 0.9, 0.85, inst.received_at, ["Document authenticity was not verified."], f.label(), refs + [f"instructions:{inst.instruction_id}"]))
-
+                           "Reactivation is backed by a customer instruction received before the operation.",
+                           "A documented prior request is the normal basis for reactivation.",
+                           3, 0.9, 0.85, instruction.received_at,
+                           ["Instruction authenticity was not independently verified."], f.label(),
+                           refs + [f"instructions:{instruction.instruction_id}"]))
         else:
-
             out.append(_ev("Customer instruction register", "customer_instruction", "customer_instruction", "risk",
-
-                           "Dormant account reactivated with no matching customer instruction.",
-
+                           "Dormant account reactivated with no matching prior customer instruction.",
                            "Account-state changes are a high-risk step that payment monitoring never sees.",
+                           4, 0.9, 0.8, event.ts,
+                           ["An instruction entered after the operation is not proof of prior authorisation."], f.label(), refs))
 
-                           4, 0.9, 0.8, e.ts, ["The instruction may be held offline."], f.label(), refs))
-
-        appr = ds.staff_of(e.approver_ref)
-
+        approver_staff = ds.staff_of(event.approver_ref)
         if "audit_log.approver_account_id" in ds.absent_fields:
-
-            out.append(_ev("Approval records", "approvals", "bank_audit_log", "context", "This system supplies no approver on audit events, so maker-checker could not be assessed.",
-
-                           "Absence of an approver field is not evidence of an unapproved action.", 1, 0.5, 0.5, e.ts, ["Supply the approver field to enable this check."], f.label(), refs))
-
-        elif e.approver_ref is None:
-
-            out.append(_ev("Approval records", "approvals", "bank_audit_log", "risk", "No approver is recorded for the reactivation.",
-
-                           "Maker-checker is the control meant to catch a single actor.", 3, 0.85, 0.8, e.ts, ["Approval may be recorded in a system not supplied."], f.label(), refs))
-
-        elif appr == f.staff_ref:
-
-            out.append(_ev("Approval records", "approvals", "bank_audit_log", "risk", "The reactivation was approved from the same staff member's account.",
-
-                           "Self-approval defeats maker-checker.", 3, 0.9, 0.85, e.ts, [], f.label(), refs))
-
-        elif appr is not None:
-
-            out.append(_ev("Approval records", "approvals", "bank_audit_log", "support", "An approver other than the maker is recorded.",
-
-                           "Independent approval lowers concern but cannot rule out collusion.", 2, 0.85, 0.8, e.ts,
-
-                           ["Approver independence is assumed from different staff identities only."], f.label(), refs))
-
+            out.append(_ev("Approval records", "approvals", "bank_audit_log", "context",
+                           "This system supplies no approver on audit events, so maker-checker could not be assessed.",
+                           "Absence of an approver field is not evidence of an unapproved action.",
+                           1, 0.5, 0.5, event.ts, ["Supply the approver field to enable this check."], f.label(), refs))
+        elif event.approver_ref is None:
+            out.append(_ev("Approval records", "approvals", "bank_audit_log", "risk",
+                           "No approver is recorded for the reactivation.",
+                           "Maker-checker is the control meant to catch a single actor.",
+                           3, 0.85, 0.8, event.ts, ["Approval may be recorded in a system not supplied."], f.label(), refs))
+        elif approver_staff == f.staff_ref:
+            out.append(_ev("Approval records", "approvals", "bank_audit_log", "risk",
+                           "The reactivation was approved from the same staff member's account.",
+                           "Self-approval defeats maker-checker.", 3, 0.9, 0.85, event.ts, [], f.label(), refs))
+        elif approver_staff is None:
+            out.append(_ev("Approval identity mapping", "approval_identity_mapping", "bank_audit_log", "context",
+                           "An approver account is recorded but cannot be mapped to a staff identity.",
+                           "The approval identity and authority are unknown; it must not be counted as independent approval.",
+                           1, 0.5, 0.5, event.ts,
+                           ["Resolve the approver account against the authoritative IAM/HR source."], f.label(), refs))
+        else:
+            out.append(_ev("Approval records", "approvals", "bank_audit_log", "context",
+                           "An approver account mapped to a different staff identity is recorded.",
+                           "A different staff identity does not establish authority, delegation, reporting-line independence or absence of collusion.",
+                           1, 0.6, 0.6, event.ts,
+                           ["Validate the approver against the bank's role and delegated-authority matrix."], f.label(), refs))
         return out
-
-
-
 
 
 class ChangeThenMoney(_Provider):
-
     name = "change_then_money"
-
     requires = frozenset({"audit", "payments", "instructions"})
-
-
+    INSTRUCTION_KINDS = {
+        "contact_change": frozenset({"contact_change", "mobile_change"}),
+        "mobile_change": frozenset({"contact_change", "mobile_change"}),
+        "card_issue": frozenset({"card_issue", "card_request"}),
+        "beneficiary_add": frozenset({"beneficiary_add", "beneficiary_change", "payee_add"}),
+        "limit_change": frozenset({"limit_change", "limit_update"}),
+        "account_reactivate": frozenset({"reactivation", "account_reactivation"}),
+    }
 
     def run(self, f: Focus) -> list[Evidence]:
-
         ds, r = self.ds, self.rules
-
         changes = [e for e in ds.events_by_customer.get(f.customer_ref, [])
-
                    if e.action in SENSITIVE_ACTIONS and ds.staff_of(e.account_ref) == f.staff_ref]
-
-        if len(changes) < 2:
-
+        if not changes:
             return []
 
-        last = max(e.ts for e in changes)
-
-        after = [p for p in ds.payments_by_customer.get(f.customer_ref, []) if last <= p.ts <= last + timedelta(days=r.sequence_days)]
-
-        # A sequence is only suspicious when an earlier step is UNEXPLAINED. Without this guard, legitimate sequences were flagged.
-
-        unexplained = [e for e in changes if not instruction_near(ds, r, f.customer_ref, e.ts)]
-
-        if not after or not unexplained:
-
+        # Match each operation to its own instruction type. One valid contact
+        # instruction must not explain a separate card or beneficiary action.
+        unexplained = [
+            event for event in changes
+            if not instruction_near(
+                ds, r, f.customer_ref, event.ts,
+                self.INSTRUCTION_KINDS.get(event.action, frozenset({event.action})),
+            )
+        ]
+        if not unexplained:
             return []
 
-        total = sum(p.amount for p in after)
+        trigger = min(unexplained, key=lambda event: event.ts)
+        after = [payment for payment in ds.payments_by_customer.get(f.customer_ref, [])
+                 if trigger.ts <= payment.ts <= trigger.ts + timedelta(days=r.sequence_days)]
+        if not after:
+            return []
 
-        return [_ev("Payment and ATM feed", "payments", "payment_record", "risk",
-
-                    f"{len(changes)} sensitive changes by one user, at least one without a matching instruction, were followed by {len(after)} outgoing payments (KSh {total:,}) within {r.sequence_days} days.",
-
-                    "Authorised steps that look routine alone form the fraud pattern when sequenced.",
-
-                    4, 0.9, 0.75, after[0].ts, ["A sequence is a lead, not proof; the customer may have made the payments."], f.label(),
-
-                    [f"audit_log:{e.row}" for e in changes[:5]] + [f"payments:{p.payment_id}" for p in after[:5]])]
-
-
-
+        total = sum(payment.amount for payment in after)
+        return [_ev(
+            "Payment and ATM feed", "payments", "payment_record", "risk",
+            f"{len(changes)} sensitive change(s) by one user, at least one without a matching prior customer instruction, were followed by {len(after)} payments associated with the same customer (KSh {total:,}) within {r.sequence_days} days.",
+            "A payment sequence following an unexplained account change merits review; this customer-level correlation does not prove that funds went to a newly added beneficiary.",
+            4, 0.9, 0.75, after[0].ts,
+            ["A sequence is a lead, not proof; the customer may have made the payments."], f.label(),
+            [f"audit_log:{event.row}" for event in changes[:5]] + [f"payments:{payment.payment_id}" for payment in after[:5]],
+        )]
 
 
 class PostingIntegrity(_Provider):
-
     name = "suspense_posting_integrity"
-
     applies = "staff"
-
     requires = frozenset({"postings"})
-
-    requires_fields = frozenset({"postings.approved_by_account"})   # without it every posting would look unapproved
-
-
+    requires_fields = frozenset({"postings.approved_by_account"})
 
     def run(self, f: Focus) -> list[Evidence]:
-
         ds, r = self.ds, self.rules
-
-        posts = [p for p in ds.postings_by_staff.get(f.staff_ref, []) if p.manual and p.ledger in SUSPENSE_LEDGERS]
-
+        posts = [p for p in ds.postings_by_staff.get(f.staff_ref, [])
+                 if p.manual and p.ledger in SUSPENSE_LEDGERS]
         if not posts:
-
             return []
 
-        failing = [p for p in posts if p.approved_by_ref is None or ds.staff_of(p.approved_by_ref) == f.staff_ref]
-
-        refs = [f"postings:{p.posting_id}" for p in (failing or posts)[:8]]
+        missing_approval = [p for p in posts if p.approved_by_ref is None]
+        unresolved_approval = [p for p in posts if p.approved_by_ref is not None and ds.staff_of(p.approved_by_ref) is None]
+        self_approved = [p for p in posts if p.approved_by_ref is not None and ds.staff_of(p.approved_by_ref) == f.staff_ref]
+        failing = missing_approval + self_approved
+        refs = [f"postings:{p.posting_id}" for p in (failing + unresolved_approval + posts)[:8]]
 
         if not failing:
-
-            return [_ev("Ledger approvals", "ledger", "ledger_record", "support",
-
-                        f"All {len(posts)} manual postings out of suspense/dispute ledgers carry an independent approver.",
-
-                        "Maker-checker on suspense postings is the control the public cases lacked.", 2, 0.85, 0.8, posts[0].ts,
-
-                        ["Independence is inferred from different staff identities only."], f.label(), refs)]
+            if unresolved_approval:
+                return [_ev("Ledger approval mapping", "ledger_approval_mapping", "ledger_record", "context",
+                            f"{len(unresolved_approval)} of {len(posts)} manual suspense/dispute postings have approver IDs that could not be mapped to a staff identity.",
+                            "The approver's identity and authority could not be established; this is not evidence of independent approval.",
+                            1, 0.5, 0.5, unresolved_approval[0].ts,
+                            ["Resolve the approver account against the authoritative IAM/HR source before assessing maker-checker."],
+                            f.label(), [f"postings:{p.posting_id}" for p in unresolved_approval[:8]])]
+            return [_ev("Ledger approval records", "ledger_approval_mapping", "ledger_record", "context",
+                        f"All {len(posts)} manual suspense/dispute postings have an approver account mapped to a different staff identity.",
+                        "A different staff identity is recorded, but role authority, delegation, reporting-line conflicts and collusion were not checked.",
+                        1, 0.6, 0.6, posts[0].ts,
+                        ["Do not treat a different staff ID as proof that the approver was authorised or independent."], f.label(), refs)]
 
         total = sum(p.amount for p in failing)
-
         out = [_ev("Ledger", "ledger", "ledger_record", "risk",
-
                    f"{len(failing)} of {len(posts)} manual postings out of suspense/dispute ledgers (KSh {total:,}) were unapproved or self-approved.",
-
                    "Suspense and dispute accounts hold money awaiting resolution and recur across insider cases.",
+                   4, 0.9, 0.85, failing[0].ts,
+                   ["Approval may be recorded outside the supplied ledger extract."], f.label(), refs)]
 
-                   4, 0.9, 0.85, failing[0].ts, ["Approval may be recorded outside the supplied ledger extract."], f.label(), refs)]
+        if unresolved_approval:
+            out.append(_ev("Ledger approval mapping", "ledger_approval_mapping", "ledger_record", "context",
+                           f"{len(unresolved_approval)} additional postings have approver IDs that could not be mapped to a staff identity.",
+                           "Their approval independence and authority remain unknown.", 1, 0.5, 0.5, unresolved_approval[0].ts,
+                           ["Resolve approver IDs against the authoritative IAM/HR source."], f.label(),
+                           [f"postings:{p.posting_id}" for p in unresolved_approval[:8]]))
 
+        # This follow-on join is valid only where counter_party is mapped to a
+        # customer/CIF. Bank-account contra fields need an authoritative bridge.
         window = timedelta(days=r.posting_followon_days)
-
-        moved = [(p, q) for p in failing for q in ds.payments_by_customer.get(p.counter_ref or "", []) if p.ts <= q.ts <= p.ts + window]
-
+        moved = [(p, q) for p in failing for q in ds.payments_by_customer.get(p.counter_ref or "", [])
+                 if p.ts <= q.ts <= p.ts + window]
         if moved:
-
             out.append(_ev("Payment and ATM feed", "payments", "payment_record", "risk",
-
-                           f"Funds left the receiving accounts within {r.posting_followon_days} days of {len({p.posting_id for p, _ in moved})} flagged postings.",
-
-                           "Rapid onward movement is the cash-out step of the pattern.", 4, 0.9, 0.75, moved[0][1].ts,
-
-                           ["Customers can legitimately spend received funds."], f.label(), [f"payments:{q.payment_id}" for _, q in moved[:6]]))
-
+                           f"Payments were recorded against customer/CIF references within {r.posting_followon_days} days of {len({p.posting_id for p, _ in moved})} flagged postings.",
+                           "Rapid onward movement may be relevant, but the customer/CIF join is not proof of account-level fund tracing.",
+                           4, 0.9, 0.75, moved[0][1].ts,
+                           ["Confirm the posting counterparty and payment account relationship from an authoritative account master."],
+                           f.label(), [f"payments:{q.payment_id}" for _, q in moved[:6]]))
         return out
-
-
-
 
 
 class PayrollBeneficiary(_Provider):

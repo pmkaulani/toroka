@@ -4,7 +4,20 @@ from __future__ import annotations
 import hashlib
 import hmac
 
-PREFIX = {"stf": "STF", "acc": "ACC", "cus": "CUS"}
+# Separate namespaces prevent a customer ID from colliding with a bank
+# account, beneficiary, vendor, device or other operational identity.
+PREFIX = {
+    "stf": "STF",
+    "acc": "ACC",
+    "cus": "CUS",
+    "bank_account": "BAC",
+    "beneficiary": "BEN",
+    "vendor": "VEN",
+    "device": "DEV",
+    "service_account": "SVC",
+    "branch": "BRN",
+    "gl_account": "GLA",
+}
 
 
 class Pseudonymiser:
@@ -21,7 +34,8 @@ class Pseudonymiser:
         if kind not in PREFIX:
             raise ValueError(f"unknown identifier kind: {kind}")
         value = str(raw).strip()
-        digest = hmac.new(self._secret, f"toroka-ent:{kind}:{value}".encode(), hashlib.sha256).hexdigest()[:12]
+        # Keep 128 bits of the keyed digest; 48 bits is too short for large-scale correlation.
+        digest = hmac.new(self._secret, f"toroka-ent:{kind}:{value}".encode(), hashlib.sha256).hexdigest()[:32]
         pseudo = f"{PREFIX[kind]}-{digest}"
         self.vault[pseudo] = value
         return pseudo

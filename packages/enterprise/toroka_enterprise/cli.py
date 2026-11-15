@@ -19,7 +19,11 @@ from .coverage import coverage_report, render
 from .discover import suggest_mapping
 from .foreign import export
 from .ingest import IngestError, ingest_dir
+from .manifest import build_manifest, reproduce, result_digest
 from .mapping import MappingError, load_mapping
+from .profile import INSIDER_PROFILE
+from .report import render_case
+from .scenarios import Rules
 from .pseudonym import Pseudonymiser
 from .replay import evaluate, generate
 from .scan import run_scan
@@ -27,12 +31,20 @@ from .scan import run_scan
 SYSTEM = Principal("scan-service", "system")
 
 
-def _open_cases(out: Path, scan, vault: dict[str, str], key: bytes):
+def _open_cases(out: Path, scan, vault: dict[str, str], key: bytes, manifest: dict | None = None, digest: str | None = None):
     audit = AuditLog(out / "audit.db")
     store = CaseStore(out / "cases.db", audit, key)
     store.store_vault(SYSTEM, vault)
-    ids = [store.open_from_lead(SYSTEM, lead.to_dict()) for lead in scan.leads]
-    (out / "leads.json").write_text(json.dumps([l.to_dict() for l in scan.leads], indent=2, default=str))
+    leads = [dict(l.to_dict(), manifest_id=(manifest or {}).get("manifest_id")) for l in scan.leads]
+    ids = [store.open_from_lead(SYSTEM, d) for d in leads]
+    (out / "leads.json").write_text(json.dumps(leads, indent=2, default=str))
+    if manifest:
+        (out / "run.json").write_text(json.dumps({"manifest": manifest, "result_digest": digest}, indent=2))
+        audit.append(SYSTEM.user_id, SYSTEM.role, "scan.run", manifest["manifest_id"], {"result_digest": digest, "leads": len(leads), "tool_version": manifest["tool_version"]})
+    reports = out / "reports"
+    reports.mkdir(exist_ok=True)
+    for i, d in enumerate(leads[:10], start=1):
+        (reports / f"lead-{i:02d}-{d['label'].lower().replace(' ', '-')}.html").write_text(render_case(d, manifest), encoding="utf-8")
     return audit, store, ids
 
 
@@ -56,11 +68,12 @@ def cmd_demo(a) -> int:
     data = out / "extracts"
     truth = generate(data, seed=a.seed)
     ps = Pseudonymiser("demo-secret-" + "x" * 32)
-    mapping = None
+    mapping, mapping_text = None, None
     if a.style:
         foreign = out / f"extracts_style_{a.style}"
-        mapping = load_mapping(export(data, foreign, a.style))
-        (out / f"mapping_style_{a.style}.toml").write_text(export(data, foreign, a.style))
+        mapping_text = export(data, foreign, a.style)
+        mapping = load_mapping(mapping_text)
+        (out / f"mapping_style_{a.style}.toml").write_text(mapping_text)
         data = foreign
         print(f"Reading a deliberately foreign-shaped export (style {a.style}) through its mapping file: {data}\n")
     ds, quality = ingest_dir(data, ps, mapping)
@@ -73,7 +86,9 @@ def cmd_demo(a) -> int:
     for r in ev["scenarios"]:
         print(f"  {r['id']:4} {'FOUND ' if r['found'] else 'MISSED'} {r['label']:19} {r['pattern']}")
     key = generate_key()
-    audit, store, ids = _open_cases(out, scan, ps.vault, key)
+    manifest = build_manifest(quality, mapping_text=mapping_text, rules=Rules(), profile=INSIDER_PROFILE, secret="demo-secret-" + "x" * 32)
+    audit, store, ids = _open_cases(out, scan, ps.vault, key, manifest, result_digest(scan))
+    print(f"\nrun manifest {manifest['manifest_id']} | result digest {result_digest(scan)[:16]}... | {min(len(ids), 10)} investigation reports in {out / 'reports'}")
     inv, auth = Principal("investigator-1", "investigator"), Principal("authoriser-1", "authoriser")
     case = store.view_case(inv, ids[0])
     pseudo = case["snapshot"]["staff_ref"]
@@ -97,7 +112,8 @@ def cmd_scan(a) -> int:
         return 2
     try:
         ps = Pseudonymiser(secret)
-        ds, quality = ingest_dir(a.data, ps, load_mapping(a.mapping) if a.mapping else None)
+        mapping_text = Path(a.mapping).read_text(encoding="utf-8") if a.mapping else None
+        ds, quality = ingest_dir(a.data, ps, load_mapping(mapping_text) if mapping_text else None)
     except (IngestError, MappingError, ValueError) as exc:
         print(f"ingest failed: {exc}", file=sys.stderr)
         return 1
@@ -107,7 +123,9 @@ def cmd_scan(a) -> int:
     _print_scan(scan)
     _print_coverage(ds)
     (out / "coverage.json").write_text(json.dumps(coverage_report(ds), indent=2))
-    _open_cases(out, scan, ps.vault, key.encode())
+    manifest = build_manifest(quality, mapping_text=mapping_text, rules=Rules(), profile=INSIDER_PROFILE, secret=secret)
+    _open_cases(out, scan, ps.vault, key.encode(), manifest, result_digest(scan))
+    print(f"run manifest {manifest['manifest_id']}; reports in {out / 'reports'}")
     (out / "data_quality.json").write_text(json.dumps(quality.to_dict(), indent=2))
     print(f"cases, audit log and data-quality report written to {out}")
     return 0
@@ -143,6 +161,34 @@ def cmd_suggest(a) -> int:
     return 0
 
 
+def cmd_reproduce(a) -> int:
+    """Re-run a past scan from its manifest and say whether inputs, configuration and result are identical."""
+    secret = os.environ.get("TOROKA_ENT_SECRET")
+    if not secret:
+        print("set TOROKA_ENT_SECRET to the same value used for the original run", file=sys.stderr)
+        return 2
+    run = json.loads((Path(a.out) / "run.json").read_text())
+    mapping_text = Path(a.mapping).read_text(encoding="utf-8") if a.mapping else None
+    res = reproduce(run["manifest"], run["result_digest"], a.data, mapping_text=mapping_text, rules=Rules(), profile=INSIDER_PROFILE, secret=secret)
+    print(json.dumps(res, indent=2))
+    return 0 if res["ok"] else 1
+
+
+def cmd_report(a) -> int:
+    out = Path(a.out)
+    leads = json.loads((out / "leads.json").read_text())
+    run = out / "run.json"
+    manifest = json.loads(run.read_text())["manifest"] if run.exists() else None
+    target = out / "reports"
+    target.mkdir(exist_ok=True)
+    chosen = leads if a.all else [leads[a.lead - 1]]
+    for d in chosen:
+        path = target / f"{d['focus'].replace('/', '_')}.html"
+        path.write_text(render_case(d, manifest), encoding="utf-8")
+        print(path)
+    return 0
+
+
 def cmd_verify(a) -> int:
     res = AuditLog(a.audit).verify()
     print(json.dumps({"ok": res.ok, "entries": res.checked, "head_hash": res.head_hash, "problems": res.problems}, indent=2))
@@ -156,6 +202,8 @@ def main(argv: list[str] | None = None) -> int:
     s = sub.add_parser("scan"); s.add_argument("--data", required=True); s.add_argument("--out", required=True); s.add_argument("--mapping"); s.set_defaults(fn=cmd_scan)
     v0 = sub.add_parser("validate"); v0.add_argument("--data", required=True); v0.add_argument("--mapping"); v0.set_defaults(fn=cmd_validate)
     g = sub.add_parser("suggest-mapping"); g.add_argument("--file", required=True); g.add_argument("--feed", required=True); g.add_argument("--delimiter"); g.add_argument("--out"); g.set_defaults(fn=cmd_suggest)
+    rp = sub.add_parser("reproduce"); rp.add_argument("--data", required=True); rp.add_argument("--out", required=True); rp.add_argument("--mapping"); rp.set_defaults(fn=cmd_reproduce)
+    r2 = sub.add_parser("report"); r2.add_argument("--out", required=True); r2.add_argument("--lead", type=int, default=1); r2.add_argument("--all", action="store_true"); r2.set_defaults(fn=cmd_report)
     v = sub.add_parser("verify-audit"); v.add_argument("--audit", required=True); v.set_defaults(fn=cmd_verify)
     k = sub.add_parser("keygen"); k.set_defaults(fn=lambda _a: print(generate_key().decode()) or 0)
     a = ap.parse_args(argv)

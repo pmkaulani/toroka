@@ -61,6 +61,21 @@ def coverage_report(ds: Dataset) -> list[dict]:
     add("payroll_beneficiary_integrity", *(("blind", "missing: " + ", ".join(m)) if m else (("check", "no manual SALARY postings: map the payroll narrative/code") if not sal else ("ready", f"{sal:,} manual salary postings"))), [])
     m = need(["accounts"])
     add("entitlement_integrity", *(("blind", "missing feed(s): accounts") if m else (("degraded", "no HR roster: leaver activity cannot be checked") if "hr" not in av else ("ready", f"{len(ds.accounts):,} system accounts"))), [])
+    detector_feeds = {
+        "access_justification": {"audit", "assignments", "crm"},
+        "bulk_unjustified_browsing": {"audit", "assignments", "crm"},
+        "auth_channel_change": {"audit", "instructions"},
+        "account_lifecycle": {"audit", "customers", "instructions"},
+        "change_then_money": {"audit", "payments", "instructions"},
+        "suspense_posting_integrity": {"postings", "payments"},
+        "payroll_beneficiary_integrity": {"postings", "hr"},
+        "entitlement_integrity": {"accounts", "hr"},
+    }
+    for row in rows:
+        affected = sorted(detector_feeds.get(row["detector"], set()) & ds.degraded_feeds)
+        if affected and row["status"] != "blind":
+            row["status"] = "degraded"
+            row["reason"] += "; input quality degraded for: " + ", ".join(affected)
     return rows
 
 
