@@ -12,21 +12,44 @@ from __future__ import annotations
 
 
 
+from collections import defaultdict
 from dataclasses import dataclass
-
 from datetime import datetime, timedelta, timezone
-
-
+from typing import Any
 
 from toroka_core.evidence.models import Evidence, InvestigationRequest
 
-
-
 from .schema import SENSITIVE_ACTIONS, Dataset
 
-
-
 SUSPENSE_LEDGERS = frozenset({"SUSPENSE", "DISPUTE"})
+
+
+def format_money(amount_cents: int, currency: str = "KES") -> str:
+    """Format integer minor currency units for reporting.
+
+    Preserves exact decimal precision without floating-point arithmetic.
+    Never labels KSh unless currency is known to be KES.
+    """
+    curr = (currency or "KES").strip().upper()
+    curr_prefix = "KES " if curr == "KES" else f"{curr} "
+    sign = "-" if amount_cents < 0 else ""
+    abs_amt = abs(amount_cents)
+    major = abs_amt // 100
+    minor = abs_amt % 100
+    if minor:
+        return f"{curr_prefix}{sign}{major:,}.{minor:02d}"
+    return f"{curr_prefix}{sign}{major:,}"
+
+
+def format_money_totals(items: list[Any]) -> str:
+    """Group items by currency and format totals without combining mixed currencies."""
+    totals: dict[str, int] = defaultdict(int)
+    for item in items:
+        curr = (getattr(item, "currency", "KES") or "KES").strip().upper()
+        totals[curr] += item.amount
+    if not totals:
+        return "KES 0"
+    return ", ".join(format_money(amt, curr) for curr, amt in sorted(totals.items()))
 
 
 
@@ -154,121 +177,73 @@ class _Provider:
 
 
 class AccessJustification(_Provider):
-
     name = "access_justification"
-
-    requires = frozenset({"audit", "assignments"})
-
-
+    requires = frozenset({"audit", "assignments", "accounts"})
 
     def run(self, f: Focus) -> list[Evidence]:
-
         ds, r = self.ds, self.rules
-
         evs = [e for e in ds.events_by_customer.get(f.customer_ref, []) if ds.staff_of(e.account_ref) == f.staff_ref]
-
         if not evs:
-
             return []
-
         first, refs, cust = evs[0], [f"audit_log:{e.row}" for e in evs[:5]], ds.customers.get(f.customer_ref)
-
         if f.customer_ref in ds.assignments.get(f.staff_ref, set()):
-
             return [_ev("HR/portfolio assignments", "hr_portfolio", "hr_record", "support",
-
                         "Customer is in the staff member's assigned portfolio.",
-
                         "An assignment is a legitimate reason to open a profile. It does not justify every change.",
-
                         2, 0.85, 0.85, first.ts, ["Assignment data may be stale."], f.label(), refs)]
 
-        if ds.branch_of(f.staff_ref) in ds.crm_gap_branches:
-
+        crm_unavailable = "crm" not in ds.available or "service_requests.staff_id" in ds.absent_fields
+        branch = ds.branch_of(f.staff_ref)
+        if crm_unavailable or (branch and branch in ds.crm_gap_branches) or (not branch and ds.crm_gap_branches):
             return [_ev("CRM service records", "crm", "service_record", "context",
-
-                        "Access justification could not be assessed: service-request data is incomplete for this branch.",
-
+                        "Access justification could not be assessed: service-request data is incomplete or unavailable.",
                         "Missing tickets prove nothing where the CRM is not integrated.", 1, 0.5, 0.5, first.ts,
-
                         ["Resolve the CRM integration gap before treating unticketed access as a signal."], f.label(), refs)]
 
         req = justified_by_request(ds, r, f.staff_ref, f.customer_ref, first.ts)
-
         if req:
-
             return [_ev("CRM service records", "crm", "service_record", "support",
-
                         "Access is explained by an open service request assigned to the same staff member.",
-
                         "An independent record gives a legitimate explanation. It lowers, not erases, concern.",
-
                         3, 0.85, 0.85, req.opened_at, ["Request content was not inspected."], f.label(), refs + [f"service_requests:{req.request_id}"])]
 
         strength = 4 if (cust and cust.is_sensitive) else 3
-
         sens = " The profile is flagged sensitive." if strength == 4 else ""
-
         return [_ev("Core banking audit log", "core_banking_audit", "bank_audit_log", "risk",
-
                     "Customer profile opened with no assignment and no matching service request." + sens,
-
                     "Business-purpose access is the control that catches snooping and data-selling insiders.",
-
                     strength, 0.9, 0.8, first.ts, ["Assignment data may be stale; a missing CRM link can be an integration gap."], f.label(), refs)]
 
 
 
 
-
 class BulkBrowsing(_Provider):
-
     name = "bulk_unjustified_browsing"
-
     applies = "staff"
-
-    requires = frozenset({"audit", "assignments"})
-
-
+    requires = frozenset({"audit", "assignments", "accounts"})
 
     def run(self, f: Focus) -> list[Evidence]:
-
         ds, r = self.ds, self.rules
-
         port = ds.assignments.get(f.staff_ref, set())
-
         unj = [(e.ts, e.customer_ref, e.row) for e in ds.events_by_staff.get(f.staff_ref, [])
-
                if e.action == "profile_view" and e.customer_ref and e.customer_ref not in port
-
                and not justified_by_request(ds, r, f.staff_ref, e.customer_ref, e.ts)]
-
         best, best_win = 0, []
-
         for i, (ts, _c, _r) in enumerate(unj):
-
             win = [x for x in unj[i:] if x[0] <= ts + timedelta(days=r.bulk_window_days)]
-
             n = len({x[1] for x in win})
-
             if n > best:
-
                 best, best_win = n, win
-
         if best < r.bulk_unjustified_threshold:
-
             return []
-
         refs = [f"audit_log:{x[2]}" for x in best_win[:8]]
 
-        if ds.branch_of(f.staff_ref) in ds.crm_gap_branches:
-
+        crm_unavailable = "crm" not in ds.available or "service_requests.staff_id" in ds.absent_fields
+        branch = ds.branch_of(f.staff_ref)
+        if crm_unavailable or (branch and branch in ds.crm_gap_branches) or (not branch and ds.crm_gap_branches):
             return [_ev("CRM service records", "crm", "service_record", "context",
-
-                        f"{best} unassigned profiles were opened, but service-request data is incomplete for this branch.",
-
+                        f"{best} unassigned profiles were opened, but service-request data is incomplete or unavailable.",
                         "Cannot separate snooping from unrecorded walk-in service.", 1, 0.5, 0.5, best_win[0][0],
-
                         ["Resolve the CRM integration gap first."], f.label(), refs)]
 
         sensitive = sum(1 for c in {x[1] for x in best_win} if ds.customers.get(c) and ds.customers[c].is_sensitive)
@@ -290,11 +265,8 @@ class BulkBrowsing(_Provider):
 
 
 class AuthChannelChange(_Provider):
-
     name = "auth_channel_change"
-
-    requires = frozenset({"audit", "instructions"})
-
+    requires = frozenset({"audit", "instructions", "accounts"})
     KINDS = frozenset({"contact_change", "mobile_change"})
 
 
@@ -345,7 +317,7 @@ class AuthChannelChange(_Provider):
 
 class AccountLifecycle(_Provider):
     name = "account_lifecycle"
-    requires = frozenset({"audit", "customers", "instructions"})
+    requires = frozenset({"audit", "customers", "instructions", "accounts"})
     KINDS = frozenset({"reactivation", "account_reactivation"})
 
     def run(self, f: Focus) -> list[Evidence]:
@@ -416,7 +388,7 @@ class AccountLifecycle(_Provider):
 
 class ChangeThenMoney(_Provider):
     name = "change_then_money"
-    requires = frozenset({"audit", "payments", "instructions"})
+    requires = frozenset({"audit", "payments", "instructions", "accounts"})
     INSTRUCTION_KINDS = {
         "contact_change": frozenset({"contact_change", "mobile_change"}),
         "mobile_change": frozenset({"contact_change", "mobile_change"}),
@@ -446,26 +418,52 @@ class ChangeThenMoney(_Provider):
             return []
 
         trigger = min(unexplained, key=lambda event: event.ts)
-        after = [payment for payment in ds.payments_by_customer.get(f.customer_ref, [])
-                 if trigger.ts <= payment.ts <= trigger.ts + timedelta(days=r.sequence_days)]
-        if not after:
+        all_after = [payment for payment in ds.payments_by_customer.get(f.customer_ref, [])
+                     if trigger.ts <= payment.ts <= trigger.ts + timedelta(days=r.sequence_days)]
+        if not all_after:
             return []
 
-        total = sum(payment.amount for payment in after)
+        # Only confirmed outbound / debit payments count as cash-out evidence
+        debit_payments = [p for p in all_after if getattr(p, "direction", "debit") == "debit"]
+        credit_payments = [p for p in all_after if getattr(p, "direction", "debit") == "credit"]
+        unknown_payments = [p for p in all_after if getattr(p, "direction", "debit") not in {"debit", "credit"}]
+
+        # If direction is absent from the feed or all payments have unknown direction,
+        # never manufacture an outbound fraud risk finding; report context.
+        if "payments.direction" in ds.absent_fields or (not debit_payments and unknown_payments):
+            return [_ev(
+                "Payment and ATM feed", "payments", "payment_record", "context",
+                f"{len(changes)} sensitive change(s) were followed by {len(all_after)} payment transaction(s), but transaction direction (debit/credit) is unsupplied or unknown.",
+                "Without confirmed debit direction, outbound money movement cannot be established; this cannot be treated as an outbound fraud signal.",
+                1, 0.5, 0.5, all_after[0].ts,
+                ["Supply transaction direction (debit/credit) in the payments feed to verify outbound cash movement."],
+                f.label(),
+                [f"audit_log:{event.row}" for event in changes[:5]] + [f"payments:{payment.payment_id}" for payment in all_after[:5]],
+            )]
+
+        if not debit_payments:
+            # Only incoming credits occurred; incoming credits must not trigger outbound money conclusion.
+            return []
+
+        amt_str = format_money_totals(debit_payments)
+        caveats = ["A sequence is a lead, not proof; the customer may have made the payments."]
+        if credit_payments or unknown_payments:
+            caveats.append(f"{len(credit_payments) + len(unknown_payments)} credit/unconfirmed transaction(s) were excluded from this outbound total.")
+
         return [_ev(
             "Payment and ATM feed", "payments", "payment_record", "risk",
-            f"{len(changes)} sensitive change(s) by one user, at least one without a matching prior customer instruction, were followed by {len(after)} payments associated with the same customer (KSh {total:,}) within {r.sequence_days} days.",
+            f"{len(changes)} sensitive change(s) by one user, at least one without a matching prior customer instruction, were followed by {len(debit_payments)} outbound payment(s) associated with the same customer ({amt_str}) within {r.sequence_days} days.",
             "A payment sequence following an unexplained account change merits review; this customer-level correlation does not prove that funds went to a newly added beneficiary.",
-            4, 0.9, 0.75, after[0].ts,
-            ["A sequence is a lead, not proof; the customer may have made the payments."], f.label(),
-            [f"audit_log:{event.row}" for event in changes[:5]] + [f"payments:{payment.payment_id}" for payment in after[:5]],
+            4, 0.9, 0.75, debit_payments[0].ts,
+            caveats, f.label(),
+            [f"audit_log:{event.row}" for event in changes[:5]] + [f"payments:{payment.payment_id}" for payment in debit_payments[:5]],
         )]
 
 
 class PostingIntegrity(_Provider):
     name = "suspense_posting_integrity"
     applies = "staff"
-    requires = frozenset({"postings"})
+    requires = frozenset({"postings", "accounts"})
     requires_fields = frozenset({"postings.approved_by_account"})
 
     def run(self, f: Focus) -> list[Evidence]:
@@ -495,9 +493,9 @@ class PostingIntegrity(_Provider):
                         1, 0.6, 0.6, posts[0].ts,
                         ["Do not treat a different staff ID as proof that the approver was authorised or independent."], f.label(), refs)]
 
-        total = sum(p.amount for p in failing)
+        total_str = format_money_totals(failing)
         out = [_ev("Ledger", "ledger", "ledger_record", "risk",
-                   f"{len(failing)} of {len(posts)} manual postings out of suspense/dispute ledgers (KSh {total:,}) were unapproved or self-approved.",
+                   f"{len(failing)} of {len(posts)} manual postings out of suspense/dispute ledgers ({total_str}) were unapproved or self-approved.",
                    "Suspense and dispute accounts hold money awaiting resolution and recur across insider cases.",
                    4, 0.9, 0.85, failing[0].ts,
                    ["Approval may be recorded outside the supplied ledger extract."], f.label(), refs)]
@@ -525,42 +523,65 @@ class PostingIntegrity(_Provider):
 
 
 class PayrollBeneficiary(_Provider):
-
     name = "payroll_beneficiary_integrity"
-
     applies = "staff"
-
-    requires = frozenset({"postings", "hr"})
-
-    requires_fields = frozenset({"hr_roster.salary_account"})      # without it every salary posting would look like a non-employee
-
-
+    requires = frozenset({"postings", "hr", "accounts"})
+    requires_fields = frozenset({"hr_roster.salary_account", "postings.counter_party"})
 
     def run(self, f: Focus) -> list[Evidence]:
-
         ds = self.ds
-
-        bad = [p for p in ds.postings_by_staff.get(f.staff_ref, [])
-
-               if p.manual and p.narrative == "SALARY" and p.counter_ref not in ds.roster_salary_accounts]
-
-        if not bad:
-
+        if "postings.counter_party" in ds.absent_fields:
+            return []
+        salary_posts = [
+            p for p in ds.postings_by_staff.get(f.staff_ref, [])
+            if p.manual and p.narrative == "SALARY"
+        ]
+        if not salary_posts:
             return []
 
-        total = sum(p.amount for p in bad)
+        # A missing destination is unknown, not proof of an
+        # unauthorised or non-employee beneficiary.
+        unresolved = [
+            p for p in salary_posts
+            if p.counter_ref is None
+        ]
+        # Only compare destinations that were actually supplied.
+        confirmed_non_roster = [
+            p for p in salary_posts
+            if p.counter_ref is not None
+            and p.counter_ref not in ds.roster_salary_accounts
+        ]
+        if not confirmed_non_roster:
+            if unresolved:
+                return [
+                    _ev(
+                        "HR roster and payroll postings",
+                        "payroll_destination_mapping",
+                        "ledger_record",
+                        "context",
+                        f"{len(unresolved)} manual salary posting(s) have no usable destination-account reference.",
+                        "Missing or unmapped destination accounts prevent verifying salary destination against HR records; this is an unverified control, not evidence of diversion.",
+                        1, 0.5, 0.5, unresolved[0].ts,
+                        ["Ensure posting destination accounts / counterparty references are populated."],
+                        f.label(),
+                        [f"postings:{p.posting_id}" for p in unresolved[:8]],
+                    )
+                ]
+            return []
 
-        return [_ev("HR roster", "hr_roster", "hr_record", "risk",
+        amt_str = format_money_totals(confirmed_non_roster)
+        caveats = ["Contractors, former staff final pay and garnishee payments can legitimately be absent from the roster."]
+        if unresolved:
+            caveats.append(f"{len(unresolved)} additional posting(s) had unmapped or absent destination accounts and were excluded from this finding.")
 
-                    f"{len(bad)} manual salary postings (KSh {total:,}) went to accounts that match no employee on the HR roster.",
-
-                    "Payments disguised as salary to non-employees match the alleged salary-ledger diversion pattern.",
-
-                    4, 0.9, 0.8, bad[0].ts,
-
-                    ["Contractors, former staff final pay and garnishee payments can legitimately be absent from the roster."], f.label(),
-
-                    [f"postings:{p.posting_id}" for p in bad[:8]])]
+        return [_ev(
+            "HR roster", "hr_roster", "hr_record", "risk",
+            f"{len(confirmed_non_roster)} manual salary postings ({amt_str}) went to accounts that match no employee on the HR roster.",
+            "Payments disguised as salary to non-employees match the alleged salary-ledger diversion pattern.",
+            4, 0.9, 0.8, confirmed_non_roster[0].ts,
+            caveats, f.label(),
+            [f"postings:{p.posting_id}" for p in confirmed_non_roster[:8]],
+        )]
 
 
 

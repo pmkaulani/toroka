@@ -46,7 +46,7 @@ OPTIONAL = {"audit_log": {"approver_account_id", "customer_id"}, "service_reques
 
             "instructions": {"recorded_at"}, "customers": {"dormant_since", "deceased_flag", "is_sensitive"}, "system_accounts": {"is_privileged"},
 
-            "hr_roster": {"end_date", "salary_account"}, "postings": {"approved_by_account", "counter_party"}, "payments": {"beneficiary"}}
+            "hr_roster": {"end_date", "salary_account"}, "postings": {"approved_by_account", "counter_party"}, "payments": {"beneficiary", "direction"}}
 
 
 

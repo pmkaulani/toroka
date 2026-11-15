@@ -75,8 +75,10 @@ class Payment:
     ts: datetime
     customer_ref: str
     channel: str
-    amount: int
+    amount: int                 # minor currency units (e.g. cents)
     beneficiary_ref: str | None
+    direction: str = "debit"    # debit (money out) | credit (money in) | unknown
+    currency: str = "KES"
 
 
 @dataclass(frozen=True, slots=True)
@@ -94,15 +96,17 @@ class Posting:
     ts: datetime
     ledger: str                 # e.g. SUSPENSE, DISPUTE, PAYROLL
     counter_ref: str | None
-    amount: int
+    amount: int                 # minor currency units (e.g. cents)
     entered_by_ref: str
     approved_by_ref: str | None
     manual: bool
     narrative: str
+    currency: str = "KES"
 
 
 @dataclass
 class Dataset:
+    currency: str = "KES"       # base currency for the dataset
     staff: dict[str, Staff] = field(default_factory=dict)
     accounts: dict[str, SysAccount] = field(default_factory=dict)
     assignments: dict[str, set[str]] = field(default_factory=dict)

@@ -13,13 +13,10 @@ from __future__ import annotations
 
 
 import csv
-
-from collections import defaultdict
-
+from collections import Counter, defaultdict
 from dataclasses import dataclass, field
-
 from datetime import timedelta, timezone
-
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
 
@@ -49,7 +46,7 @@ SPEC: dict[str, tuple[str, ...]] = {
 
     "instructions": ("instruction_id", "customer_id", "kind", "received_at", "recorded_at"),
 
-    "payments": ("payment_id", "ts", "customer_id", "channel", "amount", "beneficiary"),
+    "payments": ("payment_id", "ts", "customer_id", "channel", "amount", "beneficiary", "direction"),
 
     "customers": ("customer_id", "status", "dormant_since", "deceased_flag", "is_sensitive"),
 
@@ -134,11 +131,17 @@ def _bool(v: str) -> bool:
 
 
 
-def _amount(v: str) -> int:
-
+def _amount(v: Any) -> int:
     text = (str(v) if v is not None else "").strip().replace(",", "")
-
-    return int(round(float(text)))
+    if not text:
+        return 0
+    try:
+        if "." in text:
+            d = Decimal(text)
+            return int((d * Decimal(100)).to_integral_exact())
+        return int(text)
+    except (InvalidOperation, ValueError):
+        return int(round(float(text)))
 
 
 
@@ -342,14 +345,34 @@ def ingest_dir(directory: str | Path, pseudonymiser: Pseudonymiser, mapping: Map
 
 
     def pay(r, _):
-
         c = ps.ref("cus", r["customer_id"])
-
         if not c:
-
             raise ValueError("missing customer_id")
-
-        ds.payments.append(Payment(r["payment_id"].strip(), _ts(r["ts"], q), c, r["channel"].strip().lower(), _amount(r["amount"]), ps.ref("bank_account", r["beneficiary"])))
+        raw_dir = r.get("direction")
+        if raw_dir is None or not str(raw_dir).strip():
+            direction = "unknown" if "payments.direction" in ds.absent_fields else "debit"
+        else:
+            dir_val = str(raw_dir).strip().lower()
+            if dir_val in {"debit", "dr", "out", "outbound", "payment", "dr_txn"}:
+                direction = "debit"
+            elif dir_val in {"credit", "cr", "in", "inbound", "deposit", "cr_txn"}:
+                direction = "credit"
+            elif dir_val in {"unknown", "unspecified"}:
+                direction = "unknown"
+            else:
+                direction = "unknown"
+                q.unmapped_values.setdefault("payments", Counter())[f"direction={str(raw_dir).strip()}"] += 1
+        currency = (r.get("currency") or "KES").strip().upper()
+        ds.payments.append(Payment(
+            r["payment_id"].strip(),
+            _ts(r["ts"], q),
+            c,
+            r["channel"].strip().lower(),
+            _amount(r["amount"]),
+            ps.ref("bank_account", r["beneficiary"]),
+            direction,
+            currency,
+        ))
 
 
 
@@ -378,7 +401,19 @@ def ingest_dir(directory: str | Path, pseudonymiser: Pseudonymiser, mapping: Map
         # counterparties are customer/CIF references in the current model.
         counter_kind = "bank_account" if ledger == "PAYROLL" else "cus"
         counter_ref = ps.ref(counter_kind, r["counter_party"])
-        ds.postings.append(Posting(r["posting_id"].strip(), _ts(r["ts"], q), ledger, counter_ref, _amount(r["amount"]), ent, ps.ref("acc", r["approved_by_account"]), _bool(r["manual"]), r["narrative"].strip().upper()))
+        currency = (r.get("currency") or "KES").strip().upper()
+        ds.postings.append(Posting(
+            r["posting_id"].strip(),
+            _ts(r["ts"], q),
+            ledger,
+            counter_ref,
+            _amount(r["amount"]),
+            ent,
+            ps.ref("acc", r["approved_by_account"]),
+            _bool(r["manual"]),
+            r["narrative"].strip().upper(),
+            currency,
+        ))
 
 
 
@@ -443,34 +478,23 @@ def ingest_dir(directory: str | Path, pseudonymiser: Pseudonymiser, mapping: Map
 
 
 
-    # CRM coverage per branch: if a branch's staff almost never appear in service requests, absence of a request proves nothing there.
+    # CRM coverage: if CRM is missing or tickets carry no handler, access justification cannot be assessed.
+    crm_feed_usable = "crm" in ds.available and "service_requests.staff_id" not in ds.absent_fields
 
-    if "hr" in ds.available:
-
+    if not crm_feed_usable:
+        q.notes.append("No usable CRM feed (missing, or tickets carry no handler): access justification cannot be assessed; findings will disclose this limitation.")
+        if "hr" in ds.available:
+            ds.crm_gap_branches = {s.branch for s in ds.staff.values()}
+            q.crm_gap_branches = sorted(ds.crm_gap_branches)
+    elif "hr" in ds.available:
         branches = {s.branch for s in ds.staff.values()}
-
-        if "crm" not in ds.available or "service_requests.staff_id" in ds.absent_fields:
-
-            ds.crm_gap_branches = set(branches)
-
-            q.notes.append("No usable CRM feed (missing, or tickets carry no handler): access justification cannot be assessed anywhere; findings will say so.")
-
-        else:
-
-            with_req = {r.staff_ref for r in ds.requests if r.staff_ref}
-
-            for b in branches:
-
-                members = [s.staff_ref for s in ds.staff.values() if s.branch == b and s.status == "active"]
-
-                if members and sum(1 for m in members if m in with_req) / len(members) < 0.5:
-
-                    ds.crm_gap_branches.add(b)
-
+        with_req = {r.staff_ref for r in ds.requests if r.staff_ref}
+        for b in branches:
+            members = [s.staff_ref for s in ds.staff.values() if s.branch == b and s.status == "active"]
+            if members and sum(1 for m in members if m in with_req) / len(members) < 0.5:
+                ds.crm_gap_branches.add(b)
         q.crm_gap_branches = sorted(ds.crm_gap_branches)
-
         if ds.crm_gap_branches:
-
             q.notes.append("CRM coverage is low for: " + ", ".join(sorted(ds.crm_gap_branches)) + ". Access-justification findings are downgraded to context there.")
 
     return ds, q

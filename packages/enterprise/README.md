@@ -20,7 +20,7 @@ Built on `toroka_core` (shared with the consumer app): typed evidence, source-in
 ```
 export PYTHONPATH=../smart-scam-identifier/packages/core:.     # or TOROKA_CORE_PATH for tests
 python -m toroka_enterprise demo            # synthetic end-to-end
-python -m pytest -q                         # 66 tests
+python -m pytest -q                         # 82 tests (including 34 data-contract & detector-safety tests)
 TOROKA_ENT_SECRET=... TOROKA_ENT_VAULT_KEY=$(python -m toroka_enterprise keygen) \
   python -m toroka_enterprise scan --data ./extracts --out ./out
 ```
@@ -49,17 +49,19 @@ Each scenario detector evaluates to one of four readiness states:
 - **`CHECK`**: Feeds and fields are present, but relevant action codes or event types were not observed in the dataset (potential mapping gap or quiet period).
 - **`BLIND`**: A material required feed or field is missing (e.g. no `portfolio` assignments, no `postings`, or missing `salary_account` in HR roster).
 
-### 3. Detector-to-Feed Dependency Matrix
+### 3. Detector-to-Feed Dependency Matrix (Centrally Registry-Driven)
+The central registry in `data_contract.py` (`DETECTOR_DEPENDENCIES`) is the single source of truth for dependencies, degradation rules, and remediation hints. All detectors attributing activity to staff formally declare `system_accounts`.
+
 | Detector ID | Scenario | Required Feeds | Required Fields | Supporting Feeds / Fields |
 |---|---|---|---|---|
-| `access_justification` | Access Justification | `audit_log`, `portfolio` | `audit_log.*`, `portfolio.*` | `service_requests.staff_id` |
-| `bulk_unjustified_browsing` | Bulk Browsing | `audit_log`, `portfolio` | `audit_log.*`, `portfolio.*` | `customers.is_sensitive`, `service_requests` |
-| `auth_channel_change` | Contact / Auth Change | `audit_log`, `instructions` | `audit_log.*`, `instructions.*` | `audit_log.approver_account_id` |
-| `account_lifecycle` | Dormant / Deceased Reactivation | `audit_log`, `customers`, `instructions` | `audit_log.*`, `customers.status`, `instructions.*` | `audit_log.approver_account_id`, `customers.deceased_flag` |
-| `change_then_money` | Change Followed by Money | `audit_log`, `payments`, `instructions` | `audit_log.*`, `payments.*`, `instructions.*` | `payments.beneficiary`, `payments.channel` |
-| `suspense_posting_integrity` | Suspense / Dispute Postings | `postings` | `postings.*`, `postings.approved_by_account` | `postings.counter_party`, `payments` |
-| `payroll_beneficiary_integrity` | Payroll Beneficiary Integrity | `postings`, `hr_roster` | `postings.*`, `hr_roster.salary_account` | `postings.counter_party` |
-| `entitlement_integrity` | Entitlement & Leaver Activity | `system_accounts` | `system_accounts.*` | `system_accounts.is_privileged`, `hr_roster` |
+| `access_justification` | Access Justification | `audit_log`, `portfolio`, `system_accounts` | `audit_log.*`, `portfolio.*`, `system_accounts.*` | `service_requests.staff_id`, `customers.is_sensitive` |
+| `bulk_unjustified_browsing` | Bulk Browsing | `audit_log`, `portfolio`, `system_accounts` | `audit_log.*`, `portfolio.*`, `system_accounts.*` | `service_requests.staff_id`, `customers.is_sensitive` |
+| `auth_channel_change` | Contact / Auth Change | `audit_log`, `instructions`, `system_accounts` | `audit_log.*`, `instructions.*`, `system_accounts.*` | `audit_log.approver_account_id` |
+| `account_lifecycle` | Dormant / Deceased Reactivation | `audit_log`, `customers`, `instructions`, `system_accounts` | `audit_log.*`, `customers.status`, `instructions.*`, `system_accounts.*` | `audit_log.approver_account_id`, `customers.deceased_flag` |
+| `change_then_money` | Change Followed by Money | `audit_log`, `payments`, `instructions`, `system_accounts` | `audit_log.*`, `payments.*`, `instructions.*`, `system_accounts.*` | `payments.direction`, `payments.beneficiary`, `payments.channel` |
+| `suspense_posting_integrity` | Suspense / Dispute Postings | `postings`, `system_accounts` | `postings.*`, `postings.approved_by_account`, `system_accounts.*` | `postings.counter_party`, `payments.customer_id` |
+| `payroll_beneficiary_integrity` | Payroll Beneficiary Integrity | `postings`, `hr_roster`, `system_accounts` | `postings.*`, `postings.counter_party`, `hr_roster.salary_account`, `system_accounts.*` | None |
+| `entitlement_integrity` | Entitlement & Leaver Activity | `system_accounts` | `system_accounts.*` | `system_accounts.is_privileged`, `hr_roster`, `audit_log` |
 
 ### 4. How to Generate the Data Contract
 Generate the bank-facing data catalogue in Markdown or machine-readable JSON:
@@ -83,6 +85,14 @@ python -m toroka_enterprise validate --data ./extracts --mapping mapping.toml --
 
 ### 6. Absent Field Reporting & Ingest Consistency
 Both canonical CSVs (`_read`) and mapped extracts (`read_mapped`) consistently record unsupplied optional fields into `DataQuality.absent_fields` using qualified `feed.field` naming without duplicates. When a material field is absent (e.g. `system_accounts.is_privileged`), scenario detectors stand down or report degraded context rather than manufacturing an unsupported fraud accusation.
+
+### 7. Detector Safety, Monetary Precision & Data Integrity Safeguards (Build 2)
+The Phase 2 Build 2 hardening addresses key bank evaluation safeguards:
+- **Safe Payroll Beneficiary Evaluation**: Unresolved or missing destination accounts (`counter_ref is None`) are never classified as non-employee fraud; they produce neutral `context` evidence. Only confirmed destinations compared against the active HR roster produce `risk` findings. If `postings.counter_party` is absent, the detector stands down.
+- **Canonical Payment Direction**: `Payment.direction` categorises movements as `debit`, `credit`, or `unknown`. The `change_then_money` detector filters out incoming credits (e.g. salary deposits, customer refunds) and only flags uninstructed profile alterations followed by outbound debits. When direction is missing or unknown, findings are downgraded to `context`.
+- **Exact Minor Currency Representation**: All amounts are represented and calculated as exact integer minor currency units (cents, scale 100 for KES) parsed via `Decimal` without binary floating-point rounding errors. Multi-currency aggregation is strictly prevented; totals are only labeled KES/KSh if explicitly confirmed.
+- **Independent CRM Gap Handling**: Missing CRM feeds or missing `service_requests.staff_id` columns are recognised independently of HR roster availability, ensuring profile lookups in branches with missing ticketing integrations are safely disclosed as unverified rather than flagged as malicious.
+- **Contract Version 2.0.0 & Fingerprint Pinning**: Bumped contract version to `2.0.0`. Run manifests deterministically hash the new contract schema and dependency registry, preventing obsolete manifests from silently executing under updated rules.
 
 ## Working on any system (no per-bank code)
 The engine never sees a core-banking vendor. A bank's exports are translated into the canonical feeds by a **mapping file** (TOML): per feed, which file/glob, delimiter, encoding, which source column is each canonical column, the timestamp format (`iso`, `epoch_s`, `epoch_ms` or any strptime pattern), and how the bank's codes translate (action codes, suspense GL codes, status flags).

@@ -9,7 +9,7 @@ from typing import Any
 from .ingest import FEED_KEY, REQUIRED, SPEC
 from .mapping import OPTIONAL
 
-CONTRACT_VERSION = "1.0.0"
+CONTRACT_VERSION = "2.0.0"
 
 
 @dataclass(frozen=True, slots=True)
@@ -267,15 +267,23 @@ FIELD_METADATA: dict[str, dict[str, dict[str, Any]]] = {
         },
         "amount": {
             "data_type": "integer",
-            "description": "Transaction amount in minor currency units (cents).",
+            "description": "Transaction amount in integer minor currency units (e.g. cents, where 100 = 1.00 KES).",
             "pii_classification": "financial_amount",
             "is_timestamp": False,
+            "notes": "Exact decimal precision is preserved using integer minor units without binary floating-point representation.",
         },
         "beneficiary": {
             "data_type": "string",
             "description": "Destination bank account, phone number, or target counterparty.",
             "pii_classification": "counterparty_identifier",
             "is_timestamp": False,
+        },
+        "direction": {
+            "data_type": "string",
+            "description": "Transaction flow direction: 'debit' (outbound money movement), 'credit' (inbound deposit), or 'unknown'.",
+            "pii_classification": "transaction_flow",
+            "is_timestamp": False,
+            "notes": "Detector-critical field for change-then-money. Unconfirmed or credit transactions are excluded from outbound money investigations.",
         },
     },
     "customers": {
@@ -337,9 +345,10 @@ FIELD_METADATA: dict[str, dict[str, dict[str, Any]]] = {
         },
         "amount": {
             "data_type": "integer",
-            "description": "Journal amount in minor currency units (cents).",
+            "description": "Journal amount in integer minor currency units (e.g. cents, where 100 = 1.00 KES).",
             "pii_classification": "financial_amount",
             "is_timestamp": False,
+            "notes": "Exact decimal precision is preserved using integer minor units without binary floating-point representation.",
         },
         "entered_by_account": {
             "data_type": "string",
@@ -387,7 +396,7 @@ DETECTOR_DEPENDENCIES: tuple[DetectorDependency, ...] = (
         detector_id="access_justification",
         label="Access Justification",
         description="Surfaces customer profile lookups outside the staff member's assigned portfolio without a corresponding CRM service request.",
-        required_feeds=["audit_log", "portfolio"],
+        required_feeds=["audit_log", "portfolio", "system_accounts"],
         required_fields=[
             "audit_log.ts",
             "audit_log.account_id",
@@ -395,25 +404,26 @@ DETECTOR_DEPENDENCIES: tuple[DetectorDependency, ...] = (
             "audit_log.customer_id",
             "portfolio.staff_id",
             "portfolio.customer_id",
+            "system_accounts.account_id",
+            "system_accounts.staff_id",
         ],
-        supporting_feeds=["service_requests"],
+        supporting_feeds=["service_requests", "customers"],
         supporting_fields=[
-            "service_requests.request_id",
-            "service_requests.customer_id",
             "service_requests.staff_id",
-            "service_requests.opened_at",
+            "customers.is_sensitive",
         ],
         remediation_hints={
             "portfolio": "Export portfolio relationship manager assignments (RM_ASSIGNMENTS).",
             "service_requests": "Export CRM tickets to allow unassigned access to be justified by active customer requests.",
             "service_requests.staff_id": "Map the staff/handler field in CRM tickets to enable ticket-to-user attribution.",
+            "system_accounts": "Supply system_accounts to attribute audit logins to staff.",
         },
     ),
     DetectorDependency(
         detector_id="bulk_unjustified_browsing",
         label="Bulk Unjustified Browsing",
         description="Detects high-volume customer profile viewing across unassigned customers within rolling inspection windows.",
-        required_feeds=["audit_log", "portfolio"],
+        required_feeds=["audit_log", "portfolio", "system_accounts"],
         required_fields=[
             "audit_log.ts",
             "audit_log.account_id",
@@ -421,22 +431,25 @@ DETECTOR_DEPENDENCIES: tuple[DetectorDependency, ...] = (
             "audit_log.customer_id",
             "portfolio.staff_id",
             "portfolio.customer_id",
+            "system_accounts.account_id",
+            "system_accounts.staff_id",
         ],
         supporting_feeds=["service_requests", "customers"],
         supporting_fields=[
-            "customers.is_sensitive",
             "service_requests.staff_id",
+            "customers.is_sensitive",
         ],
         remediation_hints={
             "customers.is_sensitive": "Supply customer sensitivity flags (VIP/PEP) to highlight high-risk browsing targets.",
             "service_requests": "Supply CRM service requests to distinguish legitimate mass service work from snooping.",
+            "system_accounts": "Supply system_accounts to attribute audit logins to staff.",
         },
     ),
     DetectorDependency(
         detector_id="auth_channel_change",
         label="Authentication & Channel Change",
-        description="Detects registered contact or mobile credential updates performed without a verified customer instruction or outside business hours.",
-        required_feeds=["audit_log", "instructions"],
+        description="Detects registered contact or mobile credential updates performed without a verified customer instruction mandate.",
+        required_feeds=["audit_log", "instructions", "system_accounts"],
         required_fields=[
             "audit_log.ts",
             "audit_log.account_id",
@@ -445,8 +458,10 @@ DETECTOR_DEPENDENCIES: tuple[DetectorDependency, ...] = (
             "instructions.customer_id",
             "instructions.kind",
             "instructions.received_at",
+            "system_accounts.account_id",
+            "system_accounts.staff_id",
         ],
-        supporting_feeds=["portfolio", "instructions"],
+        supporting_feeds=["instructions"],
         supporting_fields=[
             "instructions.recorded_at",
             "audit_log.approver_account_id",
@@ -454,13 +469,14 @@ DETECTOR_DEPENDENCIES: tuple[DetectorDependency, ...] = (
         remediation_hints={
             "instructions": "Supply customer instruction register (CUSTOMER_INSTRUCTIONS) to verify contact update mandates.",
             "audit_log.approver_account_id": "Include approver account ID on audit events to verify dual-control authorization.",
+            "system_accounts": "Supply system_accounts to attribute audit logins to staff.",
         },
     ),
     DetectorDependency(
         detector_id="account_lifecycle",
         label="Dormant & Deceased Account Lifecycle",
         description="Detects reactivation of dormant or deceased customer accounts without documented customer instruction or checker authorization.",
-        required_feeds=["audit_log", "customers", "instructions"],
+        required_feeds=["audit_log", "customers", "instructions", "system_accounts"],
         required_fields=[
             "audit_log.ts",
             "audit_log.account_id",
@@ -471,6 +487,8 @@ DETECTOR_DEPENDENCIES: tuple[DetectorDependency, ...] = (
             "instructions.customer_id",
             "instructions.kind",
             "instructions.received_at",
+            "system_accounts.account_id",
+            "system_accounts.staff_id",
         ],
         supporting_feeds=["audit_log", "customers"],
         supporting_fields=[
@@ -481,13 +499,14 @@ DETECTOR_DEPENDENCIES: tuple[DetectorDependency, ...] = (
         remediation_hints={
             "audit_log.approver_account_id": "Include approver account ID on audit events to verify dual control / maker-checker.",
             "customers.deceased_flag": "Provide deceased flags on customer master to catch unauthorized reactivation of deceased accounts.",
+            "system_accounts": "Supply system_accounts to attribute audit logins to staff.",
         },
     ),
     DetectorDependency(
         detector_id="change_then_money",
         label="Change Followed by Money Movement",
         description="Detects sensitive profile modifications (contacts, reactivation) quickly followed by outbound customer payments.",
-        required_feeds=["audit_log", "payments", "instructions"],
+        required_feeds=["audit_log", "payments", "instructions", "system_accounts"],
         required_fields=[
             "audit_log.ts",
             "audit_log.account_id",
@@ -500,22 +519,27 @@ DETECTOR_DEPENDENCIES: tuple[DetectorDependency, ...] = (
             "instructions.customer_id",
             "instructions.kind",
             "instructions.received_at",
+            "system_accounts.account_id",
+            "system_accounts.staff_id",
         ],
         supporting_feeds=["payments"],
         supporting_fields=[
+            "payments.direction",
             "payments.beneficiary",
             "payments.channel",
         ],
         remediation_hints={
             "payments": "Supply payment transactions feed (PAYMENTS_FEED) to link profile changes with fund outflow.",
+            "payments.direction": "Include transaction direction (debit/credit) to exclude incoming customer deposits from cash-out analysis.",
             "payments.beneficiary": "Include payment beneficiary accounts to strengthen destination fund correlation.",
+            "system_accounts": "Supply system_accounts to attribute audit logins to staff.",
         },
     ),
     DetectorDependency(
         detector_id="suspense_posting_integrity",
         label="Suspense & Dispute Posting Integrity",
         description="Detects manual general ledger postings out of suspense/dispute accounts with missing or self-approved maker-checker authorization.",
-        required_feeds=["postings"],
+        required_feeds=["postings", "system_accounts"],
         required_fields=[
             "postings.posting_id",
             "postings.ts",
@@ -525,6 +549,8 @@ DETECTOR_DEPENDENCIES: tuple[DetectorDependency, ...] = (
             "postings.approved_by_account",
             "postings.manual",
             "postings.narrative",
+            "system_accounts.account_id",
+            "system_accounts.staff_id",
         ],
         supporting_feeds=["postings", "payments"],
         supporting_fields=[
@@ -534,13 +560,14 @@ DETECTOR_DEPENDENCIES: tuple[DetectorDependency, ...] = (
         remediation_hints={
             "postings.approved_by_account": "Include approving account ID on general ledger journals to evaluate maker-checker segregation.",
             "postings.counter_party": "Provide posting counterparty references to link suspense movements to customer cash-outs.",
+            "system_accounts": "Supply system_accounts to attribute posting maker accounts to staff.",
         },
     ),
     DetectorDependency(
         detector_id="payroll_beneficiary_integrity",
         label="Payroll Beneficiary Integrity",
         description="Detects manual payroll postings directed to beneficiary accounts that do not belong to legitimate employees on the HR roster.",
-        required_feeds=["postings", "hr_roster"],
+        required_feeds=["postings", "hr_roster", "system_accounts"],
         required_fields=[
             "postings.posting_id",
             "postings.ts",
@@ -549,17 +576,19 @@ DETECTOR_DEPENDENCIES: tuple[DetectorDependency, ...] = (
             "postings.entered_by_account",
             "postings.manual",
             "postings.narrative",
+            "postings.counter_party",
             "hr_roster.staff_id",
             "hr_roster.status",
             "hr_roster.salary_account",
+            "system_accounts.account_id",
+            "system_accounts.staff_id",
         ],
         supporting_feeds=["hr_roster", "postings"],
-        supporting_fields=[
-            "postings.counter_party",
-        ],
+        supporting_fields=[],
         remediation_hints={
             "hr_roster.salary_account": "Map employee salary bank account numbers in HR roster to verify payroll destinations.",
             "postings.counter_party": "Supply contra counterparty account numbers on payroll postings to match employee salary accounts.",
+            "system_accounts": "Supply system_accounts to attribute posting maker accounts to staff.",
         },
     ),
     DetectorDependency(

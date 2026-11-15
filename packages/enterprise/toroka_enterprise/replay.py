@@ -74,10 +74,10 @@ class _Builder:
         self.rows["instructions"].append({"instruction_id": f"I{self.n['ins']:06d}", "customer_id": cust, "kind": kind,
                                            "received_at": _t(ts), "recorded_at": _t(recorded_at) if recorded_at else ""})
 
-    def payment(self, cust, ts, amount, channel="mobile", ben=None):
+    def payment(self, cust, ts, amount, channel="mobile", ben=None, direction="debit"):
         self.n["pay"] += 1
         self.rows["payments"].append({"payment_id": f"P{self.n['pay']:06d}", "ts": _t(ts), "customer_id": cust, "channel": channel,
-                                      "amount": amount, "beneficiary": ben or f"B{self.rng.randint(1, 99999):05d}"})
+                                      "amount": amount, "beneficiary": ben or f"B{self.rng.randint(1, 99999):05d}", "direction": direction})
 
     def posting(self, ts, ledger, counter, amount, entered_staff, approver_staff, manual, narrative, account=None):
         self.n["post"] += 1
@@ -166,7 +166,7 @@ def generate(out_dir: str | Path, seed: int = 7, n_staff: int = 80, n_customers:
             b.instruction(c, "card_issue", ts - timedelta(hours=2))
             b.event(ts + timedelta(minutes=9), sid, "card_issue", c)
         if k % 4 == 0:
-            b.payment(c, ts + timedelta(days=2), rng.randint(3000, 15000), "atm")
+            b.payment(c, ts + timedelta(days=2), rng.randint(3000, 15000) * 100, "atm")
     for br in BRANCHES:                                           # legitimate reactivations: instruction + independent approver
         for _ in range(1 if br != "BR05" else 0):
             c = b.pick_cust(br, dormant=True)
@@ -182,16 +182,16 @@ def generate(out_dir: str | Path, seed: int = 7, n_staff: int = 80, n_customers:
         c = rng.choice(b.pool[b.by_id[sid]["branch"]])
         ts = b.work_ts(rng.randint(3, days - 10))
         b.request(sid, c, ts - timedelta(days=rng.randint(1, 5)), ts + timedelta(days=1), "dispute")
-        b.posting(ts, "SUSPENSE", c, rng.randint(2000, 60000), sid, peer, True, "DISPUTE_REFUND")
+        b.posting(ts, "SUSPENSE", c, rng.randint(2000, 60000) * 100, sid, peer, True, "DISPUTE_REFUND")
     for m in range(3):                                            # payroll: system run + a few benign manual adjustments to roster accounts
         for s in b.staff:
-            b.posting(START + timedelta(days=28 * m + 25, hours=1), "PAYROLL", f"SAL-{s['id']}", rng.randint(40000, 180000), payroll_a, payroll_b, False, "SALARY")
-        b.posting(START + timedelta(days=28 * m + 26), "PAYROLL", f"SAL-{rng.choice(b.staff)['id']}", rng.randint(2000, 9000), payroll_a, payroll_b, True, "SALARY")
+            b.posting(START + timedelta(days=28 * m + 25, hours=1), "PAYROLL", f"SAL-{s['id']}", rng.randint(40000, 180000) * 100, payroll_a, payroll_b, False, "SALARY")
+        b.posting(START + timedelta(days=28 * m + 26), "PAYROLL", f"SAL-{rng.choice(b.staff)['id']}", rng.randint(2000, 9000) * 100, payroll_a, payroll_b, True, "SALARY")
     for sid in admins:                                            # benign: ops staff (privileged base profile) with a second STANDARD profile
         b.extra_accounts.append({"account_id": f"A2-{sid}", "staff_id": sid, "system": "core_banking", "status": "active", "is_privileged": "false"})
     for c in b.cust:                                              # ordinary customer payments
         for _ in range(2):
-            b.payment(c, b.work_ts(rng.randint(0, days - 1)), rng.randint(500, 20000))
+            b.payment(c, b.work_ts(rng.randint(0, days - 1)), rng.randint(500, 20000) * 100)
 
     # ---- injected patterns (ground truth) ----
     def log(tid, pattern, staff, customers, basis):
@@ -200,40 +200,40 @@ def generate(out_dir: str | Path, seed: int = 7, n_staff: int = 80, n_customers:
     c = b.pick_cust("BR02"); ts = START + timedelta(days=40, hours=9, minutes=22)   # 17:22 EAT
     b.event(ts, t1a, "profile_view", c); b.event(ts + timedelta(minutes=3), t1a, "contact_change", c); b.event(ts + timedelta(minutes=9), t1a, "card_issue", c)
     for dd in (1, 2, 4):
-        b.payment(c, ts + timedelta(days=dd), 40000, "atm")
+        b.payment(c, ts + timedelta(days=dd), 40000 * 100, "atm")
     log("T1a", "authentication redirection, customer outside portfolio, after hours", t1a, [c], "OTP-redirection insider case reported by the NPA")
 
     c = sorted(b.portfolio[t1b])[0]; ts = b.work_ts(55)
     b.event(ts, t1b, "contact_change", c); b.event(ts + timedelta(minutes=6), t1b, "card_issue", c)
     for dd in (1, 3, 5):
-        b.payment(c, ts + timedelta(days=dd), 35000, "atm")
+        b.payment(c, ts + timedelta(days=dd), 35000 * 100, "atm")
     log("T1b", "authentication redirection on the staff member's own portfolio customer", t1b, [c], "OTP-redirection insider case reported by the NPA")
 
     c = b.pick_cust("BR01", dormant=True); ts = b.work_ts(70)
     b.event(ts, t2a, "account_reactivate", c, approver_staff="S0001"); b.event(ts + timedelta(minutes=40), t2a, "beneficiary_add", c)
-    b.payment(c, ts + timedelta(days=2), 250000, "rtgs")
+    b.payment(c, ts + timedelta(days=2), 250000 * 100, "rtgs")
     log("T2a", "dormant account reactivated without instruction, then beneficiary and payment", t2a, [c], "dormant-account insider cases (Kenya, South Africa)")
 
     c = b.pick_cust("BR04", dormant=True); b.cust[c]["deceased"] = True; ts = b.work_ts(82)
-    b.event(ts, t2b, "account_reactivate", c); b.payment(c, ts + timedelta(days=1), 180000, "rtgs")
+    b.event(ts, t2b, "account_reactivate", c); b.payment(c, ts + timedelta(days=1), 180000 * 100, "rtgs")
     log("T2b", "reactivation of an account flagged deceased, no approver recorded", t2b, [c], "deceased-customer account cases (Kenya, South Africa)")
 
     victims = []
     for k in range(4):
         c = b.pick_cust("BR01"); victims.append(c); ts = b.work_ts(30 + 4 * k)
-        b.posting(ts, "SUSPENSE", c, rng.randint(90000, 300000), t3a, t3a, True, "DISPUTE_REFUND")   # self-approved
-        b.payment(c, ts + timedelta(days=1), 85000, "atm")
+        b.posting(ts, "SUSPENSE", c, rng.randint(90000, 300000) * 100, t3a, t3a, True, "DISPUTE_REFUND")   # self-approved
+        b.payment(c, ts + timedelta(days=1), 85000 * 100, "atm")
     log("T3a", "self-approved manual postings out of a suspense ledger, cash-out follows", t3a, victims, "suspense-account insider cases (alleged and convicted)")
     victims = []
     for k in range(3):
         c = b.pick_cust("BR03"); victims.append(c); ts = b.work_ts(50 + 3 * k)
-        b.posting(ts, "SUSPENSE", c, rng.randint(90000, 250000), t3b, None, True, "OTHER")             # no approver
-        b.payment(c, ts + timedelta(days=2), 70000, "mobile")
+        b.posting(ts, "SUSPENSE", c, rng.randint(90000, 250000) * 100, t3b, None, True, "OTHER")             # no approver
+        b.payment(c, ts + timedelta(days=2), 70000 * 100, "mobile")
     log("T3b", "manual suspense postings with no approver recorded, cash-out follows", t3b, victims, "suspense-account insider cases (alleged and convicted)")
 
     b.extra_accounts.append({"account_id": f"A2-{payroll_b}", "staff_id": payroll_b, "system": "core_banking", "status": "active", "is_privileged": "false"})
     for k in range(7):
-        b.posting(b.work_ts(20 + 6 * k), "PAYROLL", f"EXT-{k:04d}", rng.randint(150000, 400000), payroll_b, payroll_a, True, "SALARY", account=f"A2-{payroll_b}")
+        b.posting(b.work_ts(20 + 6 * k), "PAYROLL", f"EXT-{k:04d}", rng.randint(150000, 400000) * 100, payroll_b, payroll_a, True, "SALARY", account=f"A2-{payroll_b}")
     log("T4", "duplicate core-banking profile used for manual salary postings to non-employees", payroll_b, [f"EXT-{k:04d}" for k in range(7)], "alleged salary-ledger diversion (Kenya, 2023-24)")
 
     victims = rng.sample([c for c in b.pool["BR04"] if c not in set().union(*(v for k, v in b.portfolio.items() if b.by_id[k]['role'] != 'branch_manager'))], 39)

@@ -111,9 +111,9 @@ def test_decimal_and_comma_amounts_parsed_correctly(tmp_path):
 
     assert q.rows_rejected == {}
 
-    assert ds.payments[0].amount == 1500
+    assert ds.payments[0].amount == 150050
 
-    assert ds.postings[0].amount == 725280
+    assert ds.postings[0].amount == 72528000
 
 
 
