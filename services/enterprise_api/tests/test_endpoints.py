@@ -86,7 +86,6 @@ def test_22_security_headers_and_correlation_id(oidc_client):
 
 
 def test_23_production_disables_documentation_routes():
-    from cryptography.fernet import Fernet
     prod_settings = EnterpriseSettings(
         environment="production",
         auth_mode="oidc",
@@ -94,8 +93,8 @@ def test_23_production_disables_documentation_routes():
         oidc_audience="toroka-enterprise",
         oidc_jwks_url="https://idp.bank.local/.well-known/jwks.json",
         database_url="postgresql+psycopg://db.bank.local/toroka",
-        vault_database_url="postgresql+psycopg://vault.bank.local/toroka_vault",
-        vault_key=Fernet.generate_key().decode(),
+        vault_service_url="https://vault.bank.local",
+        expected_schema_revision="002_case_closure_proposals",
     )
     prod_app = create_app(prod_settings)
     client = TestClient(prod_app, client=("127.0.0.1", 50000))

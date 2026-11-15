@@ -48,6 +48,16 @@ def get_vault_repo(
     return IdentityVaultRepository(vault_db, cipher)
 
 
+def get_vault_client(request: Request):
+    from .vault_client import LocalVaultClient, RemoteVaultClient
+    client = getattr(request.app.state, "vault_client", None)
+    if isinstance(client, RemoteVaultClient):
+        return client
+    factory = getattr(request.app.state, "vault_session_factory", None)
+    cipher = getattr(request.app.state, "vault_cipher", None)
+    return LocalVaultClient(factory, cipher)
+
+
 def get_case_service(
     db: Session = Depends(get_db),
 ) -> CaseService:
@@ -56,9 +66,9 @@ def get_case_service(
 
 def get_reveal_service(
     db: Session = Depends(get_db),
-    vault_repo: IdentityVaultRepository = Depends(get_vault_repo),
+    vault_client = Depends(get_vault_client),
 ) -> RevealService:
-    return RevealService(db, vault_repo)
+    return RevealService(db, vault_client)
 
 
 def get_run_service(

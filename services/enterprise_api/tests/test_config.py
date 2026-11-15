@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import pytest
 
-from toroka_enterprise_api.config import EnterpriseSettings
+from toroka_enterprise_api.config import EnterpriseSettings, read_setting
 
 
 def test_config_from_env_defaults(monkeypatch):
@@ -26,13 +26,32 @@ def test_config_from_env_custom(monkeypatch):
     monkeypatch.setenv("TOROKA_ENT_OIDC_JWKS_URL", "https://idp.bank.local/jwks")
     monkeypatch.setenv("TOROKA_ENT_ROLE_MAP_JSON", '{"GRP_INV": "investigator"}')
     monkeypatch.setenv("TOROKA_ENT_DATABASE_URL", "postgresql+psycopg://db.bank.local/toroka")
-    monkeypatch.setenv("TOROKA_ENT_VAULT_DATABASE_URL", "postgresql+psycopg://vault.bank.local/toroka_vault")
-    monkeypatch.setenv("TOROKA_ENT_VAULT_KEY", "test-vault-secret-key")
+    monkeypatch.setenv("TOROKA_ENT_VAULT_SERVICE_URL", "https://vault.bank.local")
+    monkeypatch.setenv("TOROKA_ENT_EXPECTED_SCHEMA_REVISION", "002_case_closure_proposals")
+    monkeypatch.delenv("TOROKA_ENT_VAULT_KEY", raising=False)
 
     cfg = EnterpriseSettings.from_env()
     assert cfg.environment == "production"
     assert cfg.role_map == {"GRP_INV": "investigator"}
+    assert cfg.vault_service_url == "https://vault.bank.local"
+    assert cfg.expected_schema_revision == "002_case_closure_proposals"
     cfg.validate()
+
+
+def test_read_setting_from_file(tmp_path, monkeypatch):
+    secret_file = tmp_path / "secret_db_url.txt"
+    secret_file.write_text("postgresql+psycopg://user:pass@db:5432/toroka\n", encoding="utf-8")
+
+    monkeypatch.setenv("TOROKA_TEST_URL_FILE", str(secret_file))
+    val = read_setting("TOROKA_TEST_URL", default="fallback")
+    assert val == "postgresql+psycopg://user:pass@db:5432/toroka"
+
+
+def test_read_setting_missing_file(tmp_path, monkeypatch):
+    non_existent = tmp_path / "missing.txt"
+    monkeypatch.setenv("TOROKA_TEST_URL_FILE", str(non_existent))
+    with pytest.raises(RuntimeError, match="unavailable"):
+        read_setting("TOROKA_TEST_URL", default="fallback")
 
 
 def test_config_invalid_json_role_map(monkeypatch):

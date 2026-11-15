@@ -1,0 +1,141 @@
+services:
+  enterprise-db:
+    image: postgres:16
+    restart: unless-stopped
+
+    environment:
+      POSTGRES_USER: toroka_ent
+      POSTGRES_DB: toroka_enterprise
+      POSTGRES_PASSWORD_FILE: /run/secrets/enterprise_db_password
+
+    secrets:
+      - enterprise_db_password
+
+    volumes:
+      - enterprise_data:/var/lib/postgresql/data
+
+    networks:
+      - operational_db
+
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U toroka_ent -d toroka_enterprise
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  vault-db:
+    image: postgres:16
+    restart: unless-stopped
+
+    environment:
+      POSTGRES_USER: toroka_vault
+      POSTGRES_DB: toroka_vault
+      POSTGRES_PASSWORD_FILE: /run/secrets/vault_db_password
+
+    secrets:
+      - vault_db_password
+
+    volumes:
+      - vault_data:/var/lib/postgresql/data
+
+    networks:
+      - vault_database
+
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U toroka_vault -d toroka_vault
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  identity-vault:
+    build:
+      context: .
+      dockerfile: services/identity_vault/Dockerfile
+
+    restart: unless-stopped
+
+    environment:
+      TOROKA_VAULT_ENV: production
+      TOROKA_VAULT_DATABASE_URL_FILE: /run/secrets/vault_database_url
+      TOROKA_VAULT_SERVICE_TOKEN_FILE: /run/secrets/vault_service_token
+
+    secrets:
+      - vault_database_url
+      - vault_service_token
+
+    depends_on:
+      vault-db:
+        condition: service_healthy
+
+    networks:
+      - vault_service
+      - vault_database
+
+  enterprise-api:
+    build:
+      context: .
+      dockerfile: services/enterprise_api/Dockerfile
+
+    restart: unless-stopped
+
+    environment:
+      TOROKA_ENT_ENV: production
+      TOROKA_ENT_AUTH_MODE: oidc
+      TOROKA_ENT_DATABASE_URL_FILE: /run/secrets/enterprise_database_url
+      TOROKA_ENT_VAULT_SERVICE_URL: http://identity-vault:8200
+      TOROKA_ENT_VAULT_SERVICE_TOKEN_FILE: /run/secrets/vault_service_token
+
+    secrets:
+      - enterprise_database_url
+      - vault_service_token
+
+    depends_on:
+      enterprise-db:
+        condition: service_healthy
+      identity-vault:
+        condition: service_started
+
+    ports:
+      - "127.0.0.1:8101:8101"
+
+    networks:
+      - application
+      - operational_db
+      - vault_service
+
+networks:
+  application:
+    internal: true
+
+  operational_db:
+    internal: true
+
+  vault_service:
+    internal: true
+
+  vault_database:
+    internal: true
+
+volumes:
+  enterprise_data:
+  vault_data:
+
+secrets:
+  enterprise_db_password:
+    file: ./secrets/enterprise_db_password.txt
+
+  vault_db_password:
+    file: ./secrets/vault_db_password.txt
+
+  enterprise_database_url:
+    file: ./secrets/enterprise_database_url.txt
+
+  vault_database_url:
+    file: ./secrets/vault_database_url.txt
+
+  vault_service_token:
+    file: ./secrets/vault_service_token.txt

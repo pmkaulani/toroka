@@ -22,8 +22,8 @@ dev = ["pytest>=8", "hypothesis>=6"]
 postgres = ["psycopg[binary]>=3.1"]
 
 [tool.pytest.ini_options]
-pythonpath = ["packages/core", "packages/enterprise", "packages/rules", "packages/connectors", "services/api", "services/enterprise_api"]
-testpaths = ["packages/core/tests", "packages/enterprise/tests", "packages/rules/tests", "packages/connectors/tests", "services/api/tests", "services/enterprise_api/tests"]
+pythonpath = ["packages/core", "packages/enterprise", "packages/rules", "packages/connectors", "services/api", "services/enterprise_api", "services/identity_vault"]
+testpaths = ["packages/core/tests", "packages/enterprise/tests", "packages/rules/tests", "packages/connectors/tests", "services/api/tests", "services/enterprise_api/tests", "services/identity_vault/tests"]
 filterwarnings = [
   "ignore:Using ephemeral development keys:UserWarning",          # expected in tests: keys are generated per run
   "ignore:Using `httpx` with `starlette.testclient`:DeprecationWarning",   # third-party notice about the test client

@@ -27,35 +27,49 @@ def health_live():
 def health_ready(
     request: Request,
 ):
-    """Database and vault readiness probe. Fails safely if persistence cannot be reached."""
+    """Deep readiness probe verifying database connectivity, schema revision, vault service, and audit subsystem."""
     from sqlalchemy import text
 
+    settings = getattr(request.app.state, "settings", None)
     session_factory = getattr(request.app.state, "session_factory", None)
     if session_factory is None:
         return JSONResponse(
             status_code=503,
-            content={"status": "not_ready", "reason": "Operational database not configured"},
+            content={"status": "not_ready", "detail": "Operational database not configured"},
         )
 
     try:
         with session_factory() as db:
             db.execute(text("SELECT 1"))
+            if settings and getattr(settings, "expected_schema_revision", ""):
+                try:
+                    revisions = db.execute(
+                        text("SELECT version_num FROM alembic_version")
+                    ).scalars().all()
+                    if settings.expected_schema_revision not in revisions:
+                        raise RuntimeError("Operational schema revision mismatch")
+                except Exception as exc:
+                    if "Operational schema revision mismatch" in str(exc):
+                        raise
+                    raise RuntimeError("Unable to verify alembic migration version") from exc
+
+        # Check vault client readiness
+        vault_client = getattr(request.app.state, "vault_client", None)
+        if vault_client is not None:
+            if not vault_client.health_ready():
+                raise RuntimeError("Vault is not ready")
+
+        # Check audit healthcheck
+        audit_check = getattr(request.app.state, "audit_healthcheck", None)
+        if audit_check is not None:
+            if not audit_check():
+                raise RuntimeError("Audit subsystem is not ready")
+
     except Exception:
         return JSONResponse(
             status_code=503,
-            content={"status": "not_ready", "reason": "Operational database connection failed"},
+            content={"status": "not_ready", "detail": "Service dependencies are unavailable"},
         )
-
-    vault_factory = getattr(request.app.state, "vault_session_factory", None)
-    if vault_factory is not None:
-        try:
-            with vault_factory() as vdb:
-                vdb.execute(text("SELECT 1"))
-        except Exception:
-            return JSONResponse(
-                status_code=503,
-                content={"status": "not_ready", "reason": "Identity vault database connection failed"},
-            )
 
     return {
         "status": "ready",

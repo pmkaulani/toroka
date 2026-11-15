@@ -1,0 +1,80 @@
+name: Toroka CI & Security Hardening Verification
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  python-tests:
+    name: Backend Test Suites & Security Hardening
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        run: pip install --no-cache-dir uv
+
+      - name: Install dependencies
+        run: uv sync --frozen --extra postgres --dev
+
+      - name: Run Core Tests
+        run: uv run pytest packages/core/tests -q
+
+      - name: Run Enterprise Engine Tests
+        run: uv run pytest packages/enterprise/tests -q
+
+      - name: Run Enterprise API Tests & Hardening
+        run: uv run pytest services/enterprise_api/tests -q
+
+      - name: Run Isolated Identity Vault Tests
+        run: uv run pytest services/identity_vault/tests -q
+
+      - name: Run Consumer API Tests
+        run: uv run pytest services/api/tests -q
+
+  workbench-build:
+    name: Enterprise Workbench Typecheck & Build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/enterprise-workbench
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Type-check and Build Workbench
+        run: npm run build
+
+  security-checks:
+    name: Static Security & Secret Audit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Verify no plaintext secrets committed
+        run: |
+          if git grep -I -E "BEGIN (RSA|OPENSSH|EC|PRIVATE) KEY" -- ':!*.example' ':!*.template'; then
+            echo "Private key detected in repository!"
+            exit 1
+          fi
+          echo "Secret check clean."

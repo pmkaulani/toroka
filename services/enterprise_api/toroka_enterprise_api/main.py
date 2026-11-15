@@ -1,9 +1,13 @@
 """Toroka Enterprise API application assembly."""
 from __future__ import annotations
 
-from pathlib import Path
+import logging
+import re
+import time
 import uuid
+from collections import defaultdict
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from cryptography.fernet import Fernet
 from fastapi import FastAPI, Request
@@ -21,6 +25,15 @@ from .routers.governance import router as governance_router
 from .routers.reveals import router as reveals_router
 from .routers.runs import router as runs_router
 from .routers.system import router as system_router
+from .vault_client import LocalVaultClient, RemoteVaultClient
+
+logger = logging.getLogger(__name__)
+
+SAFE_CORRELATION_ID = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
+
+# In-memory tracking for sensitive endpoint rate limits
+_SENSITIVE_CALL_TIMESTAMPS: dict[str, list[float]] = defaultdict(list)
+_MAX_SENSITIVE_CALLS_PER_MINUTE = 20
 
 
 def create_app(
@@ -55,22 +68,48 @@ def create_app(
     app.state.engine = build_engine(settings.database_url, production=production)
     app.state.session_factory = build_session_factory(app.state.engine)
 
-    # Identity vault engine and session factory
-    app.state.vault_engine = build_engine(settings.vault_database_url, production=production)
-    app.state.vault_session_factory = build_session_factory(app.state.vault_engine)
-
-    # Identity vault cipher
-    if settings.vault_key:
-        vault_keys = {settings.vault_key_version: settings.vault_key}
-        app.state.vault_cipher = FernetVaultCipher(
-            vault_keys, current_version=settings.vault_key_version
+    # Identity vault client setup
+    if settings.vault_service_url:
+        app.state.vault_client = RemoteVaultClient(
+            settings.vault_service_url,
+            service_token=settings.vault_service_token,
         )
     else:
-        # Development fallback: generate ephemeral key
-        dev_key = Fernet.generate_key().decode("utf-8")
-        app.state.vault_cipher = FernetVaultCipher(
-            {"v1": dev_key}, current_version="v1"
+        # Local development / test vault setup
+        app.state.vault_engine = build_engine(settings.vault_database_url, production=production)
+        app.state.vault_session_factory = build_session_factory(app.state.vault_engine)
+        if settings.vault_key:
+            vault_keys = {settings.vault_key_version: settings.vault_key}
+            app.state.vault_cipher = FernetVaultCipher(
+                vault_keys, current_version=settings.vault_key_version
+            )
+        else:
+            dev_key = Fernet.generate_key().decode("utf-8")
+            app.state.vault_cipher = FernetVaultCipher(
+                {"v1": dev_key}, current_version="v1"
+            )
+        app.state.vault_client = LocalVaultClient(
+            app.state.vault_session_factory,
+            app.state.vault_cipher,
         )
+
+    # Audit subsystem healthcheck
+    def audit_healthcheck() -> bool:
+        try:
+            with app.state.session_factory() as db:
+                from sqlalchemy import text
+                db.execute(text("SELECT 1 FROM enterprise_audit_heads LIMIT 1"))
+            return True
+        except Exception:
+            try:
+                with app.state.session_factory() as db:
+                    from sqlalchemy import text
+                    db.execute(text("SELECT 1"))
+                return True
+            except Exception:
+                return False
+
+    app.state.audit_healthcheck = audit_healthcheck
 
     # OIDC JWKS Client
     app.state.jwks_client = (
@@ -84,14 +123,27 @@ def create_app(
         else None
     )
 
-    # Enable CORS for institutional workbench and development tooling
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=["*"],
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
+    # Only enable CORS when an explicit origin allowlist exists.
+    # Same-origin production workbench does not require CORS.
+    if settings.cors_allowed_origins:
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=list(settings.cors_allowed_origins),
+            allow_credentials=False,
+            allow_methods=[
+                "GET",
+                "POST",
+                "PUT",
+                "PATCH",
+                "DELETE",
+            ],
+            allow_headers=[
+                "Authorization",
+                "Content-Type",
+                "X-Correlation-ID",
+            ],
+            max_age=600,
+        )
 
     # Include API Routers
     app.include_router(system_router)
@@ -108,10 +160,46 @@ def create_app(
 
     @app.middleware("http")
     async def security_and_correlation_headers(request: Request, call_next):
-        correlation_id = request.headers.get("X-Correlation-ID") or uuid.uuid4().hex
+        supplied_id = request.headers.get("X-Correlation-ID", "")
+        if SAFE_CORRELATION_ID.fullmatch(supplied_id):
+            correlation_id = supplied_id
+        else:
+            correlation_id = uuid.uuid4().hex
+
+        # Request body size protection (e.g. 10MB limit)
+        content_length = request.headers.get("Content-Length")
+        if content_length:
+            try:
+                if int(content_length) > 10 * 1024 * 1024:
+                    return JSONResponse(
+                        {"error": "payload_too_large", "detail": "Request body exceeds maximum size of 10MB"},
+                        status_code=413,
+                    )
+            except ValueError:
+                pass
+
+        # Ingress abuse protection: rate limit sensitive reveal-consumption endpoints
+        path = request.url.path
+        if "/reveal-requests/" in path and path.endswith("/consume"):
+            client_ip = request.client.host if request.client else "unknown"
+            now = time.time()
+            recent_times = [t for t in _SENSITIVE_CALL_TIMESTAMPS[client_ip] if now - t < 60.0]
+            _SENSITIVE_CALL_TIMESTAMPS[client_ip] = recent_times
+            if len(recent_times) >= _MAX_SENSITIVE_CALLS_PER_MINUTE:
+                logger.warning("Rate limit exceeded for reveal consume on IP %s", client_ip)
+                return JSONResponse(
+                    {"error": "rate_limit_exceeded", "detail": "Rate limit exceeded for sensitive operation"},
+                    status_code=429,
+                )
+            _SENSITIVE_CALL_TIMESTAMPS[client_ip].append(now)
+
         try:
             response = await call_next(request)
         except Exception:
+            logger.exception(
+                "Unhandled Enterprise API exception",
+                extra={"correlation_id": correlation_id},
+            )
             response = JSONResponse(
                 {
                     "error": "internal_error",
@@ -119,11 +207,21 @@ def create_app(
                 },
                 status_code=500,
             )
+
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Referrer-Policy"] = "no-referrer"
         response.headers["Cache-Control"] = "no-store"
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["X-Correlation-ID"] = correlation_id
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'self'; "
+            "script-src 'self'; "
+            "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+            "font-src 'self' https://fonts.gstatic.com; "
+            "img-src 'self' data:; "
+            "connect-src 'self'; "
+            "frame-ancestors 'none';"
+        )
         return response
 
     return app

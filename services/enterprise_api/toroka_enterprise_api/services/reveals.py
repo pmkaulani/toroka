@@ -236,8 +236,20 @@ class RevealService:
         if req.requested_by != principal.subject:
             raise PermissionError("Only the original requesting investigator may consume this reveal token.")
 
+        case = self.cases.get_by_id(req.case_id)
+        inst_id = case.installation_id if case else "default"
+
         # Decrypt from the separated vault
-        plaintext = self.vault_repo.retrieve_and_decrypt(req.pseudonym)
+        if hasattr(self.vault_repo, "consume_reveal"):
+            plaintext = self.vault_repo.consume_reveal(
+                installation_id=inst_id,
+                pseudonym=req.pseudonym,
+                request_id=req.id,
+                requester_subject=principal.subject,
+            )
+        else:
+            plaintext = self.vault_repo.retrieve_and_decrypt(req.pseudonym)
+
         if plaintext is None:
             # If vault retrieval fails, do NOT mark consumed!
             raise LookupError(f"Pseudonym '{req.pseudonym}' could not be resolved in the identity vault")
@@ -245,9 +257,6 @@ class RevealService:
         # Atomically mark as consumed
         req.status = "used"
         req.used_at = now
-
-        case = self.cases.get_by_id(req.case_id)
-        inst_id = case.installation_id if case else "default"
 
         # Audit consumption: NEVER log the plaintext identity!
         append_audit(

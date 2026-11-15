@@ -6,12 +6,15 @@ __pycache__/
 node_modules/
 ssi.db
 evidence_store/
-.env
 
 # Local secrets and credentials
 .env
 .env.*
 !.env.example
+secrets/*
+!secrets/README.md
+!secrets/*.example
+!secrets/*.template
 
 # Local environments, caches, and generated files
 .venv/
@@ -41,8 +44,5 @@ packages/rules/ssi_rules/ml/models/telemetry.jsonl
 packages/rules/ssi_rules/ml/data/sources/sources_state.json
 packages/rules/ssi_rules/ml/data/staging_samples.jsonl
 packages/rules/ssi_rules/ml/data/feedback_queue.jsonl
-
-# GitHub Workflows (avoid OAuth workflow scope requirement)
-.github/
 
 .toroka-enterprise-hardening-backup/
