@@ -6,6 +6,7 @@ import { CaseDetailModal } from "./components/CaseDetailModal";
 import { CaseRegisterView } from "./components/CaseRegisterView";
 import { DataReadinessView } from "./components/DataReadinessView";
 import { Header } from "./components/Header";
+import { IntegrationsView } from "./components/IntegrationsView";
 import { MyCasesView } from "./components/MyCasesView";
 import { OverviewView } from "./components/OverviewView";
 import { ReviewQueuesView } from "./components/ReviewQueuesView";
@@ -84,6 +85,13 @@ export const App: React.FC = () => {
           Data Contract v2.0.0
         </button>
 
+        <button
+          className={`wb-tab ${activeTab === "integrations" ? "active" : ""}`}
+          onClick={() => setActiveTab("integrations")}
+        >
+          Source Integrations
+        </button>
+
         {(isAuditor || isAuthoriser || isAdmin) && (
           <button
             className={`wb-tab ${activeTab === "audit-trail" ? "active" : ""}`}
@@ -101,6 +109,7 @@ export const App: React.FC = () => {
         {activeTab === "cases" && <CaseRegisterView onSelectCase={(id) => setSelectedCaseId(id)} />}
         {activeTab === "review-queues" && <ReviewQueuesView />}
         {activeTab === "data-readiness" && <DataReadinessView />}
+        {activeTab === "integrations" && <IntegrationsView />}
         {activeTab === "audit-trail" && <AuditTrailView />}
       </main>
 

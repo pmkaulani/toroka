@@ -156,3 +156,75 @@ export interface DetectorReadiness {
   supporting_feeds: string[];
   missing_supporting_feeds?: string[];
 }
+
+export interface Connector {
+  connector_id: string;
+  connector_type: string;
+  source_system: string;
+  version: string;
+  enabled: boolean;
+  registered_at: string;
+  metadata: Record<string, unknown>;
+  capabilities: Record<string, unknown>;
+  cursor?: string | null;
+  records_ingested: number;
+}
+
+export interface ConnectorHealth {
+  connector_id: string;
+  healthy: boolean;
+  details?: Record<string, unknown>;
+}
+
+export interface IntegrationJob {
+  job_id: string;
+  installation_id: string;
+  connector_id: string;
+  job_type: string;
+  triggered_by: string;
+  status: "completed" | "running" | "failed";
+  started_at: string;
+  completed_at?: string | null;
+  records_received: number;
+  records_accepted: number;
+  records_rejected: number;
+  records_duplicates: number;
+  records_corrected: number;
+  error_message?: string | null;
+  cursor_before?: string | null;
+  cursor_after?: string | null;
+}
+
+export interface ReconciliationReport {
+  installation_id: string;
+  connector_id: string;
+  window_start?: string | null;
+  window_end?: string | null;
+  expected_source_count?: number | null;
+  ingested_record_count: number;
+  corrected_record_count: number;
+  rejected_record_count: number;
+  discrepancy: number;
+  status: "reconciled" | "discrepancy_detected";
+  explanation: string;
+}
+
+export interface QualityAssessment {
+  total_records: number;
+  valid_records: number;
+  rejected_records: number;
+  issues_count: number;
+  issues: Array<{
+    field: string;
+    issue_type: string;
+    message: string;
+    record_id?: string;
+  }>;
+  detector_impact: Array<{
+    detector_id: string;
+    status: "READY" | "DEGRADED" | "BLIND";
+    required_missing: string[];
+    optional_missing: string[];
+    explanation: string;
+  }>;
+}

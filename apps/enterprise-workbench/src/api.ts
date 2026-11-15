@@ -5,8 +5,13 @@ import {
   CaseNote,
   CaseSummary,
   ClosureProposal,
+  Connector,
+  ConnectorHealth,
   DataContractResponse,
+  IntegrationJob,
   Persona,
+  QualityAssessment,
+  ReconciliationReport,
   RevealRequest,
   WorkbenchOverview,
 } from "./types";
@@ -188,4 +193,54 @@ export const api = {
 
   getDataContract: (): Promise<DataContractResponse> =>
     request<DataContractResponse>("/data-contract"),
+
+  listConnectors: (): Promise<Connector[]> =>
+    request<Connector[]>("/api/enterprise/v1/integrations/connectors"),
+
+  getConnectorHealth: (connectorId: string): Promise<ConnectorHealth> =>
+    request<ConnectorHealth>(`/api/enterprise/v1/integrations/connectors/${encodeURIComponent(connectorId)}/health`),
+
+  triggerConnectorSync: (
+    connectorId: string,
+    payload: { batch_size?: number; max_batches?: number } = {}
+  ): Promise<{
+    job_id: string;
+    connector_id: string;
+    status: string;
+    records_received: number;
+    records_accepted: number;
+    records_duplicates: number;
+    records_corrected: number;
+  }> =>
+    request(`/api/enterprise/v1/integrations/connectors/${encodeURIComponent(connectorId)}/sync`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  setConnectorState: (connectorId: string, enabled: boolean): Promise<Connector> =>
+    request<Connector>(
+      `/api/enterprise/v1/integrations/connectors/${encodeURIComponent(connectorId)}/${enabled ? "enable" : "disable"}`,
+      { method: "POST" }
+    ),
+
+  listIntegrationJobs: (connectorId?: string): Promise<IntegrationJob[]> => {
+    const q = connectorId ? `?connector_id=${encodeURIComponent(connectorId)}` : "";
+    return request<IntegrationJob[]>(`/api/enterprise/v1/integrations/jobs${q}`);
+  },
+
+  runReconciliation: (payload: {
+    connector_id: string;
+    expected_source_count?: number;
+    window_start?: string;
+    window_end?: string;
+  }): Promise<ReconciliationReport> =>
+    request<ReconciliationReport>("/api/enterprise/v1/integrations/reconciliation", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  getQualityAssessment: (connectorId?: string): Promise<QualityAssessment> => {
+    const q = connectorId ? `?connector_id=${encodeURIComponent(connectorId)}` : "";
+    return request<QualityAssessment>(`/api/enterprise/v1/integrations/quality${q}`);
+  },
 };

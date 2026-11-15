@@ -25,6 +25,7 @@ from toroka_enterprise_api.persistence.vault import (
     IdentityVaultRepository,
     VaultBase,
 )
+from toroka_enterprise.integrations.models import IntegrationBase
 from toroka_enterprise_api.services.cases import CaseService
 from toroka_enterprise_api.services.reveals import RevealService
 from toroka_enterprise_api.services.runs import RunService
@@ -117,6 +118,7 @@ def db_engine():
         poolclass=StaticPool,
     )
     Base.metadata.create_all(engine)
+    IntegrationBase.metadata.create_all(engine)
     with Session(engine) as session:
         head = AuditHead(
             installation_id="toroka-default-installation",
@@ -126,6 +128,7 @@ def db_engine():
         session.add(head)
         session.commit()
     yield engine
+    IntegrationBase.metadata.drop_all(engine)
     Base.metadata.drop_all(engine)
     engine.dispose()
 
