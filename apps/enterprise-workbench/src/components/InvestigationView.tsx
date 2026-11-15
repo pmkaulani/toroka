@@ -1,9 +1,12 @@
 import React, { useEffect, useState } from "react";
 import { api } from "../api";
 import {
+  BehavioralAnomaly,
+  BehavioralProfile,
   CaseSummary,
   CorrelationSignal,
   InvestigationBundle,
+  InvestigationPriority,
 } from "../types";
 
 interface InvestigationViewProps {
@@ -23,8 +26,16 @@ export const InvestigationView: React.FC<InvestigationViewProps> = ({
   const [correlating, setCorrelating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeSection, setActiveSection] = useState<
-    "overview" | "timeline" | "signals" | "hypotheses" | "evidence" | "relationships"
+    "overview" | "timeline" | "signals" | "hypotheses" | "evidence" | "relationships" | "baselines"
   >("overview");
+
+  // Phase 6 Behavioral Baselines & Priority State
+  const [priority, setPriority] = useState<InvestigationPriority | null>(null);
+  const [profile, setProfile] = useState<BehavioralProfile | null>(null);
+  const [anomalies, setAnomalies] = useState<BehavioralAnomaly[]>([]);
+  const [evalDim, setEvalDim] = useState("daily_activity");
+  const [evalVal, setEvalVal] = useState<number>(15);
+  const [evaluating, setEvaluating] = useState(false);
 
   // New Hypothesis Form State
   const [newHypoTitle, setNewHypoTitle] = useState("");
@@ -52,7 +63,7 @@ export const InvestigationView: React.FC<InvestigationViewProps> = ({
       .catch(() => {});
   }, []);
 
-  // Load investigation bundle when selected case changes
+  // Load investigation bundle and behavioral baselines when selected case changes
   useEffect(() => {
     if (!selectedCaseId) return;
     setLoading(true);
@@ -62,7 +73,50 @@ export const InvestigationView: React.FC<InvestigationViewProps> = ({
       .then((data) => setBundle(data))
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
-  }, [selectedCaseId]);
+
+    api
+      .getCasePriority(selectedCaseId)
+      .then((p) => setPriority(p))
+      .catch(() => setPriority(null));
+
+    api
+      .listAnomalies({ case_id: selectedCaseId })
+      .then((a) => setAnomalies(a))
+      .catch(() => setAnomalies([]));
+
+    const currentCase = cases.find((c) => c.id === selectedCaseId);
+    const focusSubject = currentCase?.focus || "emp_default";
+    api
+      .getBehavioralProfile("employee", focusSubject)
+      .then((prof) => setProfile(prof))
+      .catch(() => setProfile(null));
+  }, [selectedCaseId, cases]);
+
+  const handleEvaluateObservation = async () => {
+    if (!selectedCaseId) return;
+    setEvaluating(true);
+    setError(null);
+    try {
+      const currentCase = cases.find((c) => c.id === selectedCaseId);
+      const subject = currentCase?.focus || "emp_default";
+      await api.evaluateObservation("employee", subject, {
+        dimension: evalDim,
+        observed_value: Number(evalVal),
+        case_id: selectedCaseId,
+        historical_samples: [3.0, 4.0, 5.0, 4.0, 6.0, 5.0, 4.0, 5.0, 7.0, 5.0, 4.0, 6.0, 5.0, 5.0, 6.0, 4.0, 5.0, 6.0, 5.0, 5.0],
+      });
+      const updatedAnoms = await api.listAnomalies({ case_id: selectedCaseId });
+      setAnomalies(updatedAnoms);
+      const updatedPri = await api.getCasePriority(selectedCaseId);
+      setPriority(updatedPri);
+      const updatedProf = await api.getBehavioralProfile("employee", subject);
+      setProfile(updatedProf);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setEvaluating(false);
+    }
+  };
 
   const handleRunCorrelation = async () => {
     if (!selectedCaseId) return;
@@ -222,6 +276,12 @@ export const InvestigationView: React.FC<InvestigationViewProps> = ({
             onClick={() => setActiveSection("relationships")}
           >
             Resolved Entities ({bundle?.relationships.length || 0})
+          </button>
+          <button
+            className={`wb-tab ${activeSection === "baselines" ? "active" : ""}`}
+            onClick={() => setActiveSection("baselines")}
+          >
+            Behavioral Baselines &amp; Priority {priority ? `(Score: ${priority.priority_score})` : ""}
           </button>
         </div>
       </div>
@@ -623,6 +683,259 @@ export const InvestigationView: React.FC<InvestigationViewProps> = ({
                   </table>
                 </div>
               )}
+            </div>
+          )}
+
+          {/* Section 6: Behavioral Baselines & Investigation Prioritization */}
+          {activeSection === "baselines" && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+              {/* Triage Priority Banner */}
+              <div className="wb-card" style={{ borderLeft: "4px solid var(--accent-blue)" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
+                  <div>
+                    <span style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: 1, color: "var(--accent-blue)", fontWeight: 600 }}>
+                      Investigation Triage Priority
+                    </span>
+                    <h2 style={{ fontSize: 28, margin: "6px 0", color: "var(--text-color)", fontFamily: "var(--font-mono)" }}>
+                      {priority ? priority.priority_score.toFixed(1) : "—"}{" "}
+                      <span style={{ fontSize: 14, color: "var(--text-muted)", fontWeight: "normal" }}>/ 100</span>
+                    </h2>
+                  </div>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                    {priority?.requires_review ? (
+                      <span className="chip chip-warning" style={{ fontWeight: 600 }}>
+                        ⚠ REVIEW QUEUE ESCALATION
+                      </span>
+                    ) : (
+                      <span className="chip chip-closed">ROUTINE QUEUE</span>
+                    )}
+                    <span className="chip chip-open">
+                      {priority?.independent_sources_count || 1} Independent Source(s)
+                    </span>
+                  </div>
+                </div>
+
+                <div className="notice-banner" style={{ fontSize: 12, lineHeight: 1.5, marginBottom: 14 }}>
+                  <strong>Operational Safeguard:</strong> {priority?.triage_notice || "Operational triage priority only; not an assessment or probability of guilt or fraud."}
+                </div>
+
+                {priority && priority.reasons.length > 0 && (
+                  <div>
+                    <h4 style={{ fontSize: 12, textTransform: "uppercase", color: "var(--text-muted)", marginBottom: 8 }}>
+                      Explainable Prioritization Drivers
+                    </h4>
+                    <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13, lineHeight: 1.6, color: "var(--text-color)" }}>
+                      {priority.reasons.map((r, i) => (
+                        <li key={i}>{r}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+
+              {/* Behavioral Profile & Baseline Dimensions */}
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+                {/* Profile Card */}
+                <div className="wb-card">
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                    <h3 className="wb-card-title" style={{ fontSize: 15 }}>
+                      Subject Behavioral Profile
+                    </h3>
+                    {profile && (
+                      <span
+                        className={`chip ${
+                          profile.maturity === "mature"
+                            ? "chip-open"
+                            : profile.maturity === "developing"
+                            ? "chip-warning"
+                            : "chip-closed"
+                        }`}
+                        style={{ textTransform: "uppercase", fontSize: 11, fontWeight: 600 }}
+                      >
+                        {profile.maturity} Baseline
+                      </span>
+                    )}
+                  </div>
+                  <p className="wb-card-subtitle" style={{ marginBottom: 14 }}>
+                    Established behavioral distributions scoped strictly to this installation.
+                  </p>
+
+                  {profile ? (
+                    <div style={{ fontSize: 13, display: "flex", flexDirection: "column", gap: 8 }}>
+                      <div>
+                        <span style={{ color: "var(--text-muted)" }}>Subject Reference: </span>
+                        <strong style={{ fontFamily: "var(--font-mono)" }}>
+                          {profile.subject_type.toUpperCase()}:{profile.subject_id}
+                        </strong>
+                      </div>
+                      <div>
+                        <span style={{ color: "var(--text-muted)" }}>Historical Samples: </span>
+                        <strong>{profile.sample_count} observations</strong>
+                      </div>
+                      <div>
+                        <span style={{ color: "var(--text-muted)" }}>Observation Window: </span>
+                        <span>
+                          {new Date(profile.observation_start).toLocaleDateString()} &rarr;{" "}
+                          {new Date(profile.observation_end).toLocaleDateString()}
+                        </span>
+                      </div>
+                      <div>
+                        <span style={{ color: "var(--text-muted)" }}>Admission Policy: </span>
+                        <span style={{ color: "#34d399" }}>
+                          ✓ Contaminated, unverified &amp; test events strictly excluded
+                        </span>
+                      </div>
+                    </div>
+                  ) : (
+                    <div style={{ color: "var(--text-muted)", padding: 12 }}>
+                      No established baseline profile for this subject yet.
+                    </div>
+                  )}
+                </div>
+
+                {/* Interactive Observation Evaluator */}
+                <div className="wb-card">
+                  <h3 className="wb-card-title" style={{ fontSize: 15, marginBottom: 4 }}>
+                    Test Observation Against Baseline
+                  </h3>
+                  <p className="wb-card-subtitle" style={{ marginBottom: 12 }}>
+                    Calculate deterministic deviation (Median Absolute Deviation) without retraining.
+                  </p>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                    <div>
+                      <label style={{ fontSize: 12, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>
+                        Dimension:
+                      </label>
+                      <select
+                        value={evalDim}
+                        onChange={(e) => setEvalDim(e.target.value)}
+                        style={{
+                          width: "100%",
+                          padding: "6px 8px",
+                          background: "var(--card-bg)",
+                          border: "1px solid var(--border-color)",
+                          color: "var(--text-color)",
+                          borderRadius: 4,
+                          fontSize: 13,
+                        }}
+                      >
+                        <option value="daily_activity">daily_activity</option>
+                        <option value="hourly_activity">hourly_activity</option>
+                        <option value="transaction_count">transaction_count</option>
+                        <option value="transaction_value">transaction_value</option>
+                        <option value="customer_access">customer_access</option>
+                        <option value="beneficiary_changes">beneficiary_changes</option>
+                        <option value="login_frequency">login_frequency</option>
+                        <option value="device_usage">device_usage</option>
+                        <option value="branch_activity">branch_activity</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label style={{ fontSize: 12, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>
+                        Observed Metric Value:
+                      </label>
+                      <input
+                        type="number"
+                        value={evalVal}
+                        onChange={(e) => setEvalVal(Number(e.target.value))}
+                        style={{
+                          width: "100%",
+                          padding: "6px 8px",
+                          background: "var(--card-bg)",
+                          border: "1px solid var(--border-color)",
+                          color: "var(--text-color)",
+                          borderRadius: 4,
+                          fontSize: 13,
+                        }}
+                      />
+                    </div>
+                    <button
+                      className="wb-btn"
+                      onClick={handleEvaluateObservation}
+                      disabled={evaluating}
+                      style={{ marginTop: 4 }}
+                    >
+                      {evaluating ? "Evaluating MAD Deviation..." : "Evaluate Observation"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Recorded Behavioral Anomalies */}
+              <div className="wb-card">
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                  <div>
+                    <h3 className="wb-card-title" style={{ fontSize: 15 }}>
+                      Recorded Behavioral Anomalies ({anomalies.length})
+                    </h3>
+                    <p className="wb-card-subtitle" style={{ margin: "2px 0 0 0" }}>
+                      Anomalies are statistical deviations, not determinations of fraudulent behavior.
+                    </p>
+                  </div>
+                </div>
+
+                {anomalies.length === 0 ? (
+                  <div style={{ color: "var(--text-muted)", padding: 20, textAlign: "center" }}>
+                    No behavioral anomalies flagged for this case.
+                  </div>
+                ) : (
+                  <div style={{ overflowX: "auto" }}>
+                    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                      <thead>
+                        <tr style={{ borderBottom: "1px solid var(--border-color)", textAlign: "left", color: "var(--text-muted)" }}>
+                          <th style={{ padding: "8px 12px" }}>Dimension</th>
+                          <th style={{ padding: "8px 12px" }}>Observed</th>
+                          <th style={{ padding: "8px 12px" }}>Expected</th>
+                          <th style={{ padding: "8px 12px" }}>Deviation (Z)</th>
+                          <th style={{ padding: "8px 12px" }}>Severity</th>
+                          <th style={{ padding: "8px 12px" }}>Confidence</th>
+                          <th style={{ padding: "8px 12px" }}>Explanation</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {anomalies.map((a) => (
+                          <tr key={a.anomaly_id} style={{ borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
+                            <td style={{ padding: "8px 12px", fontWeight: 600, color: "var(--accent-blue)" }}>
+                              {a.dimension}
+                            </td>
+                            <td style={{ padding: "8px 12px", fontFamily: "var(--font-mono)" }}>
+                              {a.observed_value}
+                            </td>
+                            <td style={{ padding: "8px 12px", fontFamily: "var(--font-mono)", color: "var(--text-muted)" }}>
+                              {a.expected_value}
+                            </td>
+                            <td style={{ padding: "8px 12px", fontFamily: "var(--font-mono)" }}>
+                              {a.deviation.toFixed(2)}
+                            </td>
+                            <td style={{ padding: "8px 12px" }}>
+                              <span
+                                className={`chip ${
+                                  a.severity === "high"
+                                    ? "chip-danger"
+                                    : a.severity === "medium"
+                                    ? "chip-warning"
+                                    : "chip-closed"
+                                }`}
+                                style={{ textTransform: "uppercase", fontSize: 11 }}
+                              >
+                                {a.severity}
+                              </span>
+                            </td>
+                            <td style={{ padding: "8px 12px" }}>
+                              <span className="chip" style={{ fontSize: 11 }}>
+                                {(a.confidence * 100).toFixed(0)}%
+                              </span>
+                            </td>
+                            <td style={{ padding: "8px 12px", color: "var(--text-muted)", fontSize: 12, maxWidth: 360 }}>
+                              {a.explanation}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
             </div>
           )}
         </div>

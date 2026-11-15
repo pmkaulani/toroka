@@ -1,6 +1,8 @@
 import {
   AuditTimelineItem,
   AuditVerification,
+  BehavioralAnomaly,
+  BehavioralProfile,
   CaseDetail,
   CaseNote,
   CaseSummary,
@@ -10,10 +12,12 @@ import {
   CorrelateCaseResponse,
   CorrelationSignal,
   DataContractResponse,
+  DetectionMethod,
   IntegrationJob,
   IntelligenceEvent,
   InvestigationBundle,
   InvestigationHypothesis,
+  InvestigationPriority,
   Persona,
   QualityAssessment,
   ReconciliationReport,
@@ -291,4 +295,38 @@ export const api = {
 
   listCorrelationSignals: (limit: number = 50): Promise<CorrelationSignal[]> =>
     request<CorrelationSignal[]>(`/api/enterprise/v1/intelligence/signals?limit=${limit}`),
+
+  getBehavioralProfile: (subjectType: string, subjectId: string): Promise<BehavioralProfile> =>
+    request<BehavioralProfile>(`/api/enterprise/v1/baselines/profiles/${encodeURIComponent(subjectType)}/${encodeURIComponent(subjectId)}`),
+
+  evaluateObservation: (
+    subjectType: string,
+    subjectId: string,
+    payload: {
+      dimension: string;
+      observed_value: number;
+      case_id?: string;
+      historical_samples?: number[];
+      observation_context?: Record<string, unknown>;
+    }
+  ): Promise<BehavioralAnomaly> =>
+    request<BehavioralAnomaly>(`/api/enterprise/v1/baselines/profiles/${encodeURIComponent(subjectType)}/${encodeURIComponent(subjectId)}/evaluate`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  listAnomalies: (params?: { subject_id?: string; case_id?: string; limit?: number }): Promise<BehavioralAnomaly[]> => {
+    const sp = new URLSearchParams();
+    if (params?.subject_id) sp.append("subject_id", params.subject_id);
+    if (params?.case_id) sp.append("case_id", params.case_id);
+    if (params?.limit) sp.append("limit", params.limit.toString());
+    const query = sp.toString() ? `?${sp.toString()}` : "";
+    return request<BehavioralAnomaly[]>(`/api/enterprise/v1/baselines/anomalies${query}`);
+  },
+
+  getCasePriority: (caseId: string): Promise<InvestigationPriority> =>
+    request<InvestigationPriority>(`/api/enterprise/v1/baselines/cases/${encodeURIComponent(caseId)}/priority`),
+
+  listDetectionMethods: (): Promise<DetectionMethod[]> =>
+    request<DetectionMethod[]>("/api/enterprise/v1/baselines/governance/methods"),
 };

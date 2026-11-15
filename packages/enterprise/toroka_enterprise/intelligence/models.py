@@ -8,6 +8,7 @@ from sqlalchemy import (
     Boolean,
     DateTime,
     Float,
+    Integer,
     JSON,
     String,
     Text,
@@ -151,3 +152,98 @@ class InvestigationHypothesisRecord(IntelligenceBase):
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
     updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class BehavioralProfileRecord(IntelligenceBase):
+    """Aggregated behavioral baseline profile for a bank entity/subject."""
+    __tablename__ = "enterprise_behavioral_profiles"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    installation_id: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+
+    subject_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    subject_type: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+
+    sample_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    maturity: Mapped[str] = mapped_column(String(30), nullable=False, default="insufficient", index=True)
+
+    observation_start: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    observation_end: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+    dimensions: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "installation_id", "subject_type", "subject_id",
+            name="uq_behavioral_profile_subject",
+        ),
+    )
+
+
+class BehavioralAnomalyRecord(IntelligenceBase):
+    """Behavioral anomaly record representing deviation from an established baseline."""
+    __tablename__ = "enterprise_behavioral_anomalies"
+
+    anomaly_id: Mapped[str] = mapped_column(String(255), primary_key=True)
+    installation_id: Mapped[str] = mapped_column(String(100), primary_key=True, index=True)
+
+    case_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    subject_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+
+    dimension: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+
+    observed_value: Mapped[float] = mapped_column(Float, nullable=False)
+    expected_value: Mapped[float] = mapped_column(Float, nullable=False)
+    deviation: Mapped[float] = mapped_column(Float, nullable=False)
+
+    severity: Mapped[str] = mapped_column(String(30), nullable=False, index=True)
+    confidence: Mapped[float] = mapped_column(Float, nullable=False)
+
+    baseline_sample_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    baseline_mature: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+    explanation: Mapped[str] = mapped_column(Text, nullable=False)
+    limitations: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    provenance: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+
+
+class DetectionMethodRecord(IntelligenceBase):
+    """Governance record for deterministic or statistical detection methods."""
+    __tablename__ = "enterprise_detection_methods"
+
+    method_id: Mapped[str] = mapped_column(String(100), primary_key=True)
+    version: Mapped[str] = mapped_column(String(50), primary_key=True)
+
+    status: Mapped[str] = mapped_column(String(30), nullable=False, index=True)
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+
+    training_data: Mapped[str | None] = mapped_column(Text, nullable=True)
+    validation_reference: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    approved_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+    limitations: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+
+
+class BaselineAdmissionRecord(IntelligenceBase):
+    """Auditable log of events evaluated against the baseline admission policy."""
+    __tablename__ = "enterprise_baseline_admissions"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    installation_id: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+
+    event_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    subject_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+
+    accepted: Mapped[bool] = mapped_column(Boolean, nullable=False, index=True)
+    reason: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+
+

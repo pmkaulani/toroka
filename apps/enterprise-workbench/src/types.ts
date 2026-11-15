@@ -318,3 +318,67 @@ export interface CorrelateCaseResponse {
   signals: CorrelationSignal[];
   investigation_bundle_id: string;
 }
+
+export interface BaselineStatistics {
+  count: number;
+  mean: number;
+  standard_deviation: number;
+  minimum: number;
+  maximum: number;
+  median?: number | null;
+}
+
+export interface BehavioralProfile {
+  id: string;
+  installation_id: string;
+  subject_id: string;
+  subject_type: string;
+  sample_count: number;
+  maturity: "insufficient" | "developing" | "mature";
+  observation_start: string;
+  observation_end: string;
+  dimensions: Record<string, BaselineStatistics>;
+  created_at: string;
+  updated_at?: string | null;
+}
+
+export interface BehavioralAnomaly {
+  anomaly_id: string;
+  installation_id: string;
+  case_id?: string | null;
+  subject_id: string;
+  dimension: string;
+  observed_value: number;
+  expected_value: number;
+  deviation: number;
+  severity: "low" | "medium" | "high";
+  confidence: number;
+  baseline_sample_count: number;
+  baseline_mature: boolean;
+  explanation: string;
+  limitations: string[];
+  provenance: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface InvestigationPriority {
+  priority_score: number;
+  reasons: string[];
+  requires_review: boolean;
+  independent_sources_count: number;
+  unresolved_contradictions: number;
+  triage_notice: string;
+}
+
+export interface DetectionMethod {
+  method_id: string;
+  version: string;
+  status: "deterministic" | "experimental" | "validated" | "retired";
+  description: string;
+  training_data?: string | null;
+  validation_reference?: string | null;
+  approved_by?: string | null;
+  limitations: string[];
+  created_at: string;
+}
+
