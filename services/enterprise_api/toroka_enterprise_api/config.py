@@ -24,6 +24,11 @@ class EnterpriseSettings:
     role_claim: str = "groups"
     algorithms: tuple[str, ...] = ("RS256",)
     role_map: dict[str, str] = field(default_factory=dict)
+    database_url: str = "sqlite:///./enterprise_operational.db"
+    vault_database_url: str = "sqlite:///./enterprise_vault.db"
+    vault_key: str = ""
+    vault_key_version: str = "v1"
+    installation_id: str = "toroka-default-installation"
 
     @classmethod
     def from_env(cls) -> "EnterpriseSettings":
@@ -47,6 +52,11 @@ class EnterpriseSettings:
             role_claim=os.getenv("TOROKA_ENT_ROLE_CLAIM", "groups"),
             algorithms=algorithms or ("RS256",),
             role_map=role_map,
+            database_url=os.getenv("TOROKA_ENT_DATABASE_URL", "sqlite:///./enterprise_operational.db"),
+            vault_database_url=os.getenv("TOROKA_ENT_VAULT_DATABASE_URL", "sqlite:///./enterprise_vault.db"),
+            vault_key=os.getenv("TOROKA_ENT_VAULT_KEY", ""),
+            vault_key_version=os.getenv("TOROKA_ENT_VAULT_KEY_VERSION", "v1"),
+            installation_id=os.getenv("TOROKA_ENT_INSTALLATION_ID", "toroka-default-installation"),
         )
 
     def validate(self) -> None:
@@ -57,6 +67,17 @@ class EnterpriseSettings:
         if self.environment == "production":
             if self.auth_mode != "oidc":
                 raise RuntimeError("Production Enterprise API requires OIDC")
+            from sqlalchemy.engine import make_url
+            op_url = make_url(self.database_url)
+            if op_url.get_backend_name() != "postgresql":
+                raise RuntimeError("Production Enterprise persistence requires PostgreSQL")
+            vault_url = make_url(self.vault_database_url)
+            if vault_url.get_backend_name() != "postgresql":
+                raise RuntimeError("Production Enterprise vault requires PostgreSQL")
+            if self.database_url == self.vault_database_url:
+                raise RuntimeError("Operational database and identity vault must use separate database URLs")
+            if not self.vault_key:
+                raise RuntimeError("Production Enterprise API requires TOROKA_ENT_VAULT_KEY")
         if self.auth_mode not in {"oidc", "development"}:
             raise ValueError("Unsupported authentication mode")
         if not all((self.oidc_issuer, self.oidc_audience, self.oidc_jwks_url)):

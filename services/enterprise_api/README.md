@@ -1,6 +1,6 @@
-# Toroka Enterprise API (Bank Pilot Operations Layer — Phase 3.1)
+# Toroka Enterprise API (Bank Pilot Operations Layer — Phase 3.2)
 
-The Toroka Enterprise API is a standalone, bank-facing operations service that interfaces with the Toroka Enterprise investigation engine. It establishes a secure, bank-controlled identity and access boundary separate from the consumer Toroka application.
+The Toroka Enterprise API is a standalone, bank-facing operations service that interfaces with the Toroka Enterprise investigation engine. It establishes a secure, bank-controlled identity and access boundary separate from the consumer Toroka application, backed by durable transactional persistence and an isolated identity vault.
 
 ---
 
@@ -12,20 +12,40 @@ services/
 └── enterprise_api/            # Bank-facing Enterprise operations API
     ├── toroka_enterprise_api/
     │   ├── __init__.py
-    │   ├── main.py            # App factory, correlation ID & security headers middleware
-    │   ├── config.py          # EnterpriseSettings with strict validation
+    │   ├── main.py            # App factory, connection pooling, correlation ID & security headers
+    │   ├── config.py          # EnterpriseSettings with strict validation (PostgreSQL in prod)
     │   ├── auth.py            # OIDC JWT signature, JWKS retrieval, development adapter
     │   ├── permissions.py     # Role model, casework principal adapter, dual-approval
+    │   ├── schemas.py         # Pydantic request/response models
+    │   ├── dependencies.py    # Database session, vault, and service dependencies
+    │   ├── persistence/       # Operational persistence & isolated vault
+    │   │   ├── database.py    # Engine and sessionmaker factory
+    │   │   ├── models.py      # SQLAlchemy 2.0 operational models (Cases, Notes, Audit, Runs)
+    │   │   ├── repositories.py# CaseRepository, RevealRepository, RunRepository, etc.
+    │   │   ├── audit.py       # Append-only hash chain audit log with allowlist filtering
+    │   │   └── vault.py       # Isolated VaultRecord, VaultCipher protocol, Fernet implementation
+    │   ├── services/          # Transaction-owning application services
+    │   │   ├── cases.py       # CaseService (assignments, notes, closing with alternatives)
+    │   │   ├── reveals.py     # RevealService (row-locked dual approval & single-use consumption)
+    │   │   └── runs.py        # RunService (manifest & result digest persistence)
     │   └── routers/
-    │       ├── system.py      # /health/live, /me, /capabilities
-    │       └── contract.py    # /data-contract, /detectors
-    └── tests/                 # Dedicated Enterprise API test suite (37 tests)
+    │       ├── system.py      # /health/live, /health/ready, /me, /capabilities
+    │       ├── contract.py    # /data-contract, /detectors
+    │       ├── cases.py       # Casework & notes endpoints
+    │       ├── reveals.py     # Identity reveal request, approval & consumption endpoints
+    │       └── runs.py        # Manifest & run endpoints
+    ├── migrations/            # Operational database Alembic migrations
+    ├── vault_migrations/      # Dedicated Identity Vault Alembic migrations
+    ├── alembic.ini            # Operational database migration configuration
+    ├── vault_alembic.ini      # Identity Vault migration configuration
+    └── tests/                 # Dedicated Enterprise API test suite (58 tests)
 ```
 
 ### Key Architectural Boundaries:
-- **Zero Consumer Bleed**: Bank authentication and enterprise casework never share user records or session tokens with the consumer API.
+- **Zero Consumer Bleed**: Bank authentication and enterprise casework never share user records, databases, or session tokens with the consumer API.
 - **Engine as Core Logic**: The underlying investigation engine (`toroka_enterprise`) remains the source of truth for all scenario detection, scoring, and data contracts.
-- **Fail-Closed Security**: In production mode, all endpoints require signed OIDC bearer tokens. Development mode is strictly prohibited from running in production.
+- **Separated Identity Vault**: Plaintext identities are never stored in operational case tables. Pseudonym mappings are encrypted at rest with versioned keys and stored in an isolated database with its own connection credentials.
+- **Fail-Closed Security**: In production mode, all endpoints require signed OIDC bearer tokens. SQLite is strictly forbidden in production; separate PostgreSQL instances are required for casework and the vault.
 
 ---
 
@@ -43,17 +63,29 @@ The service is configured via environment variables:
 | `TOROKA_ENT_ROLE_CLAIM` | `groups` | Token claim containing group/role strings (e.g. `groups`, `roles`). |
 | `TOROKA_ENT_OIDC_ALGORITHMS` | `RS256` | Supported JWT signing algorithms (e.g. `RS256`, `RS256,ES256`). |
 | `TOROKA_ENT_ROLE_MAP_JSON` | `{}` | JSON map translating bank IDP group names to Toroka roles. |
-
-### Valid Toroka Internal Roles:
-- `investigator`: Reviews surfaced candidate focuses, inspects audit evidence, requests identity reveals.
-- `authoriser`: Evaluates and dual-approves identity reveal requests.
-- `auditor`: Reads append-only audit chains, verification logs, and system reports.
-- `data_steward`: Validates data feeds, inspects data quality reports, reviews mapping.
-- `system_administrator`: Manages service configuration and health; **cannot** override casework or reveal identities.
+| `TOROKA_ENT_DATABASE_URL` | `sqlite:///./enterprise_operational.db` | Operational database connection string (PostgreSQL mandatory in production). |
+| `TOROKA_ENT_VAULT_DATABASE_URL` | `sqlite:///./enterprise_vault.db` | Isolated Identity Vault database URL (PostgreSQL mandatory in production). |
+| `TOROKA_ENT_VAULT_KEY` | `""` | Base64-encoded 32-byte encryption key for Identity Vault. |
+| `TOROKA_ENT_VAULT_KEY_VERSION` | `v1` | Active vault encryption key version. |
+| `TOROKA_ENT_INSTALLATION_ID` | `toroka-default-installation` | Bank installation identifier for audit chains and case partitioning. |
 
 ---
 
-## 3. Local Development Startup
+## 3. Database Migrations
+
+Toroka Enterprise uses independent Alembic migration environments for operational persistence and the identity vault:
+
+```bash
+# 1. Migrate operational database (Cases, Notes, Reveals, Runs, Audit)
+uv run alembic -c services/enterprise_api/alembic.ini upgrade head
+
+# 2. Migrate separated Identity Vault database
+uv run alembic -c services/enterprise_api/vault_alembic.ini upgrade head
+```
+
+---
+
+## 4. Local Development Startup
 
 To run the Enterprise API locally in development mode:
 
@@ -68,76 +100,81 @@ uv run uvicorn toroka_enterprise_api.main:create_app_from_env `
   --port 8101
 ```
 
-### Linux / macOS:
-```bash
-export TOROKA_ENT_ENV="development"
-export TOROKA_ENT_AUTH_MODE="development"
-uv run uvicorn toroka_enterprise_api.main:create_app_from_env \
-  --factory \
-  --app-dir services/enterprise_api \
-  --host 127.0.0.1 \
-  --port 8101
-```
-
 ---
 
-## 4. Querying Endpoints in Development
+## 5. Casework & Identity Reveal Operations
 
-In `development` auth mode, requests originating from `127.0.0.1` (loopback) authenticate using development headers:
-
-### A. Health Liveness (Public)
+### A. Health & Readiness Probe
 ```powershell
-Invoke-RestMethod -Uri "http://127.0.0.1:8101/health/live"
+Invoke-RestMethod -Uri "http://127.0.0.1:8101/health/ready"
 ```
 **Response:**
 ```json
 {
-  "status": "alive",
-  "service": "toroka-enterprise-api"
+  "status": "ready",
+  "service": "toroka-enterprise-api",
+  "persistence": "connected",
+  "vault": "connected"
 }
 ```
 
-### B. Current Identity
+### B. List Assigned Cases
 ```powershell
 Invoke-RestMethod `
-  -Uri "http://127.0.0.1:8101/api/enterprise/v1/me" `
-  -Headers @{
-    "X-Dev-User" = "demo.investigator"
-    "X-Dev-Roles" = "investigator"
-  }
+  -Uri "http://127.0.0.1:8101/api/enterprise/v1/cases" `
+  -Headers @{ "X-Dev-User" = "demo.investigator"; "X-Dev-Roles" = "investigator" }
+```
+
+### C. Append Case Note (Append-Only)
+```powershell
+Invoke-RestMethod `
+  -Uri "http://127.0.0.1:8101/api/enterprise/v1/cases/<case_id>/notes" `
+  -Method Post `
+  -Headers @{ "X-Dev-User" = "demo.investigator"; "X-Dev-Roles" = "investigator" } `
+  -Body (ConvertTo-Json @{ body = "Interviewed branch manager regarding suspense ledger override." }) `
+  -ContentType "application/json"
+```
+
+### D. Request Identity Reveal
+```powershell
+Invoke-RestMethod `
+  -Uri "http://127.0.0.1:8101/api/enterprise/v1/cases/<case_id>/reveal-requests" `
+  -Method Post `
+  -Headers @{ "X-Dev-User" = "demo.investigator"; "X-Dev-Roles" = "investigator" } `
+  -Body (ConvertTo-Json @{
+    pseudonym = "STF-934dc54be9e3c4da0d31ff7ff04f055b"
+    reason = "Escalating confirmed uninstructed contact redirection to Fraud Risk Committee."
+    ttl_hours = 24
+  }) `
+  -ContentType "application/json"
+```
+
+### E. Dual-Approval (Authoriser Only)
+Self-approval is cryptographically and logically blocked. An authoriser with a distinct subject ID must approve:
+```powershell
+Invoke-RestMethod `
+  -Uri "http://127.0.0.1:8101/api/enterprise/v1/reveal-requests/<request_id>/approve" `
+  -Method Post `
+  -Headers @{ "X-Dev-User" = "demo.authoriser"; "X-Dev-Roles" = "authoriser" }
+```
+
+### F. Single-Use Consumption (Original Requesting Investigator Only)
+```powershell
+Invoke-RestMethod `
+  -Uri "http://127.0.0.1:8101/api/enterprise/v1/reveal-requests/<request_id>/consume" `
+  -Method Post `
+  -Headers @{ "X-Dev-User" = "demo.investigator"; "X-Dev-Roles" = "investigator" }
 ```
 **Response:**
 ```json
 {
-  "subject": "demo.investigator",
-  "roles": ["investigator"]
+  "request_id": "<request_id>",
+  "pseudonym": "STF-934dc54be9e3c4da0d31ff7ff04f055b",
+  "plaintext_identity": "EMP-04192",
+  "consumed_at": "2026-11-15T20:00:00Z"
 }
 ```
-
-### C. Data Contract Specification & Fingerprint
-```powershell
-Invoke-RestMethod `
-  -Uri "http://127.0.0.1:8101/api/enterprise/v1/data-contract" `
-  -Headers @{
-    "X-Dev-User" = "demo.investigator"
-    "X-Dev-Roles" = "investigator"
-  }
-```
-**Response:**
-```json
-{
-  "version": "2.0.0",
-  "sha256": "3d2fa5df86a37dc1903b55ef3f4318819395842dcc8d901a931f7bed9c769c40",
-  "contract": { ... }
-}
-```
-
-### D. Canonical Detector Registry
-```powershell
-Invoke-RestMethod `
-  -Uri "http://127.0.0.1:8101/api/enterprise/v1/detectors" `
-  -Headers @{
-    "X-Dev-User" = "demo.investigator"
+*Note: Any second attempt to consume the token returns HTTP 400 (`Reveal token has already been consumed`). The audit log records the consumption event without logging the plaintext identity.*
     "X-Dev-Roles" = "investigator"
   }
 ```

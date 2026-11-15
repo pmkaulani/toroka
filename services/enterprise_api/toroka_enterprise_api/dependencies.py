@@ -1,0 +1,67 @@
+"""FastAPI dependency providers for persistence and services."""
+from __future__ import annotations
+
+from collections.abc import Generator
+
+from fastapi import Depends, Request
+from sqlalchemy.orm import Session
+
+from .persistence.vault import FernetVaultCipher, IdentityVaultRepository, VaultCipher
+from .services.cases import CaseService
+from .services.reveals import RevealService
+from .services.runs import RunService
+
+
+def get_db(request: Request) -> Generator[Session, None, None]:
+    """Provide an isolated operational database session per request."""
+    factory = request.app.state.session_factory
+    db = factory()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
+def get_vault_db(request: Request) -> Generator[Session, None, None]:
+    """Provide an isolated identity vault database session per request."""
+    factory = getattr(request.app.state, "vault_session_factory", None)
+    if factory is None:
+        raise RuntimeError("Identity vault session factory is not configured")
+    db = factory()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
+def get_vault_cipher(request: Request) -> VaultCipher:
+    cipher = getattr(request.app.state, "vault_cipher", None)
+    if cipher is None:
+        raise RuntimeError("Vault encryption cipher is not configured")
+    return cipher
+
+
+def get_vault_repo(
+    vault_db: Session = Depends(get_vault_db),
+    cipher: VaultCipher = Depends(get_vault_cipher),
+) -> IdentityVaultRepository:
+    return IdentityVaultRepository(vault_db, cipher)
+
+
+def get_case_service(
+    db: Session = Depends(get_db),
+) -> CaseService:
+    return CaseService(db)
+
+
+def get_reveal_service(
+    db: Session = Depends(get_db),
+    vault_repo: IdentityVaultRepository = Depends(get_vault_repo),
+) -> RevealService:
+    return RevealService(db, vault_repo)
+
+
+def get_run_service(
+    db: Session = Depends(get_db),
+) -> RunService:
+    return RunService(db)

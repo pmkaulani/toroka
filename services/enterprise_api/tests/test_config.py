@@ -25,6 +25,9 @@ def test_config_from_env_custom(monkeypatch):
     monkeypatch.setenv("TOROKA_ENT_OIDC_AUDIENCE", "toroka-ent")
     monkeypatch.setenv("TOROKA_ENT_OIDC_JWKS_URL", "https://idp.bank.local/jwks")
     monkeypatch.setenv("TOROKA_ENT_ROLE_MAP_JSON", '{"GRP_INV": "investigator"}')
+    monkeypatch.setenv("TOROKA_ENT_DATABASE_URL", "postgresql+psycopg://db.bank.local/toroka")
+    monkeypatch.setenv("TOROKA_ENT_VAULT_DATABASE_URL", "postgresql+psycopg://vault.bank.local/toroka_vault")
+    monkeypatch.setenv("TOROKA_ENT_VAULT_KEY", "test-vault-secret-key")
 
     cfg = EnterpriseSettings.from_env()
     assert cfg.environment == "production"

@@ -7,13 +7,27 @@ from typing import Any, Callable
 
 import jwt
 import pytest
+from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives.asymmetric import rsa
 from fastapi.testclient import TestClient
 from jwt import PyJWK
 from jwt.exceptions import PyJWKClientConnectionError, PyJWKClientError
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.pool import StaticPool
 
 from toroka_enterprise_api.config import EnterpriseSettings
 from toroka_enterprise_api.main import create_app
+from toroka_enterprise_api.persistence.audit import GENESIS_HASH
+from toroka_enterprise_api.persistence.models import AuditHead, Base
+from toroka_enterprise_api.persistence.vault import (
+    FernetVaultCipher,
+    IdentityVaultRepository,
+    VaultBase,
+)
+from toroka_enterprise_api.services.cases import CaseService
+from toroka_enterprise_api.services.reveals import RevealService
+from toroka_enterprise_api.services.runs import RunService
 
 
 @pytest.fixture(scope="session")
@@ -78,7 +92,91 @@ def mock_jwks(primary_jwk_dict):
 
 
 @pytest.fixture
-def oidc_settings():
+def test_vault_key():
+    return Fernet.generate_key().decode("utf-8")
+
+
+@pytest.fixture
+def test_vault_key_v2():
+    return Fernet.generate_key().decode("utf-8")
+
+
+@pytest.fixture
+def test_vault_cipher(test_vault_key, test_vault_key_v2):
+    return FernetVaultCipher(
+        {"v1": test_vault_key, "v2": test_vault_key_v2},
+        current_version="v1",
+    )
+
+
+@pytest.fixture
+def db_engine():
+    engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(engine)
+    with Session(engine) as session:
+        head = AuditHead(
+            installation_id="toroka-default-installation",
+            last_sequence=0,
+            last_hash=GENESIS_HASH,
+        )
+        session.add(head)
+        session.commit()
+    yield engine
+    Base.metadata.drop_all(engine)
+    engine.dispose()
+
+
+@pytest.fixture
+def db_session(db_engine):
+    with Session(db_engine, autoflush=False, expire_on_commit=False) as session:
+        yield session
+
+
+@pytest.fixture
+def vault_engine():
+    engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    VaultBase.metadata.create_all(engine)
+    yield engine
+    VaultBase.metadata.drop_all(engine)
+    engine.dispose()
+
+
+@pytest.fixture
+def vault_db_session(vault_engine):
+    with Session(vault_engine, autoflush=False, expire_on_commit=False) as session:
+        yield session
+
+
+@pytest.fixture
+def test_vault_repo(vault_db_session, test_vault_cipher):
+    return IdentityVaultRepository(vault_db_session, test_vault_cipher)
+
+
+@pytest.fixture
+def test_case_service(db_session):
+    return CaseService(db_session)
+
+
+@pytest.fixture
+def test_reveal_service(db_session, test_vault_repo):
+    return RevealService(db_session, test_vault_repo)
+
+
+@pytest.fixture
+def test_run_service(db_session):
+    return RunService(db_session)
+
+
+@pytest.fixture
+def oidc_settings(test_vault_key):
     return EnterpriseSettings(
         environment="test",
         auth_mode="oidc",
@@ -94,19 +192,66 @@ def oidc_settings():
             "BANK_DATA_STEWARD": "data_steward",
             "BANK_SYSADMIN": "system_administrator",
         },
+        database_url="sqlite:///:memory:",
+        vault_database_url="sqlite:///:memory:",
+        vault_key=test_vault_key,
+        vault_key_version="v1",
+        installation_id="toroka-default-installation",
     )
 
 
 @pytest.fixture
-def oidc_app(oidc_settings, mock_jwks):
+def oidc_app(oidc_settings, mock_jwks, db_engine, vault_engine, test_vault_cipher):
     app = create_app(oidc_settings)
     app.state.jwks_client = mock_jwks
+    app.state.engine = db_engine
+    app.state.session_factory = sessionmaker(
+        bind=db_engine, class_=Session, autoflush=False, expire_on_commit=False
+    )
+    app.state.vault_engine = vault_engine
+    app.state.vault_session_factory = sessionmaker(
+        bind=vault_engine, class_=Session, autoflush=False, expire_on_commit=False
+    )
+    app.state.vault_cipher = test_vault_cipher
     return app
 
 
 @pytest.fixture
 def oidc_client(oidc_app):
     return TestClient(oidc_app, client=("127.0.0.1", 50000))
+
+
+@pytest.fixture
+def dev_settings(test_vault_key):
+    return EnterpriseSettings(
+        environment="development",
+        auth_mode="development",
+        database_url="sqlite:///:memory:",
+        vault_database_url="sqlite:///:memory:",
+        vault_key=test_vault_key,
+        vault_key_version="v1",
+        installation_id="toroka-default-installation",
+    )
+
+
+@pytest.fixture
+def dev_app(dev_settings, db_engine, vault_engine, test_vault_cipher):
+    app = create_app(dev_settings)
+    app.state.engine = db_engine
+    app.state.session_factory = sessionmaker(
+        bind=db_engine, class_=Session, autoflush=False, expire_on_commit=False
+    )
+    app.state.vault_engine = vault_engine
+    app.state.vault_session_factory = sessionmaker(
+        bind=vault_engine, class_=Session, autoflush=False, expire_on_commit=False
+    )
+    app.state.vault_cipher = test_vault_cipher
+    return app
+
+
+@pytest.fixture
+def dev_client(dev_app):
+    return TestClient(dev_app, client=("127.0.0.1", 50000))
 
 
 @pytest.fixture
@@ -143,21 +288,3 @@ def token_factory(primary_key):
         return jwt.encode(claims, signing_key, algorithm=algorithm, headers=headers)
 
     return _create_token
-
-
-@pytest.fixture
-def dev_settings():
-    return EnterpriseSettings(
-        environment="development",
-        auth_mode="development",
-    )
-
-
-@pytest.fixture
-def dev_app(dev_settings):
-    return create_app(dev_settings)
-
-
-@pytest.fixture
-def dev_client(dev_app):
-    return TestClient(dev_app, client=("127.0.0.1", 50000))

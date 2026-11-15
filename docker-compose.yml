@@ -1,5 +1,6 @@
 # Local production-like stack. Not run in the authoring environment; review before use.
 services:
+  # Consumer Platform
   db:
     image: postgres:16
     environment: { POSTGRES_USER: ssi, POSTGRES_PASSWORD: change-me, POSTGRES_DB: ssi }
@@ -11,4 +12,48 @@ services:
     depends_on: { db: { condition: service_healthy } }
     ports: ["8000:8000"]
     volumes: [evidence:/data/evidence]
-volumes: { dbdata: {}, evidence: {} }
+
+  # Enterprise Platform (Phase 3: Secure Bank Pilot Operations Layer)
+  # 1. Operational Casework & Audit Database (Isolated from Consumer)
+  enterprise-db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: toroka_ent
+      POSTGRES_PASSWORD: change-me-ent-db
+      POSTGRES_DB: toroka_enterprise
+    volumes: [ent_dbdata:/var/lib/postgresql/data]
+    healthcheck: { test: ["CMD-SHELL", "pg_isready -U toroka_ent -d toroka_enterprise"], interval: 5s, retries: 10 }
+    ports: ["5433:5432"]
+
+  # 2. Identity Vault Database (Cryptographically & Service-Isolated)
+  enterprise-vault-db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: toroka_vault
+      POSTGRES_PASSWORD: change-me-vault-db
+      POSTGRES_DB: toroka_vault
+    volumes: [ent_vaultdata:/var/lib/postgresql/data]
+    healthcheck: { test: ["CMD-SHELL", "pg_isready -U toroka_vault -d toroka_vault"], interval: 5s, retries: 10 }
+    ports: ["5434:5432"]
+
+  # 3. Enterprise Operations API
+  enterprise-api:
+    build:
+      context: .
+      dockerfile: services/enterprise_api/Dockerfile
+    env_file: .env
+    environment:
+      - TOROKA_ENT_ENV=production
+      - TOROKA_ENT_AUTH_MODE=oidc
+      - TOROKA_ENT_DATABASE_URL=postgresql+psycopg://toroka_ent:change-me-ent-db@enterprise-db:5432/toroka_enterprise
+      - TOROKA_ENT_VAULT_DATABASE_URL=postgresql+psycopg://toroka_vault:change-me-vault-db@enterprise-vault-db:5432/toroka_vault
+    depends_on:
+      enterprise-db: { condition: service_healthy }
+      enterprise-vault-db: { condition: service_healthy }
+    ports: ["8101:8101"]
+
+volumes:
+  dbdata: {}
+  evidence: {}
+  ent_dbdata: {}
+  ent_vaultdata: {}
