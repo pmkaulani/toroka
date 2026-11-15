@@ -197,11 +197,18 @@ def _read(directory: Path, name: str, q: DataQuality, mapping: Mapping | None = 
 
         reader = csv.DictReader(fh)
 
-        missing = [c for c in SPEC[name] if c not in (reader.fieldnames or []) and c not in OPTIONAL.get(name, set())]
+        fieldnames = set(reader.fieldnames or [])
+        missing = [c for c in SPEC[name] if c not in fieldnames and c not in OPTIONAL.get(name, set())]
 
         if missing:
 
             raise IngestError(f"{name}.csv is missing required columns: {', '.join(missing)}")
+
+        for column in OPTIONAL.get(name, set()):
+            if column not in fieldnames:
+                qualified = f"{name}.{column}"
+                if qualified not in q.absent_fields:
+                    q.absent_fields.append(qualified)
 
         rows = []
         for line, row in enumerate(reader, start=2):

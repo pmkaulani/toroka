@@ -35,8 +35,11 @@ def _sha(text: str) -> str:
 
 def build_manifest(quality, *, mapping_text: str | None, rules, profile, secret: str | bytes) -> dict:
     raw_secret = secret.encode() if isinstance(secret, str) else secret
+    from .data_contract import CONTRACT_VERSION, contract_fingerprint
     body = {
         "schema": 1, "tool_version": __version__, "profile": profile.name,
+        "contract_version": CONTRACT_VERSION,
+        "contract_sha256": contract_fingerprint(),
         "scoring_policy_sha256": _sha(_canon(asdict(profile.scoring))), "rules": asdict(rules),
         "mapping_sha256": _sha(mapping_text) if mapping_text else "canonical-csv",
         "naive_tz_offset_hours": int(quality.naive_tz.utcoffset(None).total_seconds() // 3600),
@@ -73,7 +76,7 @@ def reproduce(stored: dict, stored_digest: str, data_dir: str | Path, *, mapping
         old = {f["file"]: f["sha256"] for f in stored["inputs"].get(feed, [])}
         new = {f["file"]: f["sha256"] for f in now["inputs"].get(feed, [])}
         changed += [f"{feed}/{name}" for name in sorted(set(old) | set(new)) if old.get(name) != new.get(name)]
-    config_diff = [k for k in ("tool_version", "profile", "scoring_policy_sha256", "rules", "mapping_sha256", "naive_tz_offset_hours", "pseudonym_key_fingerprint")
+    config_diff = [k for k in ("tool_version", "profile", "contract_version", "contract_sha256", "scoring_policy_sha256", "rules", "mapping_sha256", "naive_tz_offset_hours", "pseudonym_key_fingerprint")
                    if stored.get(k) != now.get(k)]
     digest = result_digest(run_scan(ds, rules, q))
     ok = not changed and not config_diff and digest == stored_digest

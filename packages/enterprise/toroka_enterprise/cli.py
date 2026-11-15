@@ -123,6 +123,8 @@ def cmd_scan(a) -> int:
     _print_scan(scan)
     _print_coverage(ds)
     (out / "coverage.json").write_text(json.dumps(coverage_report(ds), indent=2))
+    from .data_contract import contract_dict
+    (out / "data_contract.json").write_text(json.dumps(contract_dict(), indent=2))
     manifest = build_manifest(quality, mapping_text=mapping_text, rules=Rules(), profile=INSIDER_PROFILE, secret=secret)
     _open_cases(out, scan, ps.vault, key.encode(), manifest, result_digest(scan))
     print(f"run manifest {manifest['manifest_id']}; reports in {out / 'reports'}")
@@ -131,19 +133,80 @@ def cmd_scan(a) -> int:
     return 0
 
 
+def cmd_data_contract(a) -> int:
+    from .data_contract import contract_dict, contract_markdown
+    if a.format == "json":
+        text = json.dumps(contract_dict(), indent=2)
+    else:
+        text = contract_markdown()
+    if a.out:
+        Path(a.out).write_text(text, encoding="utf-8")
+        print(f"Data contract written to {a.out}")
+    else:
+        print(text)
+    return 0
+
+
 def cmd_validate(a) -> int:
-    """Dry run: read the extracts through the mapping and report what the data can and cannot support. Writes nothing."""
+    """Dry run: read the extracts through the mapping and report what the data can and cannot support. Writes nothing unless --out is given."""
+    from .coverage import coverage_report, render
     try:
         ds, q = ingest_dir(a.data, Pseudonymiser("validate-only-" + "x" * 32), load_mapping(a.mapping) if a.mapping else None)
     except (IngestError, MappingError, ValueError) as exc:
         print(f"validation failed: {exc}", file=sys.stderr)
         return 1
+
+    cov = coverage_report(ds)
+    missing_required_fields = []
+    for r in cov:
+        for f in r.get("missing_required_fields", []):
+            if f not in missing_required_fields:
+                missing_required_fields.append(f)
+
+    remediations = []
+    for r in cov:
+        for hint in r.get("remediation", []):
+            if hint not in remediations:
+                remediations.append(hint)
+
+    if getattr(a, "json", False) or (getattr(a, "out", None) and str(a.out).endswith(".json")):
+        payload = {
+            "rows_read": q.rows_read,
+            "rows_rejected": q.rows_rejected,
+            "feeds_missing": q.feeds_missing,
+            "missing_required_fields": missing_required_fields,
+            "absent_fields": q.absent_fields,
+            "feed_health": q.feed_health,
+            "notes": q.notes,
+            "rejected_samples": q.rejected_samples[:10],
+            "detector_coverage": cov,
+            "remediation": remediations,
+        }
+        text = json.dumps(payload, indent=2)
+        if getattr(a, "out", None):
+            Path(a.out).write_text(text, encoding="utf-8")
+            print(f"Validation report written to {a.out}")
+        else:
+            print(text)
+        return 0
+
     print(f"rows read: {q.rows_read}\nrows rejected: {q.rows_rejected or 'none'}\nfeeds missing: {q.feeds_missing or 'none'}")
+    if missing_required_fields:
+        print(f"missing required fields: {', '.join(missing_required_fields)}")
+    if q.absent_fields:
+        print(f"optional fields absent: {', '.join(q.absent_fields)}")
     for n in q.notes:
         print(f"  note: {n}")
     for line in q.rejected_samples[:5]:
         print(f"  rejected: {line}")
     _print_coverage(ds)
+    if remediations:
+        print("\nrecommended remediation:")
+        for hint in remediations:
+            print(f"  - {hint}")
+    if getattr(a, "out", None):
+        Path(a.out).write_text(render(cov), encoding="utf-8")
+        print(f"\nValidation summary written to {a.out}")
     return 0
 
 
@@ -200,7 +263,8 @@ def main(argv: list[str] | None = None) -> int:
     sub = ap.add_subparsers(dest="cmd", required=True)
     d = sub.add_parser("demo"); d.add_argument("--out"); d.add_argument("--seed", type=int, default=7); d.add_argument("--style", choices=["A", "B"], help="read a foreign-shaped export through a mapping"); d.set_defaults(fn=cmd_demo)
     s = sub.add_parser("scan"); s.add_argument("--data", required=True); s.add_argument("--out", required=True); s.add_argument("--mapping"); s.set_defaults(fn=cmd_scan)
-    v0 = sub.add_parser("validate"); v0.add_argument("--data", required=True); v0.add_argument("--mapping"); v0.set_defaults(fn=cmd_validate)
+    v0 = sub.add_parser("validate"); v0.add_argument("--data", required=True); v0.add_argument("--mapping"); v0.add_argument("--json", action="store_true"); v0.add_argument("--out"); v0.set_defaults(fn=cmd_validate)
+    dc = sub.add_parser("data-contract"); dc.add_argument("--format", choices=["json", "markdown"], default="markdown"); dc.add_argument("--out"); dc.set_defaults(fn=cmd_data_contract)
     g = sub.add_parser("suggest-mapping"); g.add_argument("--file", required=True); g.add_argument("--feed", required=True); g.add_argument("--delimiter"); g.add_argument("--out"); g.set_defaults(fn=cmd_suggest)
     rp = sub.add_parser("reproduce"); rp.add_argument("--data", required=True); rp.add_argument("--out", required=True); rp.add_argument("--mapping"); rp.set_defaults(fn=cmd_reproduce)
     r2 = sub.add_parser("report"); r2.add_argument("--out", required=True); r2.add_argument("--lead", type=int, default=1); r2.add_argument("--all", action="store_true"); r2.set_defaults(fn=cmd_report)

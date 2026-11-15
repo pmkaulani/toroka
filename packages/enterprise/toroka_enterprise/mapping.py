@@ -261,7 +261,9 @@ def read_mapped(directory: Path, name: str, fm: FeedMapping, q) -> list[tuple[in
 
         if canon not in fm.columns and canon not in fm.defaults:
 
-            q.absent_fields.append(f"{name}.{canon}")
+            qualified = f"{name}.{canon}"
+            if qualified not in q.absent_fields:
+                q.absent_fields.append(qualified)
 
     if unmapped:
 

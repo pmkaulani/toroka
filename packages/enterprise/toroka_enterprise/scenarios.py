@@ -600,7 +600,12 @@ class EntitlementIntegrity(_Provider):
 
             at = ds.events_by_staff[f.staff_ref][0].ts if ds.events_by_staff.get(f.staff_ref) else fallback_ts
 
-            if sum(1 for a in group if a.is_privileged) == 1:
+            if "system_accounts.is_privileged" in ds.absent_fields:
+                out.append(_ev("IAM", "iam_hr", "iam_record", "context",
+                               f"{len(group)} active {system} profiles are linked to one staff identity, but privilege level is unsupplied.",
+                               "Cannot confirm whether accounts are legitimate standard/admin pairs because is_privileged is absent.", 1, 0.5, 0.5, at,
+                               ["Supply system_accounts.is_privileged to distinguish admin accounts from duplicate profiles."], f.label(), refs))
+            elif sum(1 for a in group if a.is_privileged) == 1:
 
                 out.append(_ev("IAM", "iam_hr", "iam_record", "context", f"Two active {system} profiles: one standard, one privileged.",
 
