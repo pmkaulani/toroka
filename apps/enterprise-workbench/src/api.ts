@@ -53,6 +53,17 @@ import {
   CopilotReportDraft,
   CopilotStatus,
   CopilotThread,
+  GovernedComponent,
+  ValidationRun,
+  ProductionRelease,
+  SuspensionRecord,
+  GovernanceIncident,
+  DriftRecord,
+  SystemHealthOverview,
+  EvidencePassport,
+  GovernedAIProvider,
+  ReadinessAssessment,
+  ValidationPackage,
 } from "./types";
 
 export const BANK_PERSONAS: Persona[] = [
@@ -679,4 +690,218 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ rating, feedback_text: feedbackText }),
     }),
+
+  // =========================================================================
+  // Phase 12: Production Governance, Model Risk & Bank Deployment
+  // =========================================================================
+
+  listGovernedComponents: (params?: { component_type?: string; status?: string }): Promise<GovernedComponent[]> => {
+    const q = new URLSearchParams();
+    if (params?.component_type) q.set("component_type", params.component_type);
+    if (params?.status) q.set("status", params.status);
+    const qs = q.toString() ? `?${q.toString()}` : "";
+    return request<GovernedComponent[]>(`/api/enterprise/v1/governance/components${qs}`);
+  },
+
+  registerGovernedComponent: (payload: {
+    component_id: string;
+    version: string;
+    component_type: string;
+    name: string;
+    risk_tier: string;
+    owner_team: string;
+    source_digest: string;
+    configuration_digest: string;
+    parameters?: Record<string, unknown>;
+  }): Promise<GovernedComponent> =>
+    request<GovernedComponent>("/api/enterprise/v1/governance/components", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  getGovernedComponent: (componentId: string, version: string): Promise<GovernedComponent> =>
+    request<GovernedComponent>(`/api/enterprise/v1/governance/components/${encodeURIComponent(componentId)}/${encodeURIComponent(version)}`),
+
+  approveGovernedComponent: (
+    componentId: string,
+    version: string,
+    payload: { validation_run_id: string; validation_digest: string; rationale: string }
+  ): Promise<GovernedComponent> =>
+    request<GovernedComponent>(`/api/enterprise/v1/governance/components/${encodeURIComponent(componentId)}/${encodeURIComponent(version)}/approve`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  recordValidationRun: (payload: {
+    component_id: string;
+    component_version: string;
+    dataset_digest: string;
+    configuration_digest: string;
+    metrics: Array<{ name: string; value: number; threshold?: number | null; direction?: string; result: string }>;
+    evaluator: string;
+    limitations?: string[];
+  }): Promise<ValidationRun> =>
+    request<ValidationRun>("/api/enterprise/v1/governance/validation-runs", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  listValidationRuns: (componentId?: string): Promise<ValidationRun[]> => {
+    const qs = componentId ? `?component_id=${encodeURIComponent(componentId)}` : "";
+    return request<ValidationRun[]>(`/api/enterprise/v1/governance/validation-runs${qs}`);
+  },
+
+  createRelease: (payload: {
+    version: string;
+    environment?: string;
+    components?: Record<string, string>;
+    validation_runs?: string[];
+    approval_records?: string[];
+    readiness_gates?: Array<Record<string, unknown>>;
+  }): Promise<ProductionRelease> =>
+    request<ProductionRelease>("/api/enterprise/v1/governance/releases", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  listReleases: (): Promise<ProductionRelease[]> =>
+    request<ProductionRelease[]>("/api/enterprise/v1/governance/releases"),
+
+  promoteRelease: (releaseId: string, targetEnvironment: string): Promise<ProductionRelease> =>
+    request<ProductionRelease>(`/api/enterprise/v1/governance/releases/${encodeURIComponent(releaseId)}/promote`, {
+      method: "POST",
+      body: JSON.stringify({ target_environment: targetEnvironment }),
+    }),
+
+  rollbackRelease: (releaseId: string, targetReleaseId: string, reason: string): Promise<ProductionRelease> =>
+    request<ProductionRelease>(`/api/enterprise/v1/governance/releases/${encodeURIComponent(releaseId)}/rollback`, {
+      method: "POST",
+      body: JSON.stringify({ target_release_id: targetReleaseId, reason }),
+    }),
+
+  suspendComponent: (payload: {
+    component_id: string;
+    version: string;
+    reason: string;
+    incident_id?: string;
+  }): Promise<SuspensionRecord> =>
+    request<SuspensionRecord>("/api/enterprise/v1/governance/kill-switch/suspend", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  resumeComponent: (payload: {
+    component_id: string;
+    version: string;
+    reason: string;
+  }): Promise<SuspensionRecord> =>
+    request<SuspensionRecord>("/api/enterprise/v1/governance/kill-switch/resume", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  listSuspensions: (activeOnly?: boolean): Promise<SuspensionRecord[]> => {
+    const qs = activeOnly ? "?active_only=true" : "";
+    return request<SuspensionRecord[]>(`/api/enterprise/v1/governance/kill-switch/suspensions${qs}`);
+  },
+
+  createGovernanceIncident: (payload: {
+    title: string;
+    category: string;
+    severity: string;
+    affected_components: string[];
+    affected_case_ids?: string[];
+    detection_source?: string;
+    owner?: string;
+  }): Promise<GovernanceIncident> =>
+    request<GovernanceIncident>("/api/enterprise/v1/governance/incidents", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  updateIncidentStatus: (
+    incidentId: string,
+    payload: { status: string; remediation_notes?: string; post_incident_review?: string }
+  ): Promise<GovernanceIncident> =>
+    request<GovernanceIncident>(`/api/enterprise/v1/governance/incidents/${encodeURIComponent(incidentId)}/status`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    }),
+
+  listGovernanceIncidents: (status?: string): Promise<GovernanceIncident[]> => {
+    const qs = status ? `?status=${encodeURIComponent(status)}` : "";
+    return request<GovernanceIncident[]>(`/api/enterprise/v1/governance/incidents${qs}`);
+  },
+
+  recordDrift: (payload: {
+    drift_type: string;
+    component_id: string;
+    metric_name: string;
+    baseline_value: number;
+    observed_value: number;
+    threshold: number;
+    recommended_response?: string;
+    details?: Record<string, unknown>;
+  }): Promise<DriftRecord> =>
+    request<DriftRecord>("/api/enterprise/v1/governance/drift", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  listDriftRecords: (driftType?: string): Promise<DriftRecord[]> => {
+    const qs = driftType ? `?drift_type=${encodeURIComponent(driftType)}` : "";
+    return request<DriftRecord[]>(`/api/enterprise/v1/governance/drift${qs}`);
+  },
+
+  getSystemHealthOverview: (): Promise<SystemHealthOverview> =>
+    request<SystemHealthOverview>("/api/enterprise/v1/governance/health"),
+
+  generateEvidencePassport: (findingId: string, caseId: string): Promise<EvidencePassport> =>
+    request<EvidencePassport>("/api/enterprise/v1/governance/passports", {
+      method: "POST",
+      body: JSON.stringify({ finding_id: findingId, case_id: caseId }),
+    }),
+
+  getEvidencePassport: (passportId: string): Promise<EvidencePassport> =>
+    request<EvidencePassport>(`/api/enterprise/v1/governance/passports/${encodeURIComponent(passportId)}`),
+
+  listEvidencePassports: (caseId?: string): Promise<EvidencePassport[]> => {
+    const qs = caseId ? `?case_id=${encodeURIComponent(caseId)}` : "";
+    return request<EvidencePassport[]>(`/api/enterprise/v1/governance/passports${qs}`);
+  },
+
+  registerAIProvider: (payload: {
+    provider_name: string;
+    model_identifier: string;
+    model_version: string;
+    hosting_location: string;
+    data_retention_policy: string;
+    training_on_customer_data_permitted?: boolean;
+    risk_tier?: string;
+  }): Promise<GovernedAIProvider> =>
+    request<GovernedAIProvider>("/api/enterprise/v1/governance/ai-providers", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  listAIProviders: (): Promise<GovernedAIProvider[]> =>
+    request<GovernedAIProvider[]>("/api/enterprise/v1/governance/ai-providers"),
+
+  evaluateReadinessGates: (payload: {
+    release_version: string;
+    gates: Array<{
+      gate_name: string;
+      status: string;
+      verified_by: string;
+      rationale: string;
+      evidence_reference?: string;
+    }>;
+  }): Promise<ReadinessAssessment> =>
+    request<ReadinessAssessment>("/api/enterprise/v1/governance/readiness/evaluate", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  getValidationPackage: (releaseVersion: string): Promise<ValidationPackage> =>
+    request<ValidationPackage>(`/api/enterprise/v1/governance/readiness/validation-package/${encodeURIComponent(releaseVersion)}`),
 };

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { api, getCurrentPersona } from "../api";
-import { CaseDetail, CaseNote, ClosureProposal, RevealRequest } from "../types";
+import { CaseDetail, CaseNote, ClosureProposal, RevealRequest, EvidencePassport } from "../types";
 
 interface CaseDetailModalProps {
   caseId: string;
@@ -28,6 +28,22 @@ export const CaseDetailModal: React.FC<CaseDetailModalProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
+  const [passportData, setPassportData] = useState<EvidencePassport | null>(null);
+  const [passportLoading, setPassportLoading] = useState(false);
+
+  const handleGeneratePassport = async () => {
+    setPassportLoading(true);
+    setActionError(null);
+    try {
+      const p = await api.generateEvidencePassport("finding-" + caseId.slice(0, 8), caseId);
+      setPassportData(p);
+      setActionSuccess("Cryptographic Evidence Passport generated and verified.");
+    } catch (err: any) {
+      setActionError(err.message);
+    } finally {
+      setPassportLoading(false);
+    }
+  };
 
   // Forms
   const [newNote, setNewNote] = useState("");
@@ -231,6 +247,14 @@ export const CaseDetailModal: React.FC<CaseDetailModalProps> = ({
               </button>
             )}
             <button
+              className="wb-btn"
+              onClick={handleGeneratePassport}
+              disabled={passportLoading}
+              style={{ fontSize: 12, padding: "4px 10px", borderColor: "#10b981", color: "#10b981", fontWeight: 600 }}
+            >
+              {passportLoading ? "Generating..." : "Evidence Passport 🛡️"}
+            </button>
+            <button
               onClick={onClose}
               style={{
                 background: "transparent",
@@ -256,6 +280,43 @@ export const CaseDetailModal: React.FC<CaseDetailModalProps> = ({
           {actionSuccess && (
             <div className="notice-banner" style={{ borderColor: "var(--accent-emerald)", color: "#6ee7b7" }}>
               <strong>Success:</strong> {actionSuccess}
+            </div>
+          )}
+
+          {/* Evidence Passport Banner */}
+          {passportData && (
+            <div
+              className="wb-card"
+              style={{
+                background: "rgba(6, 78, 59, 0.2)",
+                borderColor: "rgba(16, 185, 129, 0.4)",
+                padding: "12px 16px",
+                marginBottom: 16,
+              }}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <div style={{ fontWeight: 700, color: "#10b981", fontSize: 13 }}>
+                  🛡️ Cryptographic Evidence Passport: {passportData.passport_id}
+                </div>
+                <span
+                  style={{
+                    background: "rgba(16, 185, 129, 0.2)",
+                    color: "#6ee7b7",
+                    padding: "2px 8px",
+                    borderRadius: 4,
+                    fontSize: 11,
+                    fontWeight: 600,
+                  }}
+                >
+                  {passportData.is_verified ? "SHA-256 VERIFIED" : "UNVERIFIED"}
+                </span>
+              </div>
+              <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 6 }}>
+                Finding: {passportData.finding_type} | Evidence Count: {passportData.evidence_count} | Sources: {passportData.source_systems.join(", ")}
+              </div>
+              <div style={{ fontSize: 10, fontFamily: "monospace", color: "var(--text-dim)", marginTop: 4, wordBreak: "break-all" }}>
+                Digest: {passportData.passport_digest}
+              </div>
             </div>
           )}
 

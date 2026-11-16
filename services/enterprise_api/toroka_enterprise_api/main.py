@@ -31,6 +31,7 @@ from .routers.simulations import router as simulations_router
 from .routers.memory import router as memory_router
 from .routers.network import router as network_router
 from .routers.copilot import router as copilot_router
+from .routers.production_governance import router as production_governance_router
 from .routers.reveals import router as reveals_router
 from .routers.runs import router as runs_router
 from .routers.system import router as system_router
@@ -177,6 +178,7 @@ def create_app(
     app.include_router(memory_router)
     app.include_router(network_router)
     app.include_router(copilot_router)
+    app.include_router(production_governance_router)
 
     # Mount static Enterprise Workbench if dist exists
     workbench_dist = Path(__file__).resolve().parents[3] / "apps" / "enterprise-workbench" / "dist"

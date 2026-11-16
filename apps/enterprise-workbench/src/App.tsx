@@ -16,6 +16,7 @@ import { SimulationLabView } from "./components/SimulationLabView";
 import { InstitutionalIntelligenceView } from "./components/InstitutionalIntelligenceView";
 import { NetworkIntelligenceView } from "./components/NetworkIntelligenceView";
 import { CopilotView } from "./components/CopilotView";
+import { ProductionGovernanceView } from "./components/ProductionGovernanceView";
 import { Persona } from "./types";
 
 export const App: React.FC = () => {
@@ -119,6 +120,13 @@ export const App: React.FC = () => {
         </button>
 
         <button
+          className={`wb-tab ${activeTab === "governance" ? "active" : ""}`}
+          onClick={() => setActiveTab("governance")}
+        >
+          Production Governance
+        </button>
+
+        <button
           className={`wb-tab ${activeTab === "data-readiness" ? "active" : ""}`}
           onClick={() => setActiveTab("data-readiness")}
         >
@@ -171,6 +179,7 @@ export const App: React.FC = () => {
             onSelectCase={(id) => setSelectedCaseId(id)}
           />
         )}
+        {activeTab === "governance" && <ProductionGovernanceView currentPersona={persona} />}
         {activeTab === "data-readiness" && <DataReadinessView />}
         {activeTab === "integrations" && <IntegrationsView />}
         {activeTab === "audit-trail" && <AuditTrailView />}

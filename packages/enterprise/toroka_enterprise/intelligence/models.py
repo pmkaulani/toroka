@@ -864,6 +864,211 @@ class CopilotFeedbackRecord(IntelligenceBase):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
 
 
+# ==============================================================================
+# Phase 12 Models: Production Governance, Model Risk & Bank Deployment
+# ==============================================================================
+
+class GovernedComponentRecord(IntelligenceBase):
+    """Governed lifecycle tracking for all rules, detectors, models, prompts, and policies."""
+    __tablename__ = "enterprise_governed_components"
+
+    component_id: Mapped[str] = mapped_column(String(100), primary_key=True)
+    version: Mapped[str] = mapped_column(String(50), primary_key=True)
+    installation_id: Mapped[str] = mapped_column(String(100), primary_key=True, index=True)
+
+    component_type: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    status: Mapped[str] = mapped_column(String(30), nullable=False, default="draft", index=True)
+    risk_tier: Mapped[str] = mapped_column(String(30), nullable=False, index=True)
+    owner_team: Mapped[str] = mapped_column(String(100), nullable=False)
+
+    source_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    configuration_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    parameters: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+
+    created_by: Mapped[str] = mapped_column(String(255), nullable=False)
+    approved_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    suspended_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    suspended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    retired_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    retired_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+
+
+class ValidationRunRecord(IntelligenceBase):
+    """Auditable execution record of a model or detector validation run against approved datasets."""
+    __tablename__ = "enterprise_validation_runs"
+
+    run_id: Mapped[str] = mapped_column(String(100), primary_key=True)
+    installation_id: Mapped[str] = mapped_column(String(100), primary_key=True, index=True)
+
+    component_id: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    component_version: Mapped[str] = mapped_column(String(50), nullable=False)
+
+    dataset_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    configuration_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    metrics: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False, default=list)
+    result: Mapped[str] = mapped_column(String(30), nullable=False, index=True)  # pass, fail, inconclusive
+    evaluator: Mapped[str] = mapped_column(String(255), nullable=False)
+    limitations: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    completed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+
+
+class ProductionReleaseRecord(IntelligenceBase):
+    """Immutable release manifest bundling components, validation evidence, and approval sign-offs."""
+    __tablename__ = "enterprise_production_releases"
+
+    release_id: Mapped[str] = mapped_column(String(100), primary_key=True)
+    installation_id: Mapped[str] = mapped_column(String(100), primary_key=True, index=True)
+
+    version: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+    environment: Mapped[str] = mapped_column(String(30), nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(30), nullable=False, index=True)
+
+    components_manifest: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    validation_runs: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    approval_records: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    readiness_gates: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False, default=list)
+
+    manifest_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    promoted_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    promoted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    rollback_target_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+
+    created_by: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+
+
+class SuspensionAuditRecord(IntelligenceBase):
+    """Kill-switch component suspension ledger for immediate operational fault containment."""
+    __tablename__ = "enterprise_suspension_records"
+
+    suspension_id: Mapped[str] = mapped_column(String(100), primary_key=True)
+    installation_id: Mapped[str] = mapped_column(String(100), primary_key=True, index=True)
+
+    component_id: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    component_version: Mapped[str] = mapped_column(String(50), nullable=False)
+
+    suspended_by: Mapped[str] = mapped_column(String(255), nullable=False)
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    incident_id: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, index=True)
+
+    suspended_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+    resumed_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    resumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    resume_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class GovernanceIncidentRecord(IntelligenceBase):
+    """Operational incident record connecting model/data failures directly to affected casework."""
+    __tablename__ = "enterprise_governance_incidents"
+
+    incident_id: Mapped[str] = mapped_column(String(100), primary_key=True)
+    installation_id: Mapped[str] = mapped_column(String(100), primary_key=True, index=True)
+
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    category: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+    severity: Mapped[str] = mapped_column(String(30), nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(30), nullable=False, index=True)
+
+    affected_components: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    affected_case_ids: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    detection_source: Mapped[str] = mapped_column(String(100), nullable=False)
+
+    detected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+    contained_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    owner: Mapped[str] = mapped_column(String(255), nullable=False)
+
+    remediation_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    post_incident_review: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+
+
+class DriftRecordEntity(IntelligenceBase):
+    """Statistical, data, or AI-quality drift detection record for proactive risk monitoring."""
+    __tablename__ = "enterprise_drift_records"
+
+    drift_id: Mapped[str] = mapped_column(String(100), primary_key=True)
+    installation_id: Mapped[str] = mapped_column(String(100), primary_key=True, index=True)
+
+    drift_type: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+    component_id: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    metric_name: Mapped[str] = mapped_column(String(100), nullable=False)
+
+    baseline_value: Mapped[float] = mapped_column(Float, nullable=False)
+    observed_value: Mapped[float] = mapped_column(Float, nullable=False)
+    threshold: Mapped[float] = mapped_column(Float, nullable=False)
+    severity: Mapped[str] = mapped_column(String(30), nullable=False)
+
+    recommended_response: Mapped[str] = mapped_column(Text, nullable=False)
+    details: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    detected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+
+
+class EvidencePassportRecord(IntelligenceBase):
+    """Toroka Evidence Passport: Cryptographically bound audit provenance for findings."""
+    __tablename__ = "enterprise_evidence_passports"
+
+    passport_id: Mapped[str] = mapped_column(String(100), primary_key=True)
+    installation_id: Mapped[str] = mapped_column(String(100), primary_key=True, index=True)
+
+    finding_id: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    case_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    finding_type: Mapped[str] = mapped_column(String(100), nullable=False)
+    finding_status: Mapped[str] = mapped_column(String(50), nullable=False)
+
+    component_versions: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    configuration_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    evidence_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    source_systems: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+
+    detection_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    earliest_event_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    evidence_at_detection_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    delayed_evidence_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    contradictions_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    evidence_debt_level: Mapped[str] = mapped_column(String(30), nullable=False, default="LOW")
+    alternative_explanations: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+
+    validation_result: Mapped[str] = mapped_column(String(30), nullable=False, default="PASS")
+    human_review_required: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    passport_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+
+
+class GovernedAIProviderRecord(IntelligenceBase):
+    """Third-party AI provider governance, model parameters, and bank data retention compliance."""
+    __tablename__ = "enterprise_ai_provider_records"
+
+    provider_id: Mapped[str] = mapped_column(String(100), primary_key=True)
+    installation_id: Mapped[str] = mapped_column(String(100), primary_key=True, index=True)
+
+    provider_name: Mapped[str] = mapped_column(String(100), nullable=False)
+    model_identifier: Mapped[str] = mapped_column(String(100), nullable=False)
+    model_version: Mapped[str] = mapped_column(String(50), nullable=False)
+
+    hosting_location: Mapped[str] = mapped_column(String(100), nullable=False)
+    data_retention_policy: Mapped[str] = mapped_column(String(100), nullable=False)
+    training_on_customer_data_permitted: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    is_approved: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    risk_tier: Mapped[str] = mapped_column(String(30), nullable=False)
+
+    evaluation_summary: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    last_evaluated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+
+
+
 
 
 

@@ -981,5 +981,209 @@ export interface CopilotStatus {
   allowed_tools: string[];
 }
 
+// =============================================================================
+// Phase 12 Types: Production Governance, Model Risk & Bank Deployment
+// =============================================================================
+
+export interface GovernedComponent {
+  component_id: string;
+  version: string;
+  installation_id: string;
+  component_type: string;
+  name: string;
+  status: "draft" | "validation" | "approved" | "staged" | "active" | "suspended" | "retired";
+  risk_tier: "low" | "moderate" | "high" | "critical";
+  owner_team: string;
+  source_digest: string;
+  configuration_digest: string;
+  parameters: Record<string, unknown>;
+  created_by: string;
+  approved_by?: string | null;
+  approved_at?: string | null;
+  suspended_by?: string | null;
+  suspended_at?: string | null;
+  retired_by?: string | null;
+  retired_at?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ValidationMetric {
+  name: string;
+  value: number;
+  threshold?: number | null;
+  direction?: string | null;
+  result: "pass" | "fail" | "inconclusive";
+}
+
+export interface ValidationRun {
+  run_id: string;
+  installation_id: string;
+  component_id: string;
+  component_version: string;
+  dataset_digest: string;
+  configuration_digest: string;
+  metrics: ValidationMetric[];
+  result: "pass" | "fail" | "inconclusive";
+  evaluator: string;
+  limitations: string[];
+  started_at: string;
+  completed_at: string;
+  created_at: string;
+}
+
+export interface ProductionRelease {
+  release_id: string;
+  installation_id: string;
+  version: string;
+  environment: "development" | "validation" | "pilot" | "production";
+  status: "draft" | "validated" | "approved" | "staged" | "active" | "rolled_back" | "retired";
+  components_manifest: Record<string, string>;
+  validation_runs: string[];
+  approval_records: string[];
+  readiness_gates: Array<Record<string, unknown>>;
+  manifest_digest: string;
+  promoted_by?: string | null;
+  promoted_at?: string | null;
+  rollback_target_id?: string | null;
+  created_by: string;
+  created_at: string;
+}
+
+export interface SuspensionRecord {
+  suspension_id: string;
+  installation_id: string;
+  component_id: string;
+  component_version: string;
+  suspended_by: string;
+  reason: string;
+  incident_id?: string | null;
+  is_active: boolean;
+  suspended_at: string;
+  resumed_by?: string | null;
+  resumed_at?: string | null;
+  resume_reason?: string | null;
+}
+
+export interface GovernanceIncident {
+  incident_id: string;
+  installation_id: string;
+  title: string;
+  category: string;
+  severity: "low" | "medium" | "high" | "critical";
+  status: "triaged" | "contained" | "investigating" | "remediated" | "recovered" | "closed";
+  affected_components: string[];
+  affected_case_ids: string[];
+  detection_source: string;
+  detected_at: string;
+  contained_at?: string | null;
+  resolved_at?: string | null;
+  owner: string;
+  remediation_notes?: string | null;
+  post_incident_review?: string | null;
+  created_at: string;
+}
+
+export interface DriftRecord {
+  drift_id: string;
+  installation_id: string;
+  drift_type: string;
+  component_id: string;
+  metric_name: string;
+  baseline_value: number;
+  observed_value: number;
+  threshold: number;
+  severity: string;
+  recommended_response: string;
+  details: Record<string, unknown>;
+  detected_at: string;
+}
+
+export interface SystemHealthOverview {
+  overall_status: "healthy" | "degraded" | "warning" | "critical";
+  detection_health: string;
+  data_quality_health: string;
+  network_health: string;
+  copilot_health: string;
+  audit_integrity_health: string;
+  active_drift_count: number;
+  open_incidents_count: number;
+  summary_message: string;
+}
+
+export interface EvidencePassport {
+  passport_id: string;
+  installation_id: string;
+  finding_id: string;
+  case_id: string;
+  finding_type: string;
+  finding_status: string;
+  component_versions: Record<string, string>;
+  configuration_digest: string;
+  evidence_count: number;
+  source_systems: string[];
+  detection_time: string;
+  earliest_event_time?: string | null;
+  evidence_at_detection_count: number;
+  delayed_evidence_count: number;
+  contradictions_count: number;
+  evidence_debt_level: string;
+  alternative_explanations: string[];
+  validation_result: string;
+  human_review_required: boolean;
+  passport_digest: string;
+  is_verified: boolean;
+  created_at: string;
+}
+
+export interface GovernedAIProvider {
+  provider_id: string;
+  installation_id: string;
+  provider_name: string;
+  model_identifier: string;
+  model_version: string;
+  hosting_location: string;
+  data_retention_policy: string;
+  training_on_customer_data_permitted: boolean;
+  is_approved: boolean;
+  risk_tier: string;
+  evaluation_summary: Record<string, unknown>;
+  last_evaluated_at?: string | null;
+  created_at: string;
+}
+
+export interface ReadinessAssessment {
+  installation_id: string;
+  release_version: string;
+  overall_status: string;
+  is_production_ready: boolean;
+  gates: Array<{
+    gate_name: string;
+    status: string;
+    verified_by: string;
+    rationale: string;
+    evidence_reference?: string | null;
+  }>;
+  evaluated_at: string;
+}
+
+export interface ValidationPackage {
+  installation_id: string;
+  generated_at: string;
+  release_version: string;
+  components_count: number;
+  active_detectors: string[];
+  validation_runs_count: number;
+  readiness_status: string;
+  open_incidents_count: number;
+  active_suspensions_count: number;
+  executive_summary: string;
+  document_sections: {
+    model_inventory: Array<Record<string, unknown>>;
+    validation_summary: Array<Record<string, unknown>>;
+    controls_and_governance: Record<string, unknown>;
+  };
+}
+
 
 

@@ -77,6 +77,25 @@ ALLOWED_METADATA_KEYS = frozenset({
     "tools_called",
     "rating",
     "grounding_valid",
+    # Production Governance Phase 12
+    "component_id",
+    "component_version",
+    "component_type",
+    "risk_tier",
+    "run_id",
+    "validation_result",
+    "release_id",
+    "environment",
+    "suspension_id",
+    "incident_id",
+    "incident_severity",
+    "drift_id",
+    "drift_type",
+    "passport_id",
+    "provider_id",
+    "gate_name",
+    "gate_status",
+    "is_production_ready",
 })
 
 
