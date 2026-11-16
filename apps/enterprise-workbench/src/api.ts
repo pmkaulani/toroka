@@ -37,6 +37,17 @@ import {
   PatternEvaluation,
   PatternMatch,
   PatternVersion,
+  EntityLinkCandidate,
+  EntityLinkReview,
+  EvidenceSubgraph,
+  FindingEvidenceSubgraph,
+  NetworkAnalysisResult,
+  NetworkAnalysisRun,
+  NetworkEdge,
+  NetworkNode,
+  NetworkPatternFinding,
+  NetworkSnapshot,
+  ShortestPathResult,
 } from "./types";
 
 export const BANK_PERSONAS: Persona[] = [
@@ -492,4 +503,107 @@ export const api = {
 
   matchCasePatterns: (caseId: string, minCoverage: number = 0.1): Promise<PatternMatch[]> =>
     request<PatternMatch[]>(`/api/enterprise/v1/memory/cases/${encodeURIComponent(caseId)}/patterns?min_coverage=${minCoverage}`),
+
+  // Phase 10: Network Intelligence & Fraud Graphs
+  expandNeighborhood: (payload: {
+    seed_nodes: string[];
+    max_depth?: number;
+    max_nodes?: number;
+    max_edges?: number;
+    minimum_confidence?: number;
+    include_shared_attributes?: boolean;
+    direction?: string;
+    as_of?: string;
+  }): Promise<EvidenceSubgraph> =>
+    request<EvidenceSubgraph>("/api/enterprise/v1/network/expand", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  findShortestPath: (payload: {
+    source_key: string;
+    target_key: string;
+    max_depth?: number;
+    minimum_confidence?: number;
+    include_shared_attributes?: boolean;
+  }): Promise<ShortestPathResult> =>
+    request<ShortestPathResult>("/api/enterprise/v1/network/path", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  runNetworkAnalysis: (payload: {
+    seed_entities: string[];
+    case_id?: string;
+    max_depth?: number;
+    max_nodes?: number;
+    max_edges?: number;
+    include_shared_attributes?: boolean;
+    as_of?: string;
+  }): Promise<NetworkAnalysisResult> =>
+    request<NetworkAnalysisResult>("/api/enterprise/v1/network/analyze", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  listNetworkFindings: (caseId?: string): Promise<NetworkPatternFinding[]> => {
+    const q = caseId ? `?case_id=${encodeURIComponent(caseId)}` : "";
+    return request<NetworkPatternFinding[]>(`/api/enterprise/v1/network/findings${q}`);
+  },
+
+  getFindingEvidence: (findingId: string): Promise<FindingEvidenceSubgraph> =>
+    request<FindingEvidenceSubgraph>(`/api/enterprise/v1/network/findings/${encodeURIComponent(findingId)}`),
+
+  listEntityLinkCandidates: (): Promise<EntityLinkCandidate[]> =>
+    request<EntityLinkCandidate[]>("/api/enterprise/v1/network/entity-links"),
+
+  reviewEntityLink: (
+    candidateId: string,
+    decision: string,
+    rationale: string
+  ): Promise<EntityLinkReview> =>
+    request<EntityLinkReview>(`/api/enterprise/v1/network/entity-links/${encodeURIComponent(candidateId)}/review`, {
+      method: "POST",
+      body: JSON.stringify({ decision, rationale }),
+    }),
+
+  listNetworkSnapshots: (): Promise<NetworkSnapshot[]> =>
+    request<NetworkSnapshot[]>("/api/enterprise/v1/network/snapshots"),
+
+  createNetworkSnapshot: (asOf?: string): Promise<NetworkSnapshot> =>
+    request<NetworkSnapshot>("/api/enterprise/v1/network/snapshots", {
+      method: "POST",
+      body: JSON.stringify({ as_of: asOf }),
+    }),
+
+  listNetworkAnalysisRuns: (caseId?: string): Promise<NetworkAnalysisRun[]> => {
+    const q = caseId ? `?case_id=${encodeURIComponent(caseId)}` : "";
+    return request<NetworkAnalysisRun[]>(`/api/enterprise/v1/network/runs${q}`);
+  },
+
+  getCaseNetwork: (
+    caseId: string,
+    maxDepth: number = 2,
+    includeSharedAttributes: boolean = false
+  ): Promise<EvidenceSubgraph> =>
+    request<EvidenceSubgraph>(
+      `/api/enterprise/v1/network/cases/${encodeURIComponent(caseId)}?max_depth=${maxDepth}&include_shared_attributes=${includeSharedAttributes}`
+    ),
+
+  getNetworkNode: (nodeKey: string): Promise<NetworkNode> =>
+    request<NetworkNode>(`/api/enterprise/v1/network/nodes/${encodeURIComponent(nodeKey)}`),
+
+  listNetworkEdges: (
+    sourceKey?: string,
+    targetKey?: string,
+    relationshipType?: string,
+    includeSharedAttributes: boolean = false
+  ): Promise<NetworkEdge[]> => {
+    const params = new URLSearchParams();
+    if (sourceKey) params.append("source_key", sourceKey);
+    if (targetKey) params.append("target_key", targetKey);
+    if (relationshipType) params.append("relationship_type", relationshipType);
+    params.append("include_shared_attributes", String(includeSharedAttributes));
+    return request<NetworkEdge[]>(`/api/enterprise/v1/network/edges?${params.toString()}`);
+  },
 };

@@ -52,6 +52,19 @@ ALLOWED_METADATA_KEYS = frozenset({
     "target_id",
     "lifecycle_status",
     "eligible_for_review",
+    "node_key",
+    "edge_id",
+    "candidate_id",
+    "finding_id",
+    "snapshot_id",
+    "run_id",
+    "depth",
+    "max_depth",
+    "include_shared_attributes",
+    "pattern_type",
+    "anchor_entity",
+    "new_status",
+    "previous_status",
 })
 
 

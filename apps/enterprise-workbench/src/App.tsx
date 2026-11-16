@@ -14,6 +14,7 @@ import { ReviewQueuesView } from "./components/ReviewQueuesView";
 import { RevealModal } from "./components/RevealModal";
 import { SimulationLabView } from "./components/SimulationLabView";
 import { InstitutionalIntelligenceView } from "./components/InstitutionalIntelligenceView";
+import { NetworkIntelligenceView } from "./components/NetworkIntelligenceView";
 import { Persona } from "./types";
 
 export const App: React.FC = () => {
@@ -103,6 +104,13 @@ export const App: React.FC = () => {
         </button>
 
         <button
+          className={`wb-tab ${activeTab === "network" ? "active" : ""}`}
+          onClick={() => setActiveTab("network")}
+        >
+          Network Intelligence
+        </button>
+
+        <button
           className={`wb-tab ${activeTab === "data-readiness" ? "active" : ""}`}
           onClick={() => setActiveTab("data-readiness")}
         >
@@ -140,13 +148,21 @@ export const App: React.FC = () => {
         )}
         {activeTab === "simulation" && <SimulationLabView currentPersona={persona} />}
         {activeTab === "memory" && <InstitutionalIntelligenceView currentPersona={persona} />}
+        {activeTab === "network" && (
+          <NetworkIntelligenceView
+            currentPersona={persona}
+            selectedCaseId={selectedCaseId}
+            onSelectCase={(id) => setSelectedCaseId(id)}
+            onNavigateTab={setActiveTab}
+          />
+        )}
         {activeTab === "data-readiness" && <DataReadinessView />}
         {activeTab === "integrations" && <IntegrationsView />}
         {activeTab === "audit-trail" && <AuditTrailView />}
       </main>
 
       {/* Case Inspection Modal */}
-      {selectedCaseId && activeTab !== "intelligence" && (
+      {selectedCaseId && activeTab !== "intelligence" && activeTab !== "network" && (
         <CaseDetailModal
           caseId={selectedCaseId}
           onClose={() => setSelectedCaseId(null)}
@@ -156,6 +172,10 @@ export const App: React.FC = () => {
           onOpenIntelligence={(id) => {
             setSelectedCaseId(id);
             setActiveTab("intelligence");
+          }}
+          onOpenNetwork={(id) => {
+            setSelectedCaseId(id);
+            setActiveTab("network");
           }}
         />
       )}

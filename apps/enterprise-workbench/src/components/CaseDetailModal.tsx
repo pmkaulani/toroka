@@ -7,6 +7,7 @@ interface CaseDetailModalProps {
   onClose: () => void;
   onConsumeReveal: (pseudonym: string, plaintext: string, consumedAt: string) => void;
   onOpenIntelligence?: (caseId: string) => void;
+  onOpenNetwork?: (caseId: string) => void;
 }
 
 export const CaseDetailModal: React.FC<CaseDetailModalProps> = ({
@@ -14,6 +15,7 @@ export const CaseDetailModal: React.FC<CaseDetailModalProps> = ({
   onClose,
   onConsumeReveal,
   onOpenIntelligence,
+  onOpenNetwork,
 }) => {
   const persona = getCurrentPersona();
   const [caseData, setCaseData] = useState<CaseDetail | null>(null);
@@ -200,6 +202,18 @@ export const CaseDetailModal: React.FC<CaseDetailModalProps> = ({
                 style={{ fontSize: 12, padding: "4px 10px" }}
               >
                 Cross-System Intelligence →
+              </button>
+            )}
+            {onOpenNetwork && (
+              <button
+                className="wb-btn"
+                onClick={() => {
+                  onOpenNetwork(caseData.id);
+                  onClose();
+                }}
+                style={{ fontSize: 12, padding: "4px 10px", borderColor: "var(--accent-blue)" }}
+              >
+                Network Graph →
               </button>
             )}
             <button

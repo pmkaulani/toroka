@@ -718,4 +718,179 @@ export interface MemoryOverview {
   recent_reviews: PatternReview[];
 }
 
+// =============================================================================
+// Phase 10: Network Intelligence & Collaborative Fraud Graphs Types
+// =============================================================================
+
+export interface NetworkNode {
+  installation_id: string;
+  node_key: string;
+  entity_type: string;
+  pseudonymous_label: string;
+  attributes: Record<string, unknown>;
+  first_seen?: string | null;
+  last_seen?: string | null;
+}
+
+export interface NetworkEdge {
+  installation_id: string;
+  edge_id: string;
+  source_key: string;
+  target_key: string;
+  relationship_type: string;
+  evidence_basis: "direct_observation" | "derived_relationship" | "shared_attribute";
+  event_ids: string[];
+  source_record_ids: string[];
+  source_systems: string[];
+  first_seen?: string | null;
+  last_seen?: string | null;
+  confidence: number;
+  directed: boolean;
+  attributes: Record<string, unknown>;
+}
+
+export interface EvidenceSubgraph {
+  installation_id: string;
+  seed_nodes: string[];
+  nodes: NetworkNode[];
+  edges: NetworkEdge[];
+  truncated: boolean;
+  truncation_reason?: string | null;
+  max_depth_reached: number;
+  limitations: string[];
+  node_count: number;
+  edge_count: number;
+}
+
+export interface NetworkPatternFinding {
+  pattern_id: string;
+  installation_id: string;
+  pattern_type:
+    | "fan_in"
+    | "fan_out"
+    | "rapid_pass_through"
+    | "multi_hop_movement"
+    | "circular_movement"
+    | "common_beneficiary"
+    | "shared_infrastructure"
+    | "dormant_account_activation"
+    | "coordinated_account_changes";
+  anchor_entity: string;
+  related_entities: string[];
+  event_ids: string[];
+  start_time: string;
+  end_time: string;
+  detection_time: string;
+  explanation: string;
+  evidence_limitations: string[];
+  alternative_legitimate_explanations: string[];
+  supporting_source_systems: string[];
+  transaction_ids: string[];
+  monetary_total?: string | null;
+  currency?: string | null;
+  confidence: number;
+  pattern_version: string;
+}
+
+export interface EntityLinkCandidate {
+  candidate_id: string;
+  installation_id: string;
+  source_entity_key: string;
+  target_entity_key: string;
+  attribute_type: string;
+  attribute_value: string;
+  match_type: string;
+  status: "SAME_ENTITY_CONFIRMED" | "POSSIBLY_RELATED" | "SHARED_ATTRIBUTE_ONLY" | "RELATIONSHIP_DISPROVEN";
+  confidence: number;
+  supporting_evidence: Array<Record<string, unknown>>;
+  contradicting_evidence: Array<Record<string, unknown>>;
+  source_systems: string[];
+  first_observed: string;
+  last_observed: string;
+  reviewed_by?: string | null;
+  reviewed_at?: string | null;
+  review_rationale?: string | null;
+}
+
+export interface EntityLinkReview {
+  review_id: string;
+  candidate_id: string;
+  installation_id: string;
+  reviewer_subject: string;
+  decision: string;
+  rationale: string;
+  previous_status: string;
+  new_status: string;
+  reviewed_at: string;
+}
+
+export interface FindingEvidenceSubgraph {
+  finding_id: string;
+  installation_id: string;
+  pattern_type: string;
+  anchor_entity: string;
+  nodes: NetworkNode[];
+  edges: NetworkEdge[];
+  supporting_event_ids: string[];
+  supporting_transaction_ids: string[];
+  supporting_source_systems: string[];
+  confidence: number;
+  explanation: string;
+  limitations: string[];
+  alternative_explanations: string[];
+  missing_information: string[];
+}
+
+export interface NetworkAnalysisResult {
+  analysis_id: string;
+  installation_id: string;
+  case_id?: string | null;
+  anchor_entities: string[];
+  subgraph: EvidenceSubgraph;
+  findings: NetworkPatternFinding[];
+  entity_link_candidates: EntityLinkCandidate[];
+  source_coverage: number;
+  source_systems: string[];
+  alternative_explanations: string[];
+  missing_evidence: string[];
+  institutional_pattern_matches: Array<Record<string, unknown>>;
+  executed_at: string;
+}
+
+export interface NetworkSnapshot {
+  snapshot_id: string;
+  installation_id: string;
+  as_of: string;
+  node_count: number;
+  edge_count: number;
+  nodes_digest: string;
+  edges_digest: string;
+  metadata: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface NetworkAnalysisRun {
+  run_id: string;
+  installation_id: string;
+  case_id?: string | null;
+  executed_by: string;
+  seed_entities: string[];
+  findings_count: number;
+  nodes_count: number;
+  edges_count: number;
+  truncated: boolean;
+  result_digest: string;
+  executed_at: string;
+}
+
+export interface ShortestPathResult {
+  source_key: string;
+  target_key: string;
+  found: boolean;
+  path_length: number;
+  nodes: NetworkNode[];
+  edges: NetworkEdge[];
+}
+
+
 

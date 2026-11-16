@@ -587,6 +587,198 @@ class MemoryAuditEventRecord(IntelligenceBase):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
 
 
+# =============================================================================
+# Phase 10: Network Intelligence & Collaborative Fraud Graphs Models
+# =============================================================================
+
+
+class NetworkNodeRecord(IntelligenceBase):
+    """Normalized network node representing a resolved entity in an installation."""
+    __tablename__ = "enterprise_network_nodes"
+
+    node_key: Mapped[str] = mapped_column(String(255), primary_key=True)
+    installation_id: Mapped[str] = mapped_column(String(100), primary_key=True, index=True)
+
+    entity_type: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+    pseudonymous_label: Mapped[str] = mapped_column(String(255), nullable=False)
+
+    attributes: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    first_seen: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_seen: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+
+
+class NetworkEdgeRecord(IntelligenceBase):
+    """Evidence-backed relationship or transaction edge between two nodes."""
+    __tablename__ = "enterprise_network_edges"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    installation_id: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+
+    source_key: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    target_key: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+
+    relationship_type: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    evidence_basis: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+
+    event_ids: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    source_record_ids: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    source_systems: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+
+    confidence: Mapped[float] = mapped_column(Float, nullable=False, default=1.0)
+    directed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+
+    first_seen: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_seen: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    attributes: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "installation_id", "source_key", "target_key", "relationship_type", "evidence_basis",
+            name="uq_network_edge_record",
+        ),
+    )
+
+
+class EntityLinkCandidateRecord(IntelligenceBase):
+    """Candidate relationship proposed via shared attribute or resolution engine."""
+    __tablename__ = "enterprise_entity_link_candidates"
+
+    candidate_id: Mapped[str] = mapped_column(String(100), primary_key=True)
+    installation_id: Mapped[str] = mapped_column(String(100), primary_key=True, index=True)
+
+    source_entity_key: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    target_entity_key: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+
+    attribute_type: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+    attribute_value: Mapped[str] = mapped_column(String(255), nullable=False)
+    match_type: Mapped[str] = mapped_column(String(30), nullable=False)
+
+    status: Mapped[str] = mapped_column(String(40), nullable=False, default="SHARED_ATTRIBUTE_ONLY", index=True)
+    confidence: Mapped[float] = mapped_column(Float, nullable=False)
+
+    supporting_evidence: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False, default=list)
+    contradicting_evidence: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False, default=list)
+    source_systems: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+
+    first_observed: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    last_observed: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+    reviewed_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    review_rationale: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+
+
+class EntityLinkReviewRecord(IntelligenceBase):
+    """Immutable audit log of human review decisions on entity link candidates."""
+    __tablename__ = "enterprise_entity_link_reviews"
+
+    review_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    installation_id: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+
+    candidate_id: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    reviewer_subject: Mapped[str] = mapped_column(String(255), nullable=False)
+
+    decision: Mapped[str] = mapped_column(String(40), nullable=False)
+    rationale: Mapped[str] = mapped_column(Text, nullable=False)
+
+    previous_status: Mapped[str] = mapped_column(String(40), nullable=False)
+    new_status: Mapped[str] = mapped_column(String(40), nullable=False)
+
+    reviewed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+
+
+class NetworkFindingRecord(IntelligenceBase):
+    """Detected network pattern or motif finding with explainability metadata."""
+    __tablename__ = "enterprise_network_findings"
+
+    finding_id: Mapped[str] = mapped_column(String(100), primary_key=True)
+    installation_id: Mapped[str] = mapped_column(String(100), primary_key=True, index=True)
+
+    case_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    pattern_type: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+    anchor_entity: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+
+    related_entities: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    event_ids: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+
+    start_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    end_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    detection_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+
+    explanation: Mapped[str] = mapped_column(Text, nullable=False)
+    evidence_limitations: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    alternative_legitimate_explanations: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+
+    supporting_source_systems: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    transaction_ids: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+
+    monetary_total: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    currency: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    confidence: Mapped[float] = mapped_column(Float, nullable=False, default=1.0)
+    pattern_version: Mapped[str] = mapped_column(String(50), nullable=False, default="v1")
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+
+
+class NetworkFindingEvidenceRecord(IntelligenceBase):
+    """Persisted compact evidence subgraph for an individual network finding."""
+    __tablename__ = "enterprise_network_finding_evidence"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    installation_id: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+
+    finding_id: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    subgraph_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+
+
+class NetworkSnapshotRecord(IntelligenceBase):
+    """Historical point-in-time snapshot summary of an installation's network graph."""
+    __tablename__ = "enterprise_network_snapshots"
+
+    snapshot_id: Mapped[str] = mapped_column(String(100), primary_key=True)
+    installation_id: Mapped[str] = mapped_column(String(100), primary_key=True, index=True)
+
+    as_of: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    node_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    edge_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+    nodes_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    edges_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+
+    metadata_: Mapped[dict[str, Any]] = mapped_column("metadata", JSON, nullable=False, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+
+
+class NetworkAnalysisRunRecord(IntelligenceBase):
+    """Auditable execution record of a network intelligence analysis run."""
+    __tablename__ = "enterprise_network_analysis_runs"
+
+    run_id: Mapped[str] = mapped_column(String(100), primary_key=True)
+    installation_id: Mapped[str] = mapped_column(String(100), primary_key=True, index=True)
+
+    case_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    executed_by: Mapped[str] = mapped_column(String(255), nullable=False)
+
+    seed_entities: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    findings_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    nodes_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    edges_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    truncated: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+    result_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    result_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+
+    executed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+
+
 
 
 
