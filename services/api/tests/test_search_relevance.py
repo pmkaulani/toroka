@@ -173,7 +173,7 @@ def test_url_pipeline_surfaces_only_target_relevant_search_results_and_stays_inc
 
     assert result.normalized_url == "https://www.instagram.com/base_menswear/"
     assert result.risk_band == "inconclusive"
-    assert "not established" in result.summary.lower() or "not a finding" in result.summary.lower()
+    assert "can't tell yet" in result.summary.lower() or "not established" in result.summary.lower() or "not a finding" in result.summary.lower()
     public_leads = [s for s in result.sources if "Tavily" in s.reviewer]
     assert len(public_leads) == 1
     assert "base_menswear" in public_leads[0].statement.lower()

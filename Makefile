@@ -1,4 +1,4 @@
-.PHONY: install test eval browser run migrate user registry-due registry-check purge live
+.PHONY: install test eval browser run migrate user registry-due registry-check purge live release
 PY ?= python3
 export DATABASE_URL ?= sqlite:///$(CURDIR)/ssi.db
 export STORAGE_DIR ?= $(CURDIR)/evidence_store
@@ -27,3 +27,6 @@ registry-check:
 	$(CLI) registry-check
 purge:
 	$(CLI) purge
+release:                      # package clean release zip excluding secrets, db, venv, and stores
+	$(PY) -c "import zipfile, os; exclude_dirs = {'.venv', 'node_modules', 'evidence_store', '.git', '__pycache__', '.pytest_cache', '.hypothesis'}; exclude_files = {'.env', 'ssi.db'}; out = 'Toroka_release.zip'; zf = zipfile.ZipFile(out, 'w', zipfile.ZIP_DEFLATED); [zf.write(os.path.join(r, f), os.path.join(r, f)) for r, d, fs in os.walk('.') for f in fs if not any(x in r.split(os.sep) for x in exclude_dirs) and f not in exclude_files and not f.startswith(('ssi.db', '.env.')) and not f.endswith(('.pyc', '.pyo', '.db', '.db-shm', '.db-wal')) and f != out and (f != '.env' and not f.endswith('.env'))]; zf.close(); print(f'Created {out} safely.')"
+

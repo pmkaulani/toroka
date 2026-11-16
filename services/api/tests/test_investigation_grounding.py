@@ -153,7 +153,8 @@ def test_chat_endpoint_searches_shop_name_and_reports_missing_provider(env):
     body = response.json()
     answer = body.get("reply_en") or body["reply"]
     assert "shop name **clothingctrl**" in answer.lower()
-    assert "tavily_api_key" in answer.lower()
+    assert "tavily_api_key" not in answer.lower()
+    assert "tavily" not in answer.lower()
 
 
 def test_chat_endpoint_keeps_context_for_unsolicited_betting_sms(env):

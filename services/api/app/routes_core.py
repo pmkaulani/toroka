@@ -25,6 +25,7 @@ from . import pipeline
 from .deps import Ctx, audit, client_key, ctx, current_user, expiry, get_db, require_role, require_user, throttle
 from .schemas import (AuthIn, CheckRequest, CheckResponse, ChatRequest, ChatResponse, EvidenceOut, OpportunityIn, RecoveryIn, VerifiedEntityIn, URLInvestigateRequest)
 from .ai_agent import investigate_with_ai, chat_with_ai, chat_with_ai_multilingual
+from .user_text import scrub_reply
 from .public_search import find_public_identifiers, public_search, filter_public_search_results
 from .investigation_intelligence import investigate_public_targets, build_verdict_explanation
 from ssi_rules.category import detect_category
@@ -1015,6 +1016,10 @@ def chat_with_check(check_id: str, body: ChatRequest, request: Request, db: Sess
             "advice": list(investigation_data.get("advice") or []) + [x.get("text", "") for x in (res.get("next_steps") or []) if isinstance(x, dict)],
             "limitations": list(investigation_data.get("limitations") or []) + list(res.get("limitations") or []),
             "providers": investigation_data.get("providers") or [],
+            "decision": res.get("decision") or investigation_data.get("decision"),
+            "decision_sw": res.get("decision_sw") or investigation_data.get("decision_sw"),
+            "platform_profile": res.get("platform_profile") or investigation_data.get("platform_profile"),
+            "domain": res.get("domain") or investigation_data.get("domain"),
         })
     reply, reply_en, reply_sw = chat_with_ai_multilingual(
         check_summary=summary,
@@ -1029,7 +1034,12 @@ def chat_with_check(check_id: str, body: ChatRequest, request: Request, db: Sess
         shop_profile=shop_profile,
         public_sources=public_sources or None,
     )
-    return ChatResponse(reply=reply, reply_en=reply_en, reply_sw=reply_sw, check_id=check_id)
+    return ChatResponse(
+        reply=scrub_reply(reply),
+        reply_en=scrub_reply(reply_en),
+        reply_sw=scrub_reply(reply_sw),
+        check_id=check_id,
+    )
 
 
 def _is_url_inquiry(text: str, urls: list, profile: Any = None) -> bool:
@@ -1230,6 +1240,10 @@ def general_chat(body: ChatRequest, request: Request, db: Session = Depends(get_
                     "advice": list(dict.fromkeys(investigation_advice))[:7],
                     "limitations": list(dict.fromkeys((intelligence_result.get("limitations") or []) + (url_inv.limitations or [])))[:7],
                     "providers": provider_statuses,
+                    "decision": getattr(url_inv, "decision", None),
+                    "decision_sw": getattr(url_inv, "decision_sw", None),
+                    "platform_profile": getattr(url_inv, "platform_profile", None),
+                    "domain": getattr(url_inv, "domain", None),
                 })
 
             manual_searches = []
@@ -1247,9 +1261,11 @@ def general_chat(body: ChatRequest, request: Request, db: Session = Depends(get_
                     settings=c.settings,
                     public_sources=public_sources,
                 )
-                reply = reply_sw if is_sw else reply_en
+                reply = scrub_reply(reply_sw if is_sw else reply_en)
+                reply_en = scrub_reply(reply_en)
+                reply_sw = scrub_reply(reply_sw)
             elif url_inv.ai_conversational_reply:
-                reply = url_inv.ai_conversational_reply
+                reply = scrub_reply(url_inv.ai_conversational_reply)
                 reply_en = reply_sw = reply
             else:
                 def _f_str(item):
@@ -1362,9 +1378,9 @@ def general_chat(body: ChatRequest, request: Request, db: Session = Depends(get_
                 "limitations": direct_limitations,
             }
             return ChatResponse(
-                reply=reply,
-                reply_en=locals().get("reply_en", reply),
-                reply_sw=locals().get("reply_sw", reply),
+                reply=scrub_reply(reply),
+                reply_en=scrub_reply(locals().get("reply_en", reply)),
+                reply_sw=scrub_reply(locals().get("reply_sw", reply)),
                 check_id=None,
                 action_chips=action_chips,
                 manual_searches=manual_searches,
@@ -1713,9 +1729,9 @@ def general_chat(body: ChatRequest, request: Request, db: Session = Depends(get_
         public_sources=public_sources,
     )
     return ChatResponse(
-        reply=reply,
-        reply_en=reply_en,
-        reply_sw=reply_sw,
+        reply=scrub_reply(reply),
+        reply_en=scrub_reply(reply_en),
+        reply_sw=scrub_reply(reply_sw),
         check_id=active_check_id,
         manual_searches=manual_searches,
         detected_patterns=detected_patterns,

@@ -1267,7 +1267,7 @@ def investigate_public_targets(
                              "results_relevant": filtered.get("relevant_count", 0),
                              "results_background": filtered.get("background_count", 0),
                              "results_excluded": filtered.get("irrelevant_count", 0),
-                             "detail": (f"Tavily search retrieved {filtered.get('raw_result_count', 0)} result(s): "
+                             "detail": (f"Public search retrieved {filtered.get('raw_result_count', 0)} result(s): "
                                         f"{filtered.get('relevant_count', 0)} result(s) mention or link to the exact target, "
                                         f"{filtered.get('background_count', 0)} general background result(s), and "
                                         f"{filtered.get('irrelevant_count', 0)} unrelated result(s) excluded. "
@@ -1671,8 +1671,7 @@ def investigate_public_targets(
     if not result["evidence"]:
         result["limitations"].append("No target-matched public social or web evidence was retrieved. This is not proof that the target is safe or fraudulent.")
     if any(p.get("status") in {"not_configured", "failed"} for p in result["providers"]):
-        unavailable = sorted({p["provider"] for p in result["providers"] if p.get("status") in {"not_configured", "failed"}})
-        result["limitations"].append("Some sources were unavailable or not configured: " + ", ".join(unavailable) + ".")
+        result["limitations"].append("Some external checks were unavailable; the live profile was not independently inspected.")
     seen_manual: set[str] = set()
     for provider in result["providers"]:
         query = _clean_text(provider.get("query") or "", 240)

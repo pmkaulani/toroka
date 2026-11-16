@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from urllib.parse import parse_qs, urlsplit
 
 RESERVED = {
-    "p", "reel", "reels", "tv", "stories", "explore", "accounts", "share",
+    "p", "reel", "reels", "tv", "stories", "explore", "accounts", "share", "share_link",
     "login", "about", "help", "legal", "watch", "groups", "pages", "marketplace",
     "events", "photo", "video", "videos", "hashtag", "tag", "search", "discover",
     "foryou", "following", "live", "shop", "view", "t", "i", "intent", "home",

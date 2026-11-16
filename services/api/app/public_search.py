@@ -419,6 +419,14 @@ def find_public_identifiers(text: str, context_text: str = "", platform_hint: st
     out: list[dict[str, str]] = []
     seen: set[str] = set()
     valid_platforms = {"instagram", "tiktok", "facebook", "x", "twitter", "whatsapp"}
+    reserved_handles = {
+        "marketplace", "t", "share", "share_link", "reel", "reels", "p", "stories",
+        "explore", "accounts", "login", "about", "help", "legal", "watch", "groups",
+        "pages", "events", "photo", "video", "videos", "hashtag", "tag", "search",
+        "discover", "foryou", "following", "live", "shop", "view", "i", "intent",
+        "home", "settings", "privacy", "terms", "policies", "business", "directory",
+        "gaming", "item", "items", "people",
+    }
 
     def add(key: str, item: dict[str, str]) -> None:
         if key not in seen and len(out) < 4:
@@ -440,16 +448,20 @@ def find_public_identifiers(text: str, context_text: str = "", platform_hint: st
             inferred_platform = next(iter(platform_matches))
 
     # Exact public social profile URLs.
-    for m in re.finditer(r"(?i)(?:https?://)?(?:www\.)?(instagram\.com|tiktok\.com|facebook\.com|x\.com|twitter\.com)/@?([a-z0-9_.]{3,35})", current):
+    for m in re.finditer(r"(?i)(?<![a-z0-9.-])(?:https?://)?(?:www\.)?(instagram\.com|tiktok\.com|facebook\.com|x\.com|twitter\.com)/@?([a-z0-9_.]{3,35})", current):
         host = m.group(1).lower()
         platform = "x" if host in {"x.com", "twitter.com"} else host.split(".")[0]
         handle = m.group(2).rstrip(".")
+        if handle.lower() in reserved_handles:
+            continue
         add(f"handle:{platform}:{handle.lower()}", {"kind": "handle", "identifier": f"@{handle}", "platform": platform,
              "query": f'"{handle}" {platform} official profile shop seller reviews complaints Kenya'})
 
     # Bare @handles. If platform is ambiguous, search the main public platforms without assuming one.
     for m in re.finditer(r"(?<![\w.+-])@([a-zA-Z0-9_.]{3,35})\b", current):
         handle = m.group(1).rstrip(".")
+        if handle.lower() in reserved_handles:
+            continue
         if inferred_platform:
             platform, query = inferred_platform, f'"{handle}" {inferred_platform} shop seller profile reviews complaints Kenya'
             key = f"handle:{platform}:{handle.lower()}"
@@ -459,7 +471,11 @@ def find_public_identifiers(text: str, context_text: str = "", platform_hint: st
         add(key, {"kind": "handle", "identifier": f"@{handle}", "platform": platform, "query": query})
 
     domain_pattern = re.compile(r'''(?i)(?<![@\w.-])(?:https?://)?(?:www\.)?([a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9-]+)*\.(?:co\.ke|go\.ke|or\.ke|ac\.ke|com|net|org|info|biz|xyz|shop|online|site|app|ke))(?:/[^\s<>"']*)?''')
-    social_hosts = {"instagram.com", "tiktok.com", "facebook.com", "x.com", "twitter.com"}
+    social_hosts = {
+        "instagram.com", "tiktok.com", "facebook.com", "x.com", "twitter.com",
+        "vm.tiktok.com", "vt.tiktok.com", "web.facebook.com", "m.facebook.com",
+        "fb.com", "fb.me", "fb.watch", "instagr.am", "t.co", "wa.me",
+    }
     for m in domain_pattern.finditer(current):
         domain = m.group(1).lower().strip(".")
         if domain in social_hosts:

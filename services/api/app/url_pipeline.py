@@ -193,7 +193,7 @@ class ThreatFeedManager:
                                     u_clean = u_match.rstrip(".,;:!?'\")").lower()
                                     self.malicious_urls.add(u_clean)
                                     try:
-                                        d = urlsplit(u_clean).netloc.split(":")[0].lower()
+                                        d = (urlsplit(u_clean).hostname or "").lower()
                                         if d:
                                             self.malicious_domains.add(d)
                                     except Exception:
@@ -204,7 +204,7 @@ class ThreatFeedManager:
                             if val.startswith("http"):
                                 self.malicious_urls.add(val)
                                 try:
-                                    d = urlsplit(val).netloc.split(":")[0].lower()
+                                    d = (urlsplit(val).hostname or "").lower()
                                     if d:
                                         self.malicious_domains.add(d)
                                 except Exception:
@@ -257,7 +257,7 @@ class ThreatFeedManager:
                         for url in lines:
                             self.malicious_urls.add(url)
                             try:
-                                host = urlsplit(url).netloc.split(":")[0].lower()
+                                host = (urlsplit(url).hostname or "").lower()
                                 if host:
                                     self.malicious_domains.add(host)
                             except Exception:
@@ -472,7 +472,7 @@ class PlatformProfile:
 
 _RESERVED_HANDLES = {
     "p", "reel", "reels", "stories", "explore", "accounts", "login",
-    "about", "share", "intent", "hashtag", "search", "direct", "terms", "privacy", "help"
+    "about", "share", "share_link", "marketplace", "t", "intent", "hashtag", "search", "direct", "terms", "privacy", "help"
 }
 
 _KENYA_OFFICIAL_BRANDS = {
@@ -992,7 +992,7 @@ def _execute_pipeline_steps(
     steps_taken.append({"name": "Normalising link and identifying platform", "status": "running"})
     parsed = nz.parse_url(url)
     if not parsed:
-        domain = urlsplit(url).netloc.split(":")[0].lower()
+        domain = (urlsplit(url).hostname or "").lower()
     else:
         domain = parsed.registered_domain or parsed.host
 
@@ -2050,3 +2050,11 @@ def _build_error_fallback(url: str, err_msg: str, language: str) -> URLInvestiga
         ],
         steps_taken=[{"name": "Investigating link", "status": "failed"}],
     )
+
+
+_investigate_single_url_core = investigate_single_url
+def investigate_single_url(target_url, *args, **kwargs):
+    result = _investigate_single_url_core(target_url, *args, **kwargs)
+    from .link_guard import apply_link_guard
+    return apply_link_guard(result, target_url, language=kwargs.get("language", "en"))
+

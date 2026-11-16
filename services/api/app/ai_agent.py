@@ -17,6 +17,7 @@ from typing import Any
 import httpx
 
 from .config import Settings
+from .user_text import scrub_reply
 
 logger = logging.getLogger("toroka.ai")
 AI_TIMEOUT_SECONDS = max(3.0, min(float(os.getenv("AI_TIMEOUT_SECONDS", "12")), 30.0))
@@ -329,11 +330,11 @@ def _toroka_profile_replies(level: int) -> tuple[str, str]:
             "Let me explain how I work. When you send something, I first identify what kind of material it is and which checks are relevant. A link may need domain, DNS, registration-age and reputation checks; an email may need sender, Reply-To, routing and SPF/DKIM/DMARC analysis; a shop may need profile, business, location and historical-report comparisons.\n\n"
             "I then organise the result into four distinct things:\n\n"
             "- **What you provided:** the words, address, image or payment details visible in your submission.\n"
-            "- **What a source says:** a finding from a record, public source or provider, with its date and limitations.\n"
+            "- **What a source says:** a finding from a record, public source or reference check, with its date and limitations.\n"
             "- **What it may mean:** the risk inference drawn from those observations.\n"
             "- **What remains unknown:** checks that were unavailable, identity links that are not established, or details that need confirmation.\n\n"
             "For example, a newly registered domain is a fact about the domain's age; it does not by itself prove that the shop is fraudulent. A business listing is a possible location match; it does not prove that the social account belongs to that business. I keep those distinctions visible.\n\n"
-            "Some checks run locally. External lookups run only when a provider is configured, available and permitted. I will say when a check was not performed rather than pretending it was.",
+            "Some checks run locally. External lookups run only when configured, available and permitted. I will say when a check was not performed rather than pretending it was.",
             "Nieleze jinsi ninavyofanya kazi. Unapotuma kitu, kwanza hutambua aina ya taarifa hiyo na ukaguzi unaofaa. Kiungo kinaweza kuhitaji ukaguzi wa domain, DNS, umri wa usajili na sifa yake; barua pepe inaweza kuhitaji ukaguzi wa mtumaji, Reply-To, njia ilikopitia na SPF/DKIM/DMARC; duka linaweza kuhitaji kulinganisha wasifu, biashara, eneo na ripoti za awali.\n\n"
             "Kisha hupanga matokeo katika sehemu nne:\n\n"
             "- **Ulichotuma:** maneno, anwani, picha au maelezo ya malipo yanayoonekana kwenye ujumbe wako.\n"
@@ -438,6 +439,34 @@ def _local_expert_replies(
         None,
     )
     if investigation_report:
+        decision = investigation_report.get("decision")
+        if decision:
+            en_lines = [decision.get("headline", "")]
+            dec_sw = investigation_report.get("decision_sw") or {}
+            sw_lines = [dec_sw.get("headline") or decision.get("headline", "")]
+
+            red = decision.get("red_flags") or []
+            if red:
+                en_lines.append("## Warning signs\n" + "\n".join(f"- {f}" for f in red[:3]))
+                red_sw = dec_sw.get("red_flags") or red
+                sw_lines.append("## Ishara za tahadhari\n" + "\n".join(f"- {f}" for f in red_sw[:3]))
+
+            found = decision.get("found") or []
+            if found:
+                en_lines.append("## What I found\n" + "\n".join(f"- {f}" for f in found[:4]))
+                found_sw = dec_sw.get("found") or found
+                sw_lines.append("## Nilichopata\n" + "\n".join(f"- {f}" for f in found_sw[:4]))
+
+            before = decision.get("before_you_pay") or []
+            if before:
+                en_lines.append("## Before you pay\n" + "\n".join(f"- {f}" for f in before[:4]))
+                before_sw = dec_sw.get("before_you_pay") or before
+                sw_lines.append("## Kabla ya kulipa\n" + "\n".join(f"- {f}" for f in before_sw[:4]))
+
+            en_reply = "\n\n".join(line for line in en_lines if line)
+            sw_reply = "\n\n".join(line for line in sw_lines if line)
+            return scrub_reply(en_reply), scrub_reply(sw_reply)
+
         category = str(investigation_report.get("category") or "message")
         flags = [x for x in (investigation_report.get("red_flags") or []) if isinstance(x, dict)]
         evidence = [x for x in (public_sources or []) if isinstance(x, dict) and x.get("url") and x.get("source_type") != "search_status"]
@@ -491,8 +520,14 @@ def _local_expert_replies(
 
         advice = [str(x) for x in (investigation_report.get("advice") or []) if str(x).strip()][:6]
         limitations = [str(x) for x in (investigation_report.get("limitations") or []) if str(x).strip()][:4]
-        target_names = [str(x.get("identifier") or "") for x in (investigation_report.get("targets") or []) if isinstance(x, dict) and x.get("identifier")]
-        target_text = ", ".join(target_names[:3])
+        pp = getattr(investigation_report.get("platform_profile"), "platform_profile", investigation_report.get("platform_profile"))
+        if pp and getattr(pp, "handle", None) and getattr(pp, "content_kind", None) != "short_link":
+            target_text = f"@{pp.handle}, {getattr(pp, 'platform', '').title()}"
+        elif investigation_report.get("domain"):
+            target_text = investigation_report.get("domain")
+        else:
+            target_names = [str(x.get("identifier") or "") for x in (investigation_report.get("targets") or []) if isinstance(x, dict) and x.get("identifier")]
+            target_text = ", ".join(target_names[:3])
         target_records = [x for x in (investigation_report.get("targets") or []) if isinstance(x, dict)]
         shop_name_target = next((x for x in target_records if x.get("kind") == "shop_name"), None)
         existing_record_text = ""
@@ -541,8 +576,8 @@ def _local_expert_replies(
             opening_en = "There are warning signs here. Verify the seller or offer independently before taking the next step."
             opening_sw = "Kuna ishara za tahadhari hapa. Thibitisha muuzaji au ofa kupitia chanzo huru kabla ya kuendelea."
         elif risk_band == "inconclusive":
-            opening_en = "I could not establish whether this is safe from the checks available in this run."
-            opening_sw = "Sikuweza kuthibitisha usalama wake kutokana na ukaguzi uliopatikana safari hii."
+            opening_en = "I can't tell yet whether this is real. Here is how to check before you pay."
+            opening_sw = "Bado siwezi kutambua kama ni halisi. Hivi ndivyo unavyoweza kukagua kabla ya kulipa."
         elif risk_band == "no_known_threats_found":
             opening_en = "The checks did not find a known threat, but that is not a guarantee that the offer or seller is safe."
             opening_sw = "Ukaguzi haukupata tishio linalojulikana, lakini hilo halihakikishi kuwa ofa au muuzaji ni salama."
@@ -610,7 +645,7 @@ def _local_expert_replies(
             source_heading = "Public search leads and sources" if has_search_leads else "Sources"
             en_parts.append("## " + source_heading + "\n" + "\n".join(source_lines[:5]))
             sw_parts.append("## Vyanzo\n" + "\n".join(source_lines[:5]))
-        return "\n\n".join(en_parts), "\n\n".join(sw_parts)
+        return scrub_reply("\n\n".join(en_parts)), scrub_reply("\n\n".join(sw_parts))
 
     # 2. Invoice / redemption checks: use only evidence present in this check.
     # Strict domain isolation: never apply invoice/payout narratives to e-commerce, shops, or social accounts.
@@ -2128,8 +2163,8 @@ def chat_with_ai_multilingual(
                     raw = j["candidates"][0]["content"]["parts"][0]["text"].strip()
                     try:
                         parsed = json.loads(raw)
-                        cloud_en = _normalize_reply_value(parsed.get("reply_en"), local_en)
-                        cloud_sw = _normalize_reply_value(parsed.get("reply_sw"), local_sw)
+                        cloud_en = scrub_reply(_normalize_reply_value(parsed.get("reply_en"), local_en))
+                        cloud_sw = scrub_reply(_normalize_reply_value(parsed.get("reply_sw"), local_sw))
                         active = cloud_sw if language == "sw" else cloud_en
                         return active, cloud_en, cloud_sw
                     except Exception:
@@ -2166,8 +2201,8 @@ def chat_with_ai_multilingual(
                     raw = j["choices"][0]["message"]["content"].strip()
                     try:
                         parsed = json.loads(raw)
-                        cloud_en = _normalize_reply_value(parsed.get("reply_en"), local_en)
-                        cloud_sw = _normalize_reply_value(parsed.get("reply_sw"), local_sw)
+                        cloud_en = scrub_reply(_normalize_reply_value(parsed.get("reply_en"), local_en))
+                        cloud_sw = scrub_reply(_normalize_reply_value(parsed.get("reply_sw"), local_sw))
                         active = cloud_sw if language == "sw" else cloud_en
                         return active, cloud_en, cloud_sw
                     except Exception:
@@ -2175,6 +2210,8 @@ def chat_with_ai_multilingual(
         except Exception as e:
             logger.warning("OpenAI chat follow-up failed: %s", e)
 
+    local_en = scrub_reply(local_en)
+    local_sw = scrub_reply(local_sw)
     active_reply = local_sw if language == "sw" else local_en
     return active_reply, local_en, local_sw
 
@@ -2203,4 +2240,4 @@ def chat_with_ai(
         taxonomy_info=taxonomy_info,
         shop_profile=shop_profile,
     )
-    return reply
+    return scrub_reply(reply)

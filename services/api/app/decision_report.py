@@ -51,7 +51,7 @@ T = {
     "en": {
         "dont_pay": "Do not pay. {who} has serious warning signs.",
         "pause_and_verify": "Pause before paying. Check these warning signs first for {who}.",
-        "cant_tell_yet": "I cannot yet establish whether {who} is genuine; its legitimacy is not established by the checks available so far. Here is how to check before you pay.",
+        "cant_tell_yet": "I can't tell yet whether {who} is real. Here is how to check before you pay.",
         "pay_only_safely": "I found no known threat indicators for {who}. That is not a guarantee, so use a protected way to pay.",
         "who_account": "this {platform} account (@{handle})",
         "who_site": "this website ({domain})",
@@ -84,7 +84,7 @@ T = {
     "sw": {
         "dont_pay": "Usilipe. {who} ina dalili kubwa za hatari.",
         "pause_and_verify": "Simama kabla ya kulipa. Kagua dalili hizi za tahadhari kuhusu {who} kwanza.",
-        "cant_tell_yet": "Bado sijathibitisha kama {who} ni halali; ukaguzi uliopatikana haujaweka uhalali wake wazi. Hivi ndivyo unavyoweza kukagua kabla ya kulipa.",
+        "cant_tell_yet": "Bado siwezi kutambua kama {who} ni halisi. Hivi ndivyo unavyoweza kukagua kabla ya kulipa.",
         "pay_only_safely": "Sikupata viashiria vya tishio vinavyojulikana kuhusu {who}. Hii si hakikisho; tumia njia salama ya malipo.",
         "who_account": "akaunti hii ya {platform} (@{handle})",
         "who_site": "tovuti hii ({domain})",
@@ -158,6 +158,8 @@ def plain_unknowns(items: list[dict[str, Any]], platform: str | None, lang: str 
         check_id = str(item.get("id") or "")
         detail = str(item.get("detail") or "").casefold()
         what = PUBLIC_CHECK_NAMES.get(check_id, "Additional information")
+        if what == "Additional information" or check_id in {"business_links", "payment_evidence"}:
+            continue
         if check_id == "safe_web_fetch" and any(token in detail for token in (
             "blocked:", "private network", "cloud instance metadata", "loopback",
             "link-local", "localhost", "internal hostname", "restricted destination",
@@ -194,6 +196,8 @@ def plain_unknowns(items: list[dict[str, Any]], platform: str | None, lang: str 
         elif check_id == "safe_web_fetch" and platform:
             what = "Full profile details"
             line = f"{what}: outside tools may not be able to read this {platform.title()} page"
+        elif why == "this check was not available for this link":
+            continue
         else:
             line = f"{what}: {why}"
         if line not in output:
@@ -273,12 +277,40 @@ def build_decision(facts: dict[str, Any], lang: str = "en") -> dict[str, Any]:
         )
         headers["hdr_ask"] = "A message you can send the recruiter" if lang != "sw" else "Ujumbe wa kumtumia wakala wa ajira"
     headline = tr[decision].format(who=who(facts, tr))
-    if facts.get("kind") == "marketplace_listing" and decision == "cant_tell_yet":
-        item = facts.get("product", {}).get("name") or "this listing"
+    official_brand = facts.get("official_brand")
+    if official_brand:
+        if facts.get("kind") == "marketplace_listing" and facts.get("product", {}).get("name"):
+            item = facts["product"]["name"]
+            headline = (
+                f"This is the real {official_brand} website. I identified {item} on it, but the marketplace does not establish that the seller is trustworthy: check them, and pay only inside {official_brand}."
+                if lang != "sw" else
+                f"Hii ndiyo tovuti halisi ya {official_brand}. Nimetambua {item} humo, lakini jukwaa halithibitishi uaminifu wa muuzaji: mthibitishe, na ulipe pekee ndani ya {official_brand}."
+            )
+        else:
+            headline = (
+                f"This is the real {official_brand} website, but the marketplace does not establish that individual sellers or third-party offers are trustworthy. Pay only inside {official_brand}."
+                if lang != "sw" else
+                f"Hii ndiyo tovuti halisi ya {official_brand}, lakini jukwaa halithibitishi uaminifu wa wauzaji binafsi au ofa za wengine. Lipa pekee ndani ya {official_brand}."
+            )
+    elif facts.get("kind") == "marketplace_listing" and decision == "cant_tell_yet":
+        item = facts.get("product", {}).get("name")
+        if item:
+            headline = (
+                f"I identified {item} on {facts.get('marketplace_name')}, but the marketplace domain does not establish that its individual seller or listing is trustworthy. Check the seller and keep payment inside the platform."
+                if lang != "sw" else
+                f"Nimetambua {item} kwenye {facts.get('marketplace_name')}, lakini jina la jukwaa halithibitishi uaminifu wa muuzaji au tangazo hili. Hakiki muuzaji na fanya malipo ndani ya jukwaa."
+            )
+        else:
+            headline = (
+                f"I identified the {facts.get('marketplace_name')} marketplace, but the platform does not establish that individual sellers or listings are trustworthy. Check the seller and keep payment inside the platform."
+                if lang != "sw" else
+                f"Nimetambua soko la {facts.get('marketplace_name')}, lakini jukwaa halithibitishi kuwa wauzaji au matangazo yake ni salama. Hakiki muuzaji na fanya malipo ndani ya jukwaa."
+            )
+    elif facts.get("kind") == "marketplace_site" and decision == "cant_tell_yet":
         headline = (
-            f"I identified {item} on {facts.get('marketplace_name')}, but the marketplace domain does not establish that its individual seller or listing is trustworthy. Check the seller and keep payment inside the platform."
+            f"I identified the {facts.get('marketplace_name')} marketplace, but the platform does not establish that individual sellers or listings are trustworthy. Check the seller and keep payment inside the platform."
             if lang != "sw" else
-            f"Nimetambua {item} kwenye {facts.get('marketplace_name')}, lakini jina la jukwaa halithibitishi uaminifu wa muuzaji au tangazo hili. Hakiki muuzaji na fanya malipo ndani ya jukwaa."
+            f"Nimetambua soko la {facts.get('marketplace_name')}, lakini jukwaa halithibitishi kuwa wauzaji au matangazo yake ni salama. Hakiki muuzaji na fanya malipo ndani ya jukwaa."
         )
     if facts.get("risk_band") == "verified_official" and facts.get("domain"):
         domain = str(facts["domain"]).lower()
@@ -317,7 +349,16 @@ def facts_from_result(result: Any, lang: str = "en") -> dict[str, Any]:
     page_data = getattr(result, "page_data", {}) or {}
     marketplace = page_data.get("marketplace") or {}
     product = marketplace.get("product") or {}
-    kind = "social_account" if platform in {"tiktok", "instagram", "facebook", "x", "whatsapp"} and handle else "social_post" if platform in {"tiktok", "instagram", "facebook", "x", "whatsapp"} else "marketplace_listing" if marketplace.get("is_marketplace") else "shop_site" if getattr(result, "domain", None) else "other_site"
+    has_product = bool(product.get("name"))
+    official_brand = page_data.get("official_brand")
+    kind = (
+        "social_account" if platform in {"tiktok", "instagram", "facebook", "x", "whatsapp"} and handle else
+        "social_post" if platform in {"tiktok", "instagram", "facebook", "x", "whatsapp"} else
+        "marketplace_listing" if marketplace.get("is_marketplace") and has_product else
+        "marketplace_site" if marketplace.get("is_marketplace") else
+        "shop_site" if getattr(result, "domain", None) else
+        "other_site"
+    )
     oembed = page_data.get("oembed") or {}
     found = []
     if oembed.get("account_name"):
@@ -405,6 +446,7 @@ def facts_from_result(result: Any, lang: str = "en") -> dict[str, Any]:
     unknowns = [{"id": getattr(check, "id", ""), "what": getattr(check, "name", ""), "status": getattr(check, "status", "could_not_check"), "detail": getattr(check, "detail", "")} for check in coverage]
     return {
         "kind": kind, "platform": platform, "handle": handle, "domain": getattr(result, "domain", None),
+        "official_brand": official_brand,
         "marketplace": {"name": marketplace.get("name"), "page_read": marketplace.get("page_read", False), "seller_detected": marketplace.get("seller_detected", False)} if marketplace.get("is_marketplace") else None,
         "marketplace_name": marketplace.get("name"),
         "product": {key: product.get(key) for key in ("detected", "extraction_status", "name", "description", "brand", "sku", "price", "currency", "availability", "seller_name", "seller_rating", "aggregate_rating", "rating_count", "review_count", "delivery_terms_found", "return_terms_found")},
