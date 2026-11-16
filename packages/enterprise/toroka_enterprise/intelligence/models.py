@@ -422,5 +422,171 @@ class SimulationApprovalRecord(IntelligenceBase):
     review_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
+# =============================================================================
+# Phase 9: Fraud DNA & Institutional Memory Models
+# =============================================================================
+
+
+class CaseFingerprintRecord(IntelligenceBase):
+    """Zero-PII structured behavioral signature for an investigated case."""
+    __tablename__ = "enterprise_case_fingerprints"
+
+    case_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    installation_id: Mapped[str] = mapped_column(String(100), primary_key=True, index=True)
+
+    extractor_version: Mapped[str] = mapped_column(String(50), nullable=False, default="v1")
+    features: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    evidence: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False, default=list)
+    source_systems: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    source_coverage: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    total_events: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+    first_event_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_event_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    control_weaknesses: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    adjudicated_label: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class CaseMemoryFeatureRecord(IntelligenceBase):
+    """Normalized index of individual behavioral dimensions for fast matching."""
+    __tablename__ = "enterprise_case_memory_features"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    installation_id: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+
+    case_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    dimension: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    feature_value: Mapped[str] = mapped_column(String(255), nullable=False)
+
+    event_ids: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    source_systems: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+
+
+class InstitutionalPatternRecord(IntelligenceBase):
+    """Governed recurring fraud typology or control circumvention pattern."""
+    __tablename__ = "enterprise_institutional_patterns"
+
+    pattern_id: Mapped[str] = mapped_column(String(100), primary_key=True)
+    installation_id: Mapped[str] = mapped_column(String(100), primary_key=True, index=True)
+
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+
+    feature_signature: Mapped[dict[str, str]] = mapped_column(JSON, nullable=False, default=dict)
+    extractor_version: Mapped[str] = mapped_column(String(50), nullable=False, default="v1")
+    status: Mapped[str] = mapped_column(String(30), nullable=False, default="candidate", index=True)
+
+    curator_subject: Mapped[str] = mapped_column(String(255), nullable=False)
+    reviewer_subject: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    validation_rationale: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    limitations: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    control_weaknesses: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    independent_source_systems: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    supporting_event_ids: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class PatternCaseLinkRecord(IntelligenceBase):
+    """Association between an institutional pattern and an adjudicated case."""
+    __tablename__ = "enterprise_pattern_case_links"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    installation_id: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+
+    pattern_id: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    case_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    case_role: Mapped[str] = mapped_column(String(32), nullable=False)  # confirmed_fraud, confirmed_legitimate, candidate_contributor
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+
+
+class PatternReviewRecord(IntelligenceBase):
+    """Audit log of validation evaluations, reviews, approvals, and retirements."""
+    __tablename__ = "enterprise_pattern_reviews"
+
+    review_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    installation_id: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+
+    pattern_id: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    pattern_version: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    reviewer_subject: Mapped[str] = mapped_column(String(255), nullable=False)
+    action: Mapped[str] = mapped_column(String(30), nullable=False)  # submit_for_review, validate, reject, suspend, reinstate, retire
+    rationale: Mapped[str] = mapped_column(Text, nullable=False)
+    evaluation_metrics: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+
+
+class PatternVersionRecord(IntelligenceBase):
+    """Immutable audit trail of historical pattern revisions."""
+    __tablename__ = "enterprise_pattern_versions"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    installation_id: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+
+    pattern_id: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+    feature_signature: Mapped[dict[str, str]] = mapped_column(JSON, nullable=False)
+    status: Mapped[str] = mapped_column(String(30), nullable=False)
+
+    changed_by: Mapped[str] = mapped_column(String(255), nullable=False)
+    change_summary: Mapped[str] = mapped_column(Text, nullable=False)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+
+
+class MemoryMatchResultRecord(IntelligenceBase):
+    """Persisted record of explainable similarity match evaluations."""
+    __tablename__ = "enterprise_memory_match_results"
+
+    match_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    installation_id: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+
+    query_case_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    matched_type: Mapped[str] = mapped_column(String(30), nullable=False)  # "case" or "pattern"
+    target_id: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+
+    similarity_index: Mapped[float | None] = mapped_column(Float, nullable=True)
+    comparison_coverage: Mapped[float] = mapped_column(Float, nullable=False)
+    matched_features: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    different_features: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    target_outcome: Mapped[str | None] = mapped_column(String(32), nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+
+
+class MemoryAuditEventRecord(IntelligenceBase):
+    """Auditable log of institutional memory access, matching, and governance actions."""
+    __tablename__ = "enterprise_memory_audit_events"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    installation_id: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+
+    actor_subject: Mapped[str] = mapped_column(String(255), nullable=False)
+    actor_role: Mapped[str] = mapped_column(String(50), nullable=False)
+    action: Mapped[str] = mapped_column(String(50), nullable=False)
+    target_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    target_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    safe_metadata: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+
+
+
 
 

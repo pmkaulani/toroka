@@ -44,6 +44,14 @@ ALLOWED_METADATA_KEYS = frozenset({
     "approval_id",
     "decision",
     "label",
+    "pattern_id",
+    "pattern_version",
+    "review_id",
+    "match_id",
+    "query_case_id",
+    "target_id",
+    "lifecycle_status",
+    "eligible_for_review",
 })
 
 

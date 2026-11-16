@@ -30,6 +30,13 @@ import {
   SimulationStrategy,
   CaseOutcome,
   WorkbenchOverview,
+  CaseFingerprint,
+  CaseSimilarity,
+  InstitutionalPattern,
+  MemoryOverview,
+  PatternEvaluation,
+  PatternMatch,
+  PatternVersion,
 } from "./types";
 
 export const BANK_PERSONAS: Persona[] = [
@@ -428,4 +435,61 @@ export const api = {
 
   listStrategyApprovals: (): Promise<SimulationApproval[]> =>
     request<SimulationApproval[]>("/api/enterprise/v1/simulation/approvals"),
+
+  // Phase 9: Fraud DNA & Institutional Memory
+  getMemoryOverview: (): Promise<MemoryOverview> =>
+    request<MemoryOverview>("/api/enterprise/v1/memory/overview"),
+
+  discoverPatterns: (minSupport: number = 2): Promise<InstitutionalPattern[]> =>
+    request<InstitutionalPattern[]>(`/api/enterprise/v1/memory/patterns/discover?min_support=${minSupport}`, {
+      method: "POST",
+    }),
+
+  createCandidatePattern: (payload: {
+    pattern_id: string;
+    title: string;
+    description: string;
+    feature_signature: Record<string, string>;
+    confirmed_fraud_case_ids?: string[];
+    confirmed_legitimate_case_ids?: string[];
+    independent_source_systems?: string[];
+    control_weaknesses?: string[];
+    limitations?: string[];
+  }): Promise<InstitutionalPattern> =>
+    request<InstitutionalPattern>("/api/enterprise/v1/memory/patterns/candidates", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  listPatterns: (status?: string): Promise<InstitutionalPattern[]> => {
+    const q = status ? `?status=${encodeURIComponent(status)}` : "";
+    return request<InstitutionalPattern[]>(`/api/enterprise/v1/memory/patterns${q}`);
+  },
+
+  getPattern: (patternId: string): Promise<InstitutionalPattern> =>
+    request<InstitutionalPattern>(`/api/enterprise/v1/memory/patterns/${encodeURIComponent(patternId)}`),
+
+  evaluatePattern: (patternId: string): Promise<PatternEvaluation> =>
+    request<PatternEvaluation>(`/api/enterprise/v1/memory/patterns/${encodeURIComponent(patternId)}/evaluate`),
+
+  reviewPattern: (
+    patternId: string,
+    payload: { action: string; rationale: string }
+  ): Promise<InstitutionalPattern> =>
+    request<InstitutionalPattern>(`/api/enterprise/v1/memory/patterns/${encodeURIComponent(patternId)}/review`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  listPatternVersions: (patternId: string): Promise<PatternVersion[]> =>
+    request<PatternVersion[]>(`/api/enterprise/v1/memory/patterns/${encodeURIComponent(patternId)}/versions`),
+
+  getCaseFingerprint: (caseId: string, refresh: boolean = false): Promise<CaseFingerprint> =>
+    request<CaseFingerprint>(`/api/enterprise/v1/memory/cases/${encodeURIComponent(caseId)}/fingerprint?refresh=${refresh}`),
+
+  getSimilarHistoricalCases: (caseId: string, limit: number = 10, minCoverage: number = 0.1): Promise<CaseSimilarity[]> =>
+    request<CaseSimilarity[]>(`/api/enterprise/v1/memory/cases/${encodeURIComponent(caseId)}/similar?limit=${limit}&min_coverage=${minCoverage}`),
+
+  matchCasePatterns: (caseId: string, minCoverage: number = 0.1): Promise<PatternMatch[]> =>
+    request<PatternMatch[]>(`/api/enterprise/v1/memory/cases/${encodeURIComponent(caseId)}/patterns?min_coverage=${minCoverage}`),
 };

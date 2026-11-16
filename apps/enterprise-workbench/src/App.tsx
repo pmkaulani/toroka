@@ -13,6 +13,7 @@ import { OverviewView } from "./components/OverviewView";
 import { ReviewQueuesView } from "./components/ReviewQueuesView";
 import { RevealModal } from "./components/RevealModal";
 import { SimulationLabView } from "./components/SimulationLabView";
+import { InstitutionalIntelligenceView } from "./components/InstitutionalIntelligenceView";
 import { Persona } from "./types";
 
 export const App: React.FC = () => {
@@ -95,6 +96,13 @@ export const App: React.FC = () => {
         </button>
 
         <button
+          className={`wb-tab ${activeTab === "memory" ? "active" : ""}`}
+          onClick={() => setActiveTab("memory")}
+        >
+          Institutional Memory
+        </button>
+
+        <button
           className={`wb-tab ${activeTab === "data-readiness" ? "active" : ""}`}
           onClick={() => setActiveTab("data-readiness")}
         >
@@ -131,6 +139,7 @@ export const App: React.FC = () => {
           />
         )}
         {activeTab === "simulation" && <SimulationLabView currentPersona={persona} />}
+        {activeTab === "memory" && <InstitutionalIntelligenceView currentPersona={persona} />}
         {activeTab === "data-readiness" && <DataReadinessView />}
         {activeTab === "integrations" && <IntegrationsView />}
         {activeTab === "audit-trail" && <AuditTrailView />}

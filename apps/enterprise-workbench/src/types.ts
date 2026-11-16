@@ -599,4 +599,123 @@ export interface SimulationApproval {
   review_notes?: string | null;
 }
 
+// Phase 9: Fraud DNA & Institutional Memory Types
+
+export interface CaseFingerprint {
+  case_id: string;
+  installation_id: string;
+  extractor_version: string;
+  features: Record<string, string>;
+  source_systems: string[];
+  source_coverage: number;
+  total_events: number;
+  first_event_time?: string | null;
+  last_event_time?: string | null;
+  control_weaknesses: string[];
+  adjudicated_label?: string | null;
+  created_at: string;
+}
+
+export interface InstitutionalPattern {
+  pattern_id: string;
+  installation_id: string;
+  version: number;
+  title: string;
+  description: string;
+  feature_signature: Record<string, string>;
+  confirmed_fraud_case_ids: string[];
+  confirmed_legitimate_case_ids: string[];
+  independent_source_systems: string[];
+  status: "candidate" | "under_review" | "validated" | "suspended" | "retired";
+  extractor_version: string;
+  control_weaknesses: string[];
+  curator_subject: string;
+  reviewer_subject?: string | null;
+  reviewed_at?: string | null;
+  validation_rationale?: string | null;
+  limitations: string[];
+  created_at: string;
+  updated_at?: string | null;
+}
+
+export interface PatternEvaluation {
+  pattern_id: string;
+  version: number;
+  eligible_for_review: boolean;
+  checks: Record<string, boolean>;
+  blockers: string[];
+  details: Record<string, unknown>;
+}
+
+export interface PatternReview {
+  review_id: string;
+  pattern_id: string;
+  pattern_version: number;
+  reviewer_subject: string;
+  action: string;
+  rationale: string;
+  created_at: string;
+}
+
+export interface PatternVersion {
+  pattern_id: string;
+  version: number;
+  title: string;
+  description: string;
+  feature_signature: Record<string, string>;
+  status: string;
+  changed_by: string;
+  change_summary: string;
+  created_at: string;
+}
+
+export interface FeatureComparison {
+  dimension: string;
+  current_value: string;
+  historical_value: string;
+  matched: boolean;
+  current_event_ids: string[];
+  historical_event_ids: string[];
+}
+
+export interface CaseSimilarity {
+  current_case_id: string;
+  historical_case_id: string;
+  similarity_index?: number | null;
+  comparison_coverage: number;
+  matched_features: string[];
+  different_features: string[];
+  historical_outcome?: string | null;
+  historical_control_weaknesses: string[];
+  shared_control_weaknesses: string[];
+  summary_explanation: string;
+}
+
+export interface PatternMatch {
+  pattern_id: string;
+  pattern_version: number;
+  pattern_title: string;
+  pattern_status: string;
+  similarity_index?: number | null;
+  comparison_coverage: number;
+  matched_features: string[];
+  different_features: string[];
+  control_weaknesses: string[];
+  explanation: string;
+  confirmed_fraud_cases_count: number;
+  confirmed_legitimate_cases_count: number;
+}
+
+export interface MemoryOverview {
+  adjudicated_case_count: number;
+  validated_pattern_count: number;
+  candidate_pattern_count: number;
+  under_review_pattern_count: number;
+  suspended_pattern_count: number;
+  retired_pattern_count: number;
+  average_source_coverage: number;
+  total_fingerprinted_cases: number;
+  recent_reviews: PatternReview[];
+}
+
 
