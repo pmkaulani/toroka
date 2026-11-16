@@ -13,6 +13,7 @@ import {
   CorrelationSignal,
   DataContractResponse,
   DetectionMethod,
+  EvidenceContradiction,
   IntegrationJob,
   IntelligenceEvent,
   InvestigationBundle,
@@ -21,6 +22,7 @@ import {
   Persona,
   QualityAssessment,
   ReconciliationReport,
+  ReconstructionBundle,
   Relationship,
   RevealRequest,
   WorkbenchOverview,
@@ -329,4 +331,18 @@ export const api = {
 
   listDetectionMethods: (): Promise<DetectionMethod[]> =>
     request<DetectionMethod[]>("/api/enterprise/v1/baselines/governance/methods"),
+
+  getCaseReconstruction: (caseId: string): Promise<ReconstructionBundle> =>
+    request<ReconstructionBundle>(`/api/enterprise/v1/reconstruction/cases/${encodeURIComponent(caseId)}`),
+
+  reconstructCase: (caseId: string): Promise<ReconstructionBundle> =>
+    request<ReconstructionBundle>(`/api/enterprise/v1/reconstruction/cases/${encodeURIComponent(caseId)}/reconstruct`, {
+      method: "POST",
+    }),
+
+  resolveContradiction: (caseId: string, contradictionId: string, resolutionNote: string): Promise<EvidenceContradiction> =>
+    request<EvidenceContradiction>(`/api/enterprise/v1/reconstruction/cases/${encodeURIComponent(caseId)}/contradictions/${encodeURIComponent(contradictionId)}/resolve`, {
+      method: "POST",
+      body: JSON.stringify({ resolution_note: resolutionNote }),
+    }),
 };

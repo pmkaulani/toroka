@@ -27,6 +27,7 @@ class EnterprisePrincipal:
     subject: str
     roles: frozenset[str]
     issuer: str
+    installation_id: str | None = None
 
 
 def _claim_values(value) -> list[str]:
@@ -72,10 +73,12 @@ def get_current_principal(
         roles = frozenset(r for r in raw_roles if r in VALID_ROLES)
         if not subject or not roles:
             raise HTTPException(401, "Development identity required")
+        dev_inst = request.headers.get("X-Dev-Installation", "").strip() or None
         return EnterprisePrincipal(
             subject=subject,
             roles=roles,
             issuer="local-development",
+            installation_id=dev_inst,
         )
 
     if credentials is None:
@@ -126,10 +129,14 @@ def get_current_principal(
             "No recognised Enterprise role is assigned",
         )
 
+    inst_claim = claims.get("inst") or claims.get("installation_id")
+    inst_val = str(inst_claim).strip() if inst_claim else None
+
     return EnterprisePrincipal(
         subject=subject,
         roles=roles,
         issuer=claims["iss"],
+        installation_id=inst_val,
     )
 
 

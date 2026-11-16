@@ -247,3 +247,93 @@ class BaselineAdmissionRecord(IntelligenceBase):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
 
 
+class AttackReconstructionRecord(IntelligenceBase):
+    """Chronological attack reconstruction timeline and state progression."""
+    __tablename__ = "enterprise_attack_reconstructions"
+
+    reconstruction_id: Mapped[str] = mapped_column(String(100), primary_key=True)
+    installation_id: Mapped[str] = mapped_column(String(100), primary_key=True, index=True)
+
+    case_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+
+    start_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    end_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+    steps: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False, default=list)
+    entities: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    unresolved_questions: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    contradictions: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+
+    confidence: Mapped[float] = mapped_column(Float, nullable=False, default=1.0)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class AttackPathRecord(IntelligenceBase):
+    """Evidence-backed causal graph edge-node network."""
+    __tablename__ = "enterprise_attack_paths"
+
+    path_id: Mapped[str] = mapped_column(String(100), primary_key=True)
+    installation_id: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+
+    reconstruction_id: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
+    case_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+
+    nodes: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False, default=list)
+    edges: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False, default=list)
+
+    confidence: Mapped[float] = mapped_column(Float, nullable=False, default=1.0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+
+
+class EvidenceContradictionRecord(IntelligenceBase):
+    """Surfaced cross-system evidence discrepancy requiring human resolution."""
+    __tablename__ = "enterprise_evidence_contradictions"
+
+    contradiction_id: Mapped[str] = mapped_column(String(100), primary_key=True)
+    installation_id: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+
+    case_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+
+    event_a: Mapped[str] = mapped_column(String(255), nullable=False)
+    event_b: Mapped[str] = mapped_column(String(255), nullable=False)
+
+    field: Mapped[str] = mapped_column(String(100), nullable=False)
+    value_a: Mapped[str] = mapped_column(Text, nullable=False)
+    value_b: Mapped[str] = mapped_column(Text, nullable=False)
+
+    severity: Mapped[str] = mapped_column(String(30), nullable=False, index=True)
+    explanation: Mapped[str] = mapped_column(Text, nullable=False)
+    resolution_required: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+
+    status: Mapped[str] = mapped_column(String(30), nullable=False, default="unresolved", index=True)
+    resolved_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    resolution_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class InvestigationScenarioRecord(IntelligenceBase):
+    """Structured competing explanation scenario linked to an investigation."""
+    __tablename__ = "enterprise_investigation_scenarios"
+
+    scenario_id: Mapped[str] = mapped_column(String(100), primary_key=True)
+    installation_id: Mapped[str] = mapped_column(String(100), primary_key=True, index=True)
+    case_id: Mapped[str] = mapped_column(String(36), primary_key=True, index=True)
+
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+
+    required_evidence: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    supporting_evidence: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    contradicting_evidence: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    missing_evidence: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+
+    relative_support: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+
+
+

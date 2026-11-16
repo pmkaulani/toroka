@@ -41,6 +41,16 @@ from .sources import (
 )
 from .prioritization import InvestigationPriority, calculate_priority
 
+# Phase 7 additions: Attack Reconstruction Engine, Transitions, Change Vector, Attack Path, Contradictions, Evidence Debt, Scenarios
+from .reconstruction import ReconstructionStep, AttackReconstruction
+from .transitions import StateTransition, identify_transition, extract_transitions_from_events
+from .change_vector import ChangeVector, build_change_vector
+from .attack_path import AttackPathNode, AttackPathEdge, AttackPath, build_attack_path_from_relationships
+from .contradictions import ContradictionSeverity, EvidenceContradiction, detect_evidence_contradictions
+from .evidence_completeness import EvidenceRequirement, EvidenceCompleteness, calculate_evidence_completeness
+from .reconstruction_engine import reconstruct
+from .scenarios import InvestigationScenario, generate_competing_scenarios
+
 __all__ = [
     "EntityType",
     "EntityRef",
@@ -89,4 +99,25 @@ __all__ = [
     "get_source_reliability",
     "InvestigationPriority",
     "calculate_priority",
+    # Phase 7
+    "ReconstructionStep",
+    "AttackReconstruction",
+    "StateTransition",
+    "identify_transition",
+    "extract_transitions_from_events",
+    "ChangeVector",
+    "build_change_vector",
+    "AttackPathNode",
+    "AttackPathEdge",
+    "AttackPath",
+    "build_attack_path_from_relationships",
+    "ContradictionSeverity",
+    "EvidenceContradiction",
+    "detect_evidence_contradictions",
+    "EvidenceRequirement",
+    "EvidenceCompleteness",
+    "calculate_evidence_completeness",
+    "reconstruct",
+    "InvestigationScenario",
+    "generate_competing_scenarios",
 ]

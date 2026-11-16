@@ -26,6 +26,7 @@ from .routers.integration_events import router as integration_events_router
 from .routers.integrations import router as integrations_router
 from .routers.intelligence import router as intelligence_router
 from .routers.baselines import router as baselines_router
+from .routers.reconstruction import router as reconstruction_router
 from .routers.reveals import router as reveals_router
 from .routers.runs import router as runs_router
 from .routers.system import router as system_router
@@ -167,6 +168,7 @@ def create_app(
     app.include_router(integration_events_router)
     app.include_router(intelligence_router)
     app.include_router(baselines_router)
+    app.include_router(reconstruction_router)
 
     # Mount static Enterprise Workbench if dist exists
     workbench_dist = Path(__file__).resolve().parents[3] / "apps" / "enterprise-workbench" / "dist"

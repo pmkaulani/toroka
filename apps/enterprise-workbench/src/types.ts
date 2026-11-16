@@ -382,3 +382,112 @@ export interface DetectionMethod {
   created_at: string;
 }
 
+export interface ReconstructionStep {
+  sequence: number;
+  event_id: string;
+  event_type: string;
+  event_time: string;
+  actor_id?: string | null;
+  subject_id?: string | null;
+  source_system?: string | null;
+  explanation: string;
+  evidence_strength: number;
+  provenance_ids: string[];
+}
+
+export interface StateTransition {
+  previous_state: string;
+  new_state: string;
+  event_id: string;
+  explanation: string;
+  material_change: boolean;
+}
+
+export interface ChangeVector {
+  subject_id: string;
+  changed_dimensions: string[];
+  baseline_dimensions: string[];
+  unusual_dimensions: string[];
+  explanation: string;
+  completeness: number;
+}
+
+export interface AttackPathNode {
+  node_id: string;
+  node_type: string;
+  label: string;
+}
+
+export interface AttackPathEdge {
+  source_id: string;
+  target_id: string;
+  relationship: string;
+  event_ids: string[];
+  confidence: number;
+}
+
+export interface AttackPath {
+  path_id: string;
+  nodes: AttackPathNode[];
+  edges: AttackPathEdge[];
+  confidence: number;
+}
+
+export interface EvidenceContradiction {
+  contradiction_id: string;
+  installation_id: string;
+  case_id?: string | null;
+  event_a: string;
+  event_b: string;
+  field: string;
+  value_a: string;
+  value_b: string;
+  severity: "low" | "medium" | "high";
+  explanation: string;
+  resolution_required: boolean;
+  status: string;
+  resolved_by?: string | null;
+  resolution_note?: string | null;
+  created_at: string;
+  resolved_at?: string | null;
+}
+
+export interface EvidenceCompleteness {
+  total_requirements: number;
+  satisfied_requirements: number;
+  missing_requirements: string[];
+  percentage: number;
+  evidence_debt: string[];
+}
+
+export interface InvestigationScenario {
+  scenario_id: string;
+  title: string;
+  description: string;
+  required_evidence: string[];
+  supporting_evidence: string[];
+  contradicting_evidence: string[];
+  missing_evidence: string[];
+  relative_support: number;
+}
+
+export interface ReconstructionBundle {
+  reconstruction_id: string;
+  installation_id: string;
+  case_id?: string | null;
+  title: string;
+  start_time: string;
+  end_time: string;
+  steps: ReconstructionStep[];
+  state_transitions: StateTransition[];
+  change_vector?: ChangeVector | null;
+  attack_path?: AttackPath | null;
+  contradictions: EvidenceContradiction[];
+  evidence_completeness: EvidenceCompleteness;
+  scenarios: InvestigationScenario[];
+  unresolved_questions: string[];
+  confidence: number;
+  created_at: string;
+}
+
+
