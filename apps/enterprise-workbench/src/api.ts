@@ -48,6 +48,11 @@ import {
   NetworkPatternFinding,
   NetworkSnapshot,
   ShortestPathResult,
+  CopilotFeedback,
+  CopilotMessage,
+  CopilotReportDraft,
+  CopilotStatus,
+  CopilotThread,
 } from "./types";
 
 export const BANK_PERSONAS: Persona[] = [
@@ -606,4 +611,72 @@ export const api = {
     params.append("include_shared_attributes", String(includeSharedAttributes));
     return request<NetworkEdge[]>(`/api/enterprise/v1/network/edges?${params.toString()}`);
   },
+
+  // Phase 11: AI Investigation Copilot
+  getCopilotStatus: (): Promise<CopilotStatus> =>
+    request<CopilotStatus>("/api/enterprise/v1/copilot/status"),
+
+  createCopilotThread: (caseId: string, title: string = "Investigation Thread"): Promise<CopilotThread> =>
+    request<CopilotThread>("/api/enterprise/v1/copilot/threads", {
+      method: "POST",
+      body: JSON.stringify({ case_id: caseId, title }),
+    }),
+
+  listCopilotThreads: (caseId: string): Promise<CopilotThread[]> =>
+    request<CopilotThread[]>(`/api/enterprise/v1/copilot/threads?case_id=${encodeURIComponent(caseId)}`),
+
+  getCopilotThread: (threadId: string): Promise<CopilotThread> =>
+    request<CopilotThread>(`/api/enterprise/v1/copilot/threads/${encodeURIComponent(threadId)}`),
+
+  archiveCopilotThread: (threadId: string): Promise<void> =>
+    request<void>(`/api/enterprise/v1/copilot/threads/${encodeURIComponent(threadId)}`, {
+      method: "DELETE",
+    }),
+
+  sendCopilotMessage: (threadId: string, content: string): Promise<CopilotMessage> =>
+    request<CopilotMessage>(`/api/enterprise/v1/copilot/threads/${encodeURIComponent(threadId)}/messages`, {
+      method: "POST",
+      body: JSON.stringify({ content }),
+    }),
+
+  listCopilotMessages: (threadId: string): Promise<CopilotMessage[]> =>
+    request<CopilotMessage[]>(`/api/enterprise/v1/copilot/threads/${encodeURIComponent(threadId)}/messages`),
+
+  getMessageCitations: (messageId: string): Promise<Array<{ evidence_id: string; quoted_text: string }>> =>
+    request<Array<{ evidence_id: string; quoted_text: string }>>(`/api/enterprise/v1/copilot/messages/${encodeURIComponent(messageId)}/citations`),
+
+  generateReportDraft: (payload: {
+    case_id: string;
+    thread_id?: string;
+    report_type?: string;
+    title?: string;
+  }): Promise<CopilotReportDraft> =>
+    request<CopilotReportDraft>("/api/enterprise/v1/copilot/reports/generate", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  listReportDrafts: (caseId: string): Promise<CopilotReportDraft[]> =>
+    request<CopilotReportDraft[]>(`/api/enterprise/v1/copilot/reports?case_id=${encodeURIComponent(caseId)}`),
+
+  getReportDraft: (draftId: string): Promise<CopilotReportDraft> =>
+    request<CopilotReportDraft>(`/api/enterprise/v1/copilot/reports/${encodeURIComponent(draftId)}`),
+
+  updateReportDraft: (draftId: string, editsMarkdown: string): Promise<CopilotReportDraft> =>
+    request<CopilotReportDraft>(`/api/enterprise/v1/copilot/reports/${encodeURIComponent(draftId)}`, {
+      method: "PUT",
+      body: JSON.stringify({ investigator_edits_markdown: editsMarkdown }),
+    }),
+
+  reviewReportDraft: (draftId: string, decision: string, notes?: string): Promise<CopilotReportDraft> =>
+    request<CopilotReportDraft>(`/api/enterprise/v1/copilot/reports/${encodeURIComponent(draftId)}/review`, {
+      method: "POST",
+      body: JSON.stringify({ decision, notes }),
+    }),
+
+  submitCopilotFeedback: (messageId: string, rating: number, feedbackText?: string): Promise<CopilotFeedback> =>
+    request<CopilotFeedback>(`/api/enterprise/v1/copilot/messages/${encodeURIComponent(messageId)}/feedback`, {
+      method: "POST",
+      body: JSON.stringify({ rating, feedback_text: feedbackText }),
+    }),
 };

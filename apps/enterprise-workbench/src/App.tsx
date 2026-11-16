@@ -15,6 +15,7 @@ import { RevealModal } from "./components/RevealModal";
 import { SimulationLabView } from "./components/SimulationLabView";
 import { InstitutionalIntelligenceView } from "./components/InstitutionalIntelligenceView";
 import { NetworkIntelligenceView } from "./components/NetworkIntelligenceView";
+import { CopilotView } from "./components/CopilotView";
 import { Persona } from "./types";
 
 export const App: React.FC = () => {
@@ -111,6 +112,13 @@ export const App: React.FC = () => {
         </button>
 
         <button
+          className={`wb-tab ${activeTab === "copilot" ? "active" : ""}`}
+          onClick={() => setActiveTab("copilot")}
+        >
+          AI Investigation Copilot
+        </button>
+
+        <button
           className={`wb-tab ${activeTab === "data-readiness" ? "active" : ""}`}
           onClick={() => setActiveTab("data-readiness")}
         >
@@ -156,13 +164,20 @@ export const App: React.FC = () => {
             onNavigateTab={setActiveTab}
           />
         )}
+        {activeTab === "copilot" && (
+          <CopilotView
+            currentPersona={persona}
+            selectedCaseId={selectedCaseId}
+            onSelectCase={(id) => setSelectedCaseId(id)}
+          />
+        )}
         {activeTab === "data-readiness" && <DataReadinessView />}
         {activeTab === "integrations" && <IntegrationsView />}
         {activeTab === "audit-trail" && <AuditTrailView />}
       </main>
 
       {/* Case Inspection Modal */}
-      {selectedCaseId && activeTab !== "intelligence" && activeTab !== "network" && (
+      {selectedCaseId && activeTab !== "intelligence" && activeTab !== "network" && activeTab !== "copilot" && (
         <CaseDetailModal
           caseId={selectedCaseId}
           onClose={() => setSelectedCaseId(null)}
@@ -176,6 +191,10 @@ export const App: React.FC = () => {
           onOpenNetwork={(id) => {
             setSelectedCaseId(id);
             setActiveTab("network");
+          }}
+          onOpenCopilot={(id) => {
+            setSelectedCaseId(id);
+            setActiveTab("copilot");
           }}
         />
       )}

@@ -388,6 +388,7 @@ class SimulationRunRecord(IntelligenceBase):
 
     executed_by: Mapped[str] = mapped_column(String(255), nullable=False)
     executed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+
     simulation_cutoff: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     metrics: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
@@ -777,6 +778,91 @@ class NetworkAnalysisRunRecord(IntelligenceBase):
     result_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
 
     executed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+
+
+# ==============================================================================
+# Phase 11 Models: AI Investigation Copilot
+# ==============================================================================
+
+class CopilotThreadRecord(IntelligenceBase):
+    """Investigation conversation thread bound strictly to an installation and case."""
+    __tablename__ = "enterprise_copilot_threads"
+
+    thread_id: Mapped[str] = mapped_column(String(100), primary_key=True)
+    installation_id: Mapped[str] = mapped_column(String(100), primary_key=True, index=True)
+    case_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_by: Mapped[str] = mapped_column(String(255), nullable=False)
+    is_archived: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+
+
+class CopilotMessageRecord(IntelligenceBase):
+    """Single message in a copilot thread with claims, citations, and grounding report."""
+    __tablename__ = "enterprise_copilot_messages"
+
+    message_id: Mapped[str] = mapped_column(String(100), primary_key=True)
+    thread_id: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    installation_id: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    case_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+
+    role: Mapped[str] = mapped_column(String(20), nullable=False)  # user, assistant, system
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+
+    task_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    claims: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False, default=list)
+    citations: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False, default=list)
+    tool_calls: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False, default=list)
+    grounding_report: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+
+
+class CopilotReportDraftRecord(IntelligenceBase):
+    """AI-drafted investigation report subject to human investigator review and governance."""
+    __tablename__ = "enterprise_copilot_report_drafts"
+
+    draft_id: Mapped[str] = mapped_column(String(100), primary_key=True)
+    installation_id: Mapped[str] = mapped_column(String(100), primary_key=True, index=True)
+    case_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    thread_id: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
+
+    report_type: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    content_markdown: Mapped[str] = mapped_column(Text, nullable=False)
+    investigator_edits_markdown: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    status: Mapped[str] = mapped_column(String(30), nullable=False, default="DRAFT", index=True)
+    evidence_context_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    citations: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False, default=list)
+    model_info: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+
+    review_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    reviewed_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+
+
+class CopilotFeedbackRecord(IntelligenceBase):
+    """Investigator feedback on copilot responses for quality tracking."""
+    __tablename__ = "enterprise_copilot_feedbacks"
+
+    feedback_id: Mapped[str] = mapped_column(String(100), primary_key=True)
+    installation_id: Mapped[str] = mapped_column(String(100), primary_key=True, index=True)
+    case_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    message_id: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+
+    rating: Mapped[int] = mapped_column(Integer, nullable=False)  # 1 for thumbs up, -1 for thumbs down
+    feedback_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_by: Mapped[str] = mapped_column(String(255), nullable=False)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+
 
 
 

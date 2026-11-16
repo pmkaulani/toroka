@@ -65,6 +65,18 @@ ALLOWED_METADATA_KEYS = frozenset({
     "anchor_entity",
     "new_status",
     "previous_status",
+    # Copilot Phase 11
+    "thread_id",
+    "message_id",
+    "draft_id",
+    "feedback_id",
+    "task_type",
+    "report_type",
+    "verified_claims",
+    "rejected_claims_count",
+    "tools_called",
+    "rating",
+    "grounding_valid",
 })
 
 

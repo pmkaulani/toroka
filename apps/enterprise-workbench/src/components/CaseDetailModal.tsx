@@ -8,6 +8,7 @@ interface CaseDetailModalProps {
   onConsumeReveal: (pseudonym: string, plaintext: string, consumedAt: string) => void;
   onOpenIntelligence?: (caseId: string) => void;
   onOpenNetwork?: (caseId: string) => void;
+  onOpenCopilot?: (caseId: string) => void;
 }
 
 export const CaseDetailModal: React.FC<CaseDetailModalProps> = ({
@@ -16,6 +17,7 @@ export const CaseDetailModal: React.FC<CaseDetailModalProps> = ({
   onConsumeReveal,
   onOpenIntelligence,
   onOpenNetwork,
+  onOpenCopilot,
 }) => {
   const persona = getCurrentPersona();
   const [caseData, setCaseData] = useState<CaseDetail | null>(null);
@@ -214,6 +216,18 @@ export const CaseDetailModal: React.FC<CaseDetailModalProps> = ({
                 style={{ fontSize: 12, padding: "4px 10px", borderColor: "var(--accent-blue)" }}
               >
                 Network Graph →
+              </button>
+            )}
+            {onOpenCopilot && (
+              <button
+                className="wb-btn"
+                onClick={() => {
+                  onOpenCopilot(caseData.id);
+                  onClose();
+                }}
+                style={{ fontSize: 12, padding: "4px 10px", borderColor: "#0284c7", color: "#0284c7", fontWeight: 700 }}
+              >
+                AI Copilot →
               </button>
             )}
             <button

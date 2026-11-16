@@ -892,5 +892,94 @@ export interface ShortestPathResult {
   edges: NetworkEdge[];
 }
 
+// Phase 11: AI Investigation Copilot Types
+export interface CopilotThread {
+  thread_id: string;
+  installation_id: string;
+  case_id: string;
+  title: string;
+  created_by: string;
+  is_archived: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CopilotEvidenceQuote {
+  evidence_id: string;
+  quoted_text: string;
+}
+
+export interface CopilotGroundedClaim {
+  claim_id: string;
+  kind: "fact" | "inference" | "unknown" | "recommendation";
+  statement: string;
+  evidence_ids: string[];
+  quotes: CopilotEvidenceQuote[];
+  limitations?: string | null;
+  investigative_basis?: string | null;
+  alternative_explanations: string[];
+}
+
+export interface CopilotGroundingReport {
+  valid: boolean;
+  verified_claims: number;
+  rejected_claims: string[];
+  rejection_reasons: string[];
+}
+
+export interface CopilotMessage {
+  message_id: string;
+  thread_id: string;
+  installation_id: string;
+  case_id: string;
+  role: "user" | "assistant" | "system";
+  content: string;
+  task_type?: string | null;
+  claims: CopilotGroundedClaim[];
+  citations: Array<{ evidence_id: string; quoted_text: string }>;
+  tool_calls: Array<Record<string, unknown>>;
+  grounding_report?: CopilotGroundingReport | null;
+  created_at: string;
+}
+
+export interface CopilotReportDraft {
+  draft_id: string;
+  installation_id: string;
+  case_id: string;
+  thread_id?: string | null;
+  report_type: string;
+  title: string;
+  content_markdown: string;
+  investigator_edits_markdown?: string | null;
+  status: "DRAFT" | "INVESTIGATOR_REVIEW" | "ACCEPTED" | "REJECTED";
+  evidence_context_hash: string;
+  citations: Array<{ evidence_id: string; quoted_text: string }>;
+  model_info: Record<string, unknown>;
+  review_notes?: string | null;
+  reviewed_by?: string | null;
+  reviewed_at?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CopilotFeedback {
+  feedback_id: string;
+  message_id: string;
+  rating: number;
+  feedback_text?: string | null;
+  created_by: string;
+  created_at: string;
+}
+
+export interface CopilotStatus {
+  status: string;
+  provider: string;
+  model: string;
+  air_gapped: boolean;
+  data_retention_verified: boolean;
+  active_tools_count: number;
+  allowed_tools: string[];
+}
+
 
 
