@@ -51,6 +51,27 @@ from .evidence_completeness import EvidenceRequirement, EvidenceCompleteness, ca
 from .reconstruction_engine import reconstruct
 from .scenarios import InvestigationScenario, generate_competing_scenarios
 
+# Phase 8 additions: Counterfactual Investigation Simulator
+from .simulation import (
+    CandidateDetection,
+    CaseOutcome,
+    MetricsDelta,
+    OutcomeLabel,
+    ReplayObservation,
+    SimulatedDetection,
+    SimulationComparisonResult,
+    SimulationMetrics,
+    SimulationRunResult,
+    SimulationStrategy,
+    calculate_metrics,
+    calculate_metrics_delta,
+    compare_strategies,
+    make_rule_runner,
+    replay_strategy,
+    resolve_rule_name,
+    run_strategy_detectors,
+)
+
 __all__ = [
     "EntityType",
     "EntityRef",
@@ -120,4 +141,22 @@ __all__ = [
     "reconstruct",
     "InvestigationScenario",
     "generate_competing_scenarios",
+    # Phase 8
+    "CandidateDetection",
+    "CaseOutcome",
+    "MetricsDelta",
+    "OutcomeLabel",
+    "ReplayObservation",
+    "SimulatedDetection",
+    "SimulationComparisonResult",
+    "SimulationMetrics",
+    "SimulationRunResult",
+    "SimulationStrategy",
+    "calculate_metrics",
+    "calculate_metrics_delta",
+    "compare_strategies",
+    "make_rule_runner",
+    "replay_strategy",
+    "resolve_rule_name",
+    "run_strategy_detectors",
 ]

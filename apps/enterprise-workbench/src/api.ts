@@ -25,6 +25,10 @@ import {
   ReconstructionBundle,
   Relationship,
   RevealRequest,
+  SimulationApproval,
+  SimulationRun,
+  SimulationStrategy,
+  CaseOutcome,
   WorkbenchOverview,
 } from "./types";
 
@@ -345,4 +349,83 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ resolution_note: resolutionNote }),
     }),
+
+  // Phase 8: Counterfactual Investigation Simulator
+  listSimulationStrategies: (): Promise<SimulationStrategy[]> =>
+    request<SimulationStrategy[]>("/api/enterprise/v1/simulation/strategies"),
+
+  getSimulationStrategy: (strategyId: string, version?: number): Promise<SimulationStrategy> => {
+    const q = version ? `?version=${version}` : "";
+    return request<SimulationStrategy>(`/api/enterprise/v1/simulation/strategies/${encodeURIComponent(strategyId)}${q}`);
+  },
+
+  createSimulationStrategy: (payload: {
+    strategy_id: string;
+    title: string;
+    description?: string;
+    rules_enabled: string[];
+    parameters?: Record<string, unknown>;
+    min_severity?: string;
+    min_confidence?: number;
+  }): Promise<SimulationStrategy> =>
+    request<SimulationStrategy>("/api/enterprise/v1/simulation/strategies", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  listCaseOutcomes: (): Promise<CaseOutcome[]> =>
+    request<CaseOutcome[]>("/api/enterprise/v1/simulation/labels"),
+
+  adjudicateCaseOutcome: (payload: {
+    case_id: string;
+    label: string;
+    first_fraud_event_time?: string | null;
+    notes?: string | null;
+  }): Promise<CaseOutcome> =>
+    request<CaseOutcome>("/api/enterprise/v1/simulation/labels", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  executeSimulationRun: (payload: {
+    strategy_id: string;
+    strategy_version?: number;
+    baseline_strategy_id?: string;
+    baseline_strategy_version?: number;
+    simulation_cutoff?: string;
+    cohort_case_ids?: string[];
+  }): Promise<SimulationRun> =>
+    request<SimulationRun>("/api/enterprise/v1/simulation/runs", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  listSimulationRuns: (): Promise<SimulationRun[]> =>
+    request<SimulationRun[]>("/api/enterprise/v1/simulation/runs"),
+
+  getSimulationRun: (simulationId: string): Promise<SimulationRun> =>
+    request<SimulationRun>(`/api/enterprise/v1/simulation/runs/${encodeURIComponent(simulationId)}`),
+
+  requestStrategyApproval: (payload: {
+    strategy_id: string;
+    strategy_version?: number;
+    request_rationale: string;
+    simulation_run_id?: string;
+  }): Promise<SimulationApproval> =>
+    request<SimulationApproval>("/api/enterprise/v1/simulation/approvals/request", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  reviewStrategyApproval: (
+    approvalId: string,
+    payload: { decision: "approved" | "rejected"; notes?: string }
+  ): Promise<SimulationApproval> =>
+    request<SimulationApproval>(`/api/enterprise/v1/simulation/approvals/${encodeURIComponent(approvalId)}/review`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  listStrategyApprovals: (): Promise<SimulationApproval[]> =>
+    request<SimulationApproval[]>("/api/enterprise/v1/simulation/approvals"),
 };

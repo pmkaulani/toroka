@@ -490,4 +490,113 @@ export interface ReconstructionBundle {
   created_at: string;
 }
 
+// Phase 8: Counterfactual Investigation Simulator Types
+export interface SimulationStrategy {
+  strategy_id: string;
+  version: number;
+  installation_id: string;
+  title: string;
+  description: string;
+  rules_enabled: string[];
+  parameters: Record<string, unknown>;
+  min_severity: string;
+  min_confidence: number;
+  status: "draft" | "pending_review" | "approved" | "rejected" | "active";
+  created_by: string;
+  created_at: string;
+}
+
+export interface CaseOutcome {
+  case_id: string;
+  installation_id: string;
+  label: "confirmed_fraud" | "confirmed_legitimate" | "inconclusive" | "unlabelled";
+  first_fraud_event_time?: string | null;
+  adjudicated_at: string;
+  adjudicated_by: string;
+  notes?: string | null;
+}
+
+export interface SimulationMetrics {
+  total_cases_evaluated: number;
+  true_positives: number;
+  false_positives: number;
+  true_negatives: number;
+  false_negatives: number;
+  precision: number;
+  recall: number;
+  f1_score: number;
+  mean_detection_delay_seconds?: number | null;
+  median_detection_delay_seconds?: number | null;
+  total_alerts: number;
+  alerted_cases: number;
+  alert_rate: number;
+  inconclusive_cases_alerted: number;
+  unlabelled_cases_alerted: number;
+  labelled_cases: number;
+  inconclusive_cases: number;
+  unlabelled_cases: number;
+  label_coverage_pct: number;
+}
+
+export interface MetricsDelta {
+  tp_diff: number;
+  fp_diff: number;
+  fn_diff: number;
+  tn_diff: number;
+  precision_diff: number;
+  recall_diff: number;
+  f1_diff: number;
+  detection_delay_diff_seconds?: number | null;
+  alert_volume_diff: number;
+  summary: string;
+}
+
+export interface SimulatedDetection {
+  detection_id: string;
+  strategy_id: string;
+  strategy_version: number;
+  case_id: string;
+  event_id: string;
+  detected_at: string;
+  rule_name: string;
+  severity: string;
+  confidence: number;
+  explanation: string;
+  supporting_event_ids: string[];
+}
+
+export interface SimulationRun {
+  simulation_id: string;
+  installation_id: string;
+  strategy_id: string;
+  strategy_version: number;
+  baseline_strategy_id?: string | null;
+  baseline_strategy_version?: number | null;
+  executed_by: string;
+  executed_at: string;
+  simulation_cutoff?: string | null;
+  metrics: SimulationMetrics;
+  baseline_metrics?: SimulationMetrics | null;
+  delta?: MetricsDelta | null;
+  total_events_replayed: number;
+  delayed_events_filtered: number;
+  case_detections: Record<string, SimulatedDetection[]>;
+}
+
+export interface SimulationApproval {
+  approval_id: string;
+  installation_id: string;
+  strategy_id: string;
+  strategy_version: number;
+  requester_subject: string;
+  requested_at: string;
+  request_rationale: string;
+  simulation_run_id?: string | null;
+  status: "pending" | "approved" | "rejected";
+  reviewer_subject?: string | null;
+  reviewed_at?: string | null;
+  review_decision?: string | null;
+  review_notes?: string | null;
+}
+
 

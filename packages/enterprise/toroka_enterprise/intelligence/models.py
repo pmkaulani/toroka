@@ -336,4 +336,91 @@ class InvestigationScenarioRecord(IntelligenceBase):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
 
 
+class SimulationStrategyRecord(IntelligenceBase):
+    """Counterfactual detection strategy definition with versioning and thresholds."""
+    __tablename__ = "enterprise_simulation_strategies"
+
+    strategy_id: Mapped[str] = mapped_column(String(100), primary_key=True)
+    version: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
+    installation_id: Mapped[str] = mapped_column(String(100), primary_key=True, index=True)
+
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False, default="")
+
+    rules_enabled: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    parameters: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+
+    min_severity: Mapped[str] = mapped_column(String(30), nullable=False, default="medium")
+    min_confidence: Mapped[float] = mapped_column(Float, nullable=False, default=0.5)
+
+    status: Mapped[str] = mapped_column(String(30), nullable=False, default="draft", index=True)
+    created_by: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+
+
+class SimulationCaseOutcomeRecord(IntelligenceBase):
+    """Ground truth adjudication for an investigated case within an installation."""
+    __tablename__ = "enterprise_simulation_case_outcomes"
+
+    case_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    installation_id: Mapped[str] = mapped_column(String(100), primary_key=True, index=True)
+
+    label: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    first_fraud_event_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    adjudicated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+    adjudicated_by: Mapped[str] = mapped_column(String(255), nullable=False)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class SimulationRunRecord(IntelligenceBase):
+    """Historical replay run execution record and evaluated metrics."""
+    __tablename__ = "enterprise_simulation_runs"
+
+    simulation_id: Mapped[str] = mapped_column(String(100), primary_key=True)
+    installation_id: Mapped[str] = mapped_column(String(100), primary_key=True, index=True)
+
+    strategy_id: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    strategy_version: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    baseline_strategy_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    baseline_strategy_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    executed_by: Mapped[str] = mapped_column(String(255), nullable=False)
+    executed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+    simulation_cutoff: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    metrics: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    baseline_metrics: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    delta: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+
+    total_events_replayed: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    delayed_events_filtered: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    case_detections: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+
+
+class SimulationApprovalRecord(IntelligenceBase):
+    """Dual-control (maker-checker) approval review for strategy promotion."""
+    __tablename__ = "enterprise_simulation_approvals"
+
+    approval_id: Mapped[str] = mapped_column(String(100), primary_key=True)
+    installation_id: Mapped[str] = mapped_column(String(100), primary_key=True, index=True)
+
+    strategy_id: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    strategy_version: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    requester_subject: Mapped[str] = mapped_column(String(255), nullable=False)
+    requested_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+    request_rationale: Mapped[str] = mapped_column(Text, nullable=False)
+
+    simulation_run_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+
+    status: Mapped[str] = mapped_column(String(30), nullable=False, default="pending", index=True)
+    reviewer_subject: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    review_decision: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    review_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+
 

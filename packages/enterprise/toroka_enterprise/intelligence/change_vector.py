@@ -74,11 +74,27 @@ def build_change_vector(
     measured_count = sum(1 for dim in tracked_dimensions if dim in observed_attributes)
     completeness = round(measured_count / len(tracked_dimensions), 2) if tracked_dimensions else 1.0
 
-    explanation = (
-        f"Subject {subject_id} exhibits {len(changed)} changed dimension(s) and {len(unusual)} "
-        f"statistically unusual dimension(s) with {int(completeness * 100)}% telemetry completeness. "
-        "Evidence indicates operational change, which does not constitute proof of misconduct."
-    )
+    if measured_count == 0:
+        explanation = (
+            f"Subject {subject_id} has no observable telemetry in the incident window. "
+            "Evidence debt: all tracked dimensions unmeasured."
+        )
+    else:
+        explanation = (
+            f"Subject {subject_id} exhibits {len(changed)} changed dimension(s) and {len(unusual)} "
+            f"statistically unusual dimension(s) with {int(completeness * 100)}% telemetry completeness. "
+            "Evidence indicates operational change, which does not constitute proof of misconduct."
+        )
+
+    # Note baseline maturity caveats if profile is provided
+    if profile is not None:
+        if profile.sample_count == 0:
+            explanation += " Note: No historical baseline observations exist for this subject."
+        elif not profile.mature:
+            explanation += (
+                f" Note: Historical baseline is immature ({profile.sample_count} observations; "
+                f"minimum required: {profile.minimum_required_samples}). Deviations should be treated with caution."
+            )
 
     return ChangeVector(
         subject_id=subject_id,

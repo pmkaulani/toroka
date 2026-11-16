@@ -44,7 +44,7 @@ def reconstruct_incident(
 ) -> ReconstructionBundleResponse:
     """Deterministically reconstructs an incident timeline from independently sourced evidence."""
     svc = ReconstructionService(db, principal.installation_id or installation_id)
-    return svc.reconstruct_case(case_id)
+    return svc.reconstruct_case(case_id, actor=principal.subject)
 
 
 @router.get(
@@ -134,6 +134,7 @@ def resolve_evidence_contradiction(
     """Investigator resolves a contradiction with rationale."""
     svc = ReconstructionService(db, principal.installation_id or installation_id)
     rec = svc.resolve_contradiction(
+        case_id=case_id,
         contradiction_id=contradiction_id,
         resolved_by=principal.subject,
         resolution_note=payload.resolution_note,

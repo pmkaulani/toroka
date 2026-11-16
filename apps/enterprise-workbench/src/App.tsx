@@ -12,6 +12,7 @@ import { MyCasesView } from "./components/MyCasesView";
 import { OverviewView } from "./components/OverviewView";
 import { ReviewQueuesView } from "./components/ReviewQueuesView";
 import { RevealModal } from "./components/RevealModal";
+import { SimulationLabView } from "./components/SimulationLabView";
 import { Persona } from "./types";
 
 export const App: React.FC = () => {
@@ -87,6 +88,13 @@ export const App: React.FC = () => {
         </button>
 
         <button
+          className={`wb-tab ${activeTab === "simulation" ? "active" : ""}`}
+          onClick={() => setActiveTab("simulation")}
+        >
+          Simulation Lab
+        </button>
+
+        <button
           className={`wb-tab ${activeTab === "data-readiness" ? "active" : ""}`}
           onClick={() => setActiveTab("data-readiness")}
         >
@@ -122,6 +130,7 @@ export const App: React.FC = () => {
             onSelectCase={(id) => setSelectedCaseId(id)}
           />
         )}
+        {activeTab === "simulation" && <SimulationLabView currentPersona={persona} />}
         {activeTab === "data-readiness" && <DataReadinessView />}
         {activeTab === "integrations" && <IntegrationsView />}
         {activeTab === "audit-trail" && <AuditTrailView />}

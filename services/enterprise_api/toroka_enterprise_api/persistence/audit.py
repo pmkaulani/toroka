@@ -35,6 +35,15 @@ ALLOWED_METADATA_KEYS = frozenset({
     "error",
     "error_type",
     "installation_id",
+    "action",
+    "contradiction_id",
+    "reconstruction_id",
+    "simulation_id",
+    "strategy_id",
+    "strategy_version",
+    "approval_id",
+    "decision",
+    "label",
 })
 
 

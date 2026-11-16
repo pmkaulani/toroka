@@ -30,7 +30,7 @@ class AttackPath:
     path_id: str
     nodes: list[AttackPathNode] = field(default_factory=list)
     edges: list[AttackPathEdge] = field(default_factory=list)
-    confidence: float = 1.0
+    confidence: float = 0.0
 
     def add_node(
         self,
@@ -90,6 +90,6 @@ def build_attack_path_from_relationships(
     if path.edges:
         path.confidence = round(sum(e.confidence for e in path.edges) / len(path.edges), 2)
     else:
-        path.confidence = 1.0
+        path.confidence = 0.0
 
     return path

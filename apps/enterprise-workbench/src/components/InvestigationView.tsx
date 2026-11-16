@@ -40,6 +40,8 @@ export const InvestigationView: React.FC<InvestigationViewProps> = ({
 
   // Phase 7 Attack Reconstruction Engine State
   const [reconstruction, setReconstruction] = useState<ReconstructionBundle | null>(null);
+  const [loadingRecon, setLoadingRecon] = useState(false);
+  const [reconError, setReconError] = useState<string | null>(null);
   const [reconstructing, setReconstructing] = useState(false);
   const [reconSubSection, setReconSubSection] = useState<
     "what_happened" | "change_vector" | "attack_path" | "scenarios" | "debt_conflicts"
@@ -101,21 +103,33 @@ export const InvestigationView: React.FC<InvestigationViewProps> = ({
       .then((prof) => setProfile(prof))
       .catch(() => setProfile(null));
 
+    setLoadingRecon(true);
+    setReconError(null);
     api
       .getCaseReconstruction(selectedCaseId)
-      .then((recon) => setReconstruction(recon))
-      .catch(() => setReconstruction(null));
+      .then((recon) => {
+        setReconstruction(recon);
+        setReconError(null);
+      })
+      .catch((err) => {
+        setReconstruction(null);
+        setReconError(err instanceof Error ? err.message : String(err));
+      })
+      .finally(() => setLoadingRecon(false));
   }, [selectedCaseId, cases]);
 
   const handleRerunReconstruction = async () => {
     if (!selectedCaseId) return;
     setReconstructing(true);
     setError(null);
+    setReconError(null);
     try {
       const refreshed = await api.reconstructCase(selectedCaseId);
       setReconstruction(refreshed);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : String(err));
+      const msg = err instanceof Error ? err.message : String(err);
+      setError(msg);
+      setReconError(msg);
     } finally {
       setReconstructing(false);
     }
@@ -145,7 +159,6 @@ export const InvestigationView: React.FC<InvestigationViewProps> = ({
         dimension: evalDim,
         observed_value: Number(evalVal),
         case_id: selectedCaseId,
-        historical_samples: [3.0, 4.0, 5.0, 4.0, 6.0, 5.0, 4.0, 5.0, 7.0, 5.0, 4.0, 6.0, 5.0, 5.0, 6.0, 4.0, 5.0, 6.0, 5.0, 5.0],
       });
       const updatedAnoms = await api.listAnomalies({ case_id: selectedCaseId });
       setAnomalies(updatedAnoms);
@@ -990,6 +1003,33 @@ export const InvestigationView: React.FC<InvestigationViewProps> = ({
 
           {/* Section 7: Attack Reconstruction Engine */}
           {activeSection === "reconstruction" && (
+            loadingRecon ? (
+              <div className="wb-card" style={{ padding: 40, textAlign: "center" }}>
+                <div style={{ color: "var(--accent-blue)", fontWeight: 600, fontSize: 16, marginBottom: 8 }}>
+                  Loading Attack Reconstruction...
+                </div>
+                <div style={{ color: "var(--text-muted)", fontSize: 13 }}>
+                  Retrieving deterministic evidence timeline and state transitions for Case {selectedCaseId?.slice(0, 8)}.
+                </div>
+              </div>
+            ) : !reconstruction ? (
+              <div className="wb-card" style={{ padding: 40, textAlign: "center" }}>
+                <h3 style={{ fontSize: 16, marginBottom: 8, color: "var(--text-color)" }}>No Reconstruction Available Yet</h3>
+                <p style={{ color: "var(--text-muted)", fontSize: 13, maxWidth: 600, margin: "0 auto 16px auto" }}>
+                  {reconError
+                    ? `Reconstruction lookup notice: ${reconError}`
+                    : "An attack reconstruction has not yet been computed for this case. Click below to synthesize chronological events, state transitions, change vectors, and competing scenarios from available evidence."}
+                </p>
+                <button
+                  className="wb-btn"
+                  onClick={handleRerunReconstruction}
+                  disabled={reconstructing || !selectedCaseId}
+                  style={{ padding: "8px 16px" }}
+                >
+                  {reconstructing ? "Synthesizing Reconstruction..." : "Generate Attack Reconstruction"}
+                </button>
+              </div>
+            ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
               {/* Reconstruction Header Card */}
               <div className="wb-card" style={{ borderLeft: "4px solid #38bdf8" }}>
@@ -1095,7 +1135,24 @@ export const InvestigationView: React.FC<InvestigationViewProps> = ({
                       Chronological Reconstruction Steps
                     </h3>
                     {!reconstruction || reconstruction.steps.length === 0 ? (
-                      <div style={{ color: "var(--text-muted)", padding: 20 }}>No reconstruction steps available.</div>
+                      <div style={{ color: "var(--text-muted)", padding: 24, textAlign: "center" }}>
+                        <div style={{ fontWeight: 600, color: "var(--text-color)", marginBottom: 6 }}>Zero Events Scoped to Case</div>
+                        <div style={{ fontSize: 13, marginBottom: 12 }}>
+                          No chronological steps could be reconstructed because no canonical events are associated with the case focus entities yet.
+                        </div>
+                        {reconstruction && reconstruction.evidence_completeness.evidence_debt.length > 0 && (
+                          <div style={{ display: "inline-block", textAlign: "left", background: "rgba(0,0,0,0.2)", padding: 12, borderRadius: 4 }}>
+                            <div style={{ fontSize: 11, textTransform: "uppercase", color: "var(--accent-amber)", fontWeight: 600, marginBottom: 4 }}>
+                              Outstanding Telemetry Debt:
+                            </div>
+                            <ul style={{ margin: 0, paddingLeft: 16, fontSize: 12 }}>
+                              {reconstruction.evidence_completeness.evidence_debt.map((debt, idx) => (
+                                <li key={idx}>{debt}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                      </div>
                     ) : (
                       <div style={{ overflowX: "auto" }}>
                         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
@@ -1300,9 +1357,14 @@ export const InvestigationView: React.FC<InvestigationViewProps> = ({
                     <div key={sc.scenario_id} className="wb-card">
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
                         <h4 style={{ fontSize: 15, margin: 0, color: "var(--text-color)" }}>{sc.title}</h4>
-                        <span className="chip chip-open" style={{ fontWeight: 600 }}>
-                          {(sc.relative_support * 100).toFixed(0)}% Support
-                        </span>
+                        <div style={{ textAlign: "right" }}>
+                          <span className="chip chip-open" style={{ fontWeight: 600, fontSize: 11 }}>
+                            {(sc.relative_support * 100).toFixed(0)}% Relative Support Index
+                          </span>
+                          <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 2 }}>
+                            (Heuristic assessment based on current evidence, not a calibrated fraud probability)
+                          </div>
+                        </div>
                       </div>
                       <p style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 12 }}>{sc.description}</p>
 
@@ -1515,6 +1577,7 @@ export const InvestigationView: React.FC<InvestigationViewProps> = ({
                 </div>
               )}
             </div>
+            )
           )}
         </div>
       ) : (
