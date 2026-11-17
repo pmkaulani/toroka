@@ -25,6 +25,10 @@ CASES = [
     ("https://twitter.com/kicksnairobi", "x", "kicksnairobi", "profile"),
     ("https://wa.me/254712345678", "whatsapp", None, "chat"),
     ("https://chat.whatsapp.com/Abc123Def", "whatsapp", None, "group_invite"),
+    ("https://t.me/kenya_shop", "telegram", "kenya_shop", "profile"),
+    ("https://t.me/kenya_shop/42", "telegram", "kenya_shop", "post"),
+    ("https://t.me/joinchat/Abc123Def", "telegram", None, "group_invite"),
+    ("https://t.me/+Abc123Def", "telegram", None, "group_invite"),
 ]
 
 

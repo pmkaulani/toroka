@@ -14,6 +14,7 @@ BRANDS = {"Jumia": {"jumia.co.ke", "jumia.com.ng", "jumia.com"}, "Safaricom": {"
     ("https://jumia.cheap-phones.xyz/", "brand_in_subdomain", "critical"),
     ("https://safaricom-promo.com", "brand_in_domain", "major"),
     ("https://xn--jumia-9ua.co.ke", "lookalike_characters", "major"),
+    ("https://jumi\u0430.co.ke/phone", "lookalike_characters", "major"),
     ("https://amazonia-coffee.co.ke", "brand_in_domain", "major"),
 ])
 def test_deceptive_links_are_flagged(url, code, sev):

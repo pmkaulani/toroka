@@ -6,7 +6,29 @@ from ssi_connectors.marketplace import _MARKETPLACES  # (name, domains, ...) ent
 
 from .decision_report import build_decision, facts_from_result
 
-EXTRA_BRANDS = {"Safaricom": {"safaricom.co.ke"}, "KRA": {"kra.go.ke"}, "eCitizen": {"ecitizen.go.ke"}}      # add official domains you have CONFIRMED
+EXTRA_BRANDS = {
+    "Safaricom": {"safaricom.co.ke"},
+    "Airtel": {"airtel.co.ke"},
+    "Telkom": {"telkom.co.ke"},
+    "KRA": {"kra.go.ke"},
+    "eCitizen": {"ecitizen.go.ke"},
+    "NTSA": {"ntsa.go.ke"},
+    "HELB": {"helb.co.ke"},
+    "SHA": {"sha.go.ke", "nhif.or.ke"},
+    "NSSF": {"nssf.or.ke"},
+    "Posta": {"posta.co.ke"},
+    "Equity": {"equitybank.co.ke", "equitygroupholdings.com"},
+    "KCB": {"kcbgroup.com", "kcb.co.ke"},
+    "Co-op Bank": {"co-opbank.co.ke"},
+    "NCBA": {"ncbagroup.com"},
+    "Absa": {"absabank.co.ke"},
+    "Stanbic": {"stanbicbank.co.ke"},
+    "DTB": {"dtbafrica.com"},
+    "I&M": {"imbankgroup.com"},
+    "Naivas": {"naivas.online", "naivas.co.ke"},
+    "Quickmart": {"quickmart.co.ke"},
+    "Carrefour": {"carrefourkenya.com"},
+}      # verified official Kenyan domains for essential services and banks
 RANK = {"verified_official": 0, "looks_genuine": 0, "no_known_threats_found": 1, "inconclusive": 2, "suspicious_verify_first": 3, "high_risk": 4}
 
 

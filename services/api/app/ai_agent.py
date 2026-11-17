@@ -1225,6 +1225,35 @@ def _local_expert_replies(
             ),
         )
 
+    # 3f. M-PESA Accidental Transfer / Fake Reversal Traps ("Tuma Nyuma")
+    if "MPESA_FAKE_REVERSAL" in tax_pids or any(
+        w in msg_norm
+        for w in [
+            "nimetuma kwa makosa", "nimetuma kimakosa", "tuma nyuma", "rudisha pesa",
+            "unirudishie", "sent by mistake", "accidental transfer", "sent to you by mistake",
+            "reverse the money", "reversed by mistake", "nimekosea nikatuma", "nitumie nyuma",
+            "nitumie chapaa", "rudishia namba hii", "nifunge laini yako",
+        ]
+    ):
+        return (
+            (
+                "M-PESA ACCIDENTAL TRANSFER & REVERSAL ALERT:\n\n"
+                "If someone claims they sent you money by mistake and asks you to send it back, proceed with extreme caution:\n"
+                "- **Never Send Money Back Yourself**: This is Kenya's classic 'tuma nyuma' trap. The sender either forged an SMS or will initiate an official reversal after you pay them from your own funds.\n"
+                "- **Check Your Actual Balance Independently**: Dial ***334#** or open the M-PESA app directly. Do not rely on any incoming SMS text or screenshot.\n"
+                "- **Authentic Sender Check**: Real Safaricom M-PESA messages always come from alphanumeric sender **MPESA**—never from a personal 07xx or 01xx number.\n"
+                "- **Use Official Safaricom Reversal (456)**: Tell the sender that if they genuinely made an error, they should forward the transaction confirmation SMS to **456** to request an official reversal through Safaricom. You do not need to send a single shilling."
+            ),
+            (
+                "TAHADHARI YA M-PESA: MTEGO WA 'NIMETUMA KWA MAKOSA' (Tuma Nyuma):\n\n"
+                "Mtu akidai ametuma pesa kwako kimakosa na kukuomba umrudishie, chukua tahadhari kubwa mara moja:\n"
+                "- **Kamwe Usirudishe Pesa kwa Mkono Wako**: Huu ni mtego maarufu wa 'tuma nyuma'. Tapeli ametuma SMS feki, au atasubiri umtumie pesa zako kisha aanzishe reversal rasmi ya zile alizotuma.\n"
+                "- **Kagua Salio Lako Mwenyewe**: Piga ***334#** au fungua M-PESA App kuthibitisha kama salio lako halisi limeongezeka. Usiamini ujumbe wa SMS pekee.\n"
+                "- **Uthibitisho wa Mtumaji**: Ujumbe halisi wa Safaricom hutoka kwa jina la **MPESA** pekee, si nambari ya kawaida ya simu (07xx au 01xx).\n"
+                "- **Mwelekeze Safaricom 456**: Mwambie mtumaji ikiwa kweli alikosea, atume ule ujumbe wa muamala kwenda **456** ili Safaricom washughulikie reversal rasmi. Huhitaji kutuma hata shilingi moja."
+            ),
+        )
+
     # 4. How Fake M-PESA SMS Work / Mechanics of Fake Receipts
     if any(w in msg_low for w in ["how do fake mpesa", "how does fake sms work", "how do scammers make", "how do they fake mpesa", "jinsi sms feki", "kutambua sms feki", "fake mpesa"]):
         return (

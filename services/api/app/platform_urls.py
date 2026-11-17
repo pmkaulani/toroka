@@ -15,6 +15,7 @@ RESERVED = {
     "events", "photo", "video", "videos", "hashtag", "tag", "search", "discover",
     "foryou", "following", "live", "shop", "view", "t", "i", "intent", "home",
     "settings", "privacy", "terms", "policies", "business", "directory", "gaming",
+    "joinchat", "addstickers", "contact",
 }
 SHORT_HOSTS = {"vm.tiktok.com", "vt.tiktok.com", "instagr.am", "fb.me", "fb.watch", "t.co"}
 HOSTS = {
@@ -23,6 +24,7 @@ HOSTS = {
     "facebook": {"facebook.com", "www.facebook.com", "m.facebook.com", "web.facebook.com", "fb.com", "fb.me", "fb.watch"},
     "x": {"x.com", "www.x.com", "twitter.com", "www.twitter.com", "mobile.twitter.com", "t.co"},
     "whatsapp": {"wa.me", "chat.whatsapp.com", "api.whatsapp.com"},
+    "telegram": {"t.me", "telegram.me"},
 }
 _HANDLE = re.compile(r"^[A-Za-z0-9_.-]{2,50}$")
 _CONTENT_ID = re.compile(r"^[A-Za-z0-9_-]{3,80}$")
@@ -161,5 +163,18 @@ def parse_social_url(raw: str) -> SocialLink | None:
             number = query["phone"][0]
             if re.fullmatch(r"\+?[0-9]{9,15}", number):
                 return SocialLink("whatsapp", None, "chat", None, None, False, number if number.startswith("+") else "+" + number)
+
+    elif platform == "telegram":
+        match = re.fullmatch(r"/(?:\+|joinchat/)([A-Za-z0-9_-]{5,80})", path)
+        if match:
+            return SocialLink("telegram", None, "group_invite", match.group(1))
+        match = re.fullmatch(r"/([A-Za-z0-9_]{3,50})/([0-9]{1,10})", path)
+        if match and _valid_handle(match.group(1)):
+            handle, msg_id = match.groups()
+            return SocialLink("telegram", handle, "post", msg_id, f"https://t.me/{handle}")
+        match = re.fullmatch(r"/@?([A-Za-z0-9_]{3,50})", path)
+        if match and _valid_handle(match.group(1)):
+            handle = match.group(1)
+            return SocialLink("telegram", handle, "profile", None, f"https://t.me/{handle}")
 
     return SocialLink(platform, None, "other")

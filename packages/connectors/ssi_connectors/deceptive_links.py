@@ -46,7 +46,7 @@ def deceptive_link_flags(url: str, brands: dict[str, set[str]]) -> list[LinkFlag
     if sp.username is not None:
         shown = sp.username
         flags.append(LinkFlag("userinfo_trick", "critical", f"The link starts with \u201c{shown}\u201d to look like a trusted address, but it really goes to {host}." if "." in shown else f"The link hides its real destination ({host}) behind a username."))
-    if any(l.startswith("xn--") for l in host.split(".")):
+    if any(l.startswith("xn--") for l in host.split(".")) or any(ord(c) > 127 for c in host):
         flags.append(LinkFlag("lookalike_characters", "major", "The address uses look-alike characters that can imitate a real brand."))
     for brand, official in brands.items():
         official = {d.lower() for d in official}

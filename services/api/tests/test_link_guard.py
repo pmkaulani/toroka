@@ -30,3 +30,31 @@ def test_host_extraction_with_credentials_never_yields_fake_prefix():
     assert host == "evil.example"
     assert host != "jumia.co.ke"
 
+
+def test_kenyan_bank_and_gov_brands_protected():
+    # Real brand affirmation
+    eq_real = apply_link_guard(fake("equitybank.co.ke"), "https://www.equitybank.co.ke/personal")
+    assert any(f.code == "OFFICIAL_BRAND_SITE" and f.polarity == "positive" for f in eq_real.findings)
+    assert eq_real.page_data.get("official_brand") == "Equity"
+
+    kcb_real = apply_link_guard(fake("kcbgroup.com"), "https://kcbgroup.com/loans")
+    assert any(f.code == "OFFICIAL_BRAND_SITE" and f.polarity == "positive" for f in kcb_real.findings)
+    assert kcb_real.page_data.get("official_brand") == "KCB"
+
+    ecitizen_real = apply_link_guard(fake("ecitizen.go.ke"), "https://accounts.ecitizen.go.ke/login")
+    assert any(f.code == "OFFICIAL_BRAND_SITE" and f.polarity == "positive" for f in ecitizen_real.findings)
+    assert ecitizen_real.page_data.get("official_brand") == "eCitizen"
+
+    # Deceptive brand phishing detection
+    eq_fake = apply_link_guard(fake("equity-loans.com"), "https://equity-loans.com")
+    assert eq_fake.risk_band == "suspicious_verify_first"
+    assert any(f.code == "DECEPTIVE_BRAND_IN_DOMAIN" for f in eq_fake.findings)
+
+    kcb_fake = apply_link_guard(fake("kcb-support.com"), "https://kcb-support.com")
+    assert kcb_fake.risk_band == "suspicious_verify_first"
+    assert any(f.code == "DECEPTIVE_BRAND_IN_DOMAIN" for f in kcb_fake.findings)
+
+    ntsa_fake = apply_link_guard(fake("portal.xyz"), "https://ntsa.go.ke.portal.xyz/login")
+    assert ntsa_fake.risk_band == "high_risk"
+    assert any(f.code == "DECEPTIVE_EMBEDDED_OFFICIAL_DOMAIN" for f in ntsa_fake.findings)
+

@@ -475,6 +475,7 @@ def find_public_identifiers(text: str, context_text: str = "", platform_hint: st
         "instagram.com", "tiktok.com", "facebook.com", "x.com", "twitter.com",
         "vm.tiktok.com", "vt.tiktok.com", "web.facebook.com", "m.facebook.com",
         "fb.com", "fb.me", "fb.watch", "instagr.am", "t.co", "wa.me",
+        "t.me", "telegram.me",
     }
     for m in domain_pattern.finditer(current):
         domain = m.group(1).lower().strip(".")
