@@ -3,7 +3,10 @@ import httpx
 import pytest
 from app import db as m
 from app.pipeline import Deps
-from conftest import Env, photo_like, png_with_text
+try:
+    from services.api.tests.conftest import Env, photo_like, png_with_text
+except ImportError:
+    from conftest import Env, photo_like, png_with_text
 from sqlalchemy import select
 from ssi_connectors import channels, reputation, safe_fetch
 from ssi_rules.vocabulary import CoverageStatus as CS

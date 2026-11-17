@@ -141,7 +141,10 @@ def test_evidence_upload_rejects_unknown_consent_scope_and_defaults_to_check_onl
     check = env.check("Please inspect the attached example image for this check only.")
     url = f"/v1/checks/{check['check_id']}/evidence"
     headers = {"X-Guest-Token": check["guest_token"]}
-    from conftest import png_with_text
+    try:
+        from services.api.tests.conftest import png_with_text
+    except ImportError:
+        from conftest import png_with_text
 
     bad = env.client.post(url, headers=headers, data={"consent_scope": "share_everything"},
                           files={"file": ("bad-scope.png", png_with_text(), "image/png")})
@@ -159,7 +162,10 @@ def test_evidence_upload_records_explicit_cross_case_image_opt_in(env):
     check = env.check("Please inspect this product screenshot and check for reused images.")
     url = f"/v1/checks/{check['check_id']}/evidence"
     headers = {"X-Guest-Token": check["guest_token"]}
-    from conftest import png_with_text
+    try:
+        from services.api.tests.conftest import png_with_text
+    except ImportError:
+        from conftest import png_with_text
 
     response = env.client.post(url, headers=headers, data={"consent_scope": "cross_case_campaign"},
                                files={"file": ("opt-in.png", png_with_text(), "image/png")})
@@ -195,7 +201,10 @@ def test_related_public_identifiers_require_two_distinct_approved_reporters(env)
 
 
 def test_phase2_image_lead_also_requires_opt_in_from_both_cases(env):
-    from conftest import photo_like
+    try:
+        from services.api.tests.conftest import photo_like
+    except ImportError:
+        from conftest import photo_like
     image = photo_like(991)
     first = env.check("First synthetic product photo check, kept for this check.")
     env.client.post(
