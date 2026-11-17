@@ -1043,6 +1043,8 @@ export interface ProductionRelease {
   approval_records: string[];
   readiness_gates: Array<Record<string, unknown>>;
   manifest_digest: string;
+  signature_bundle?: Record<string, unknown> | null;
+  is_digitally_signed?: boolean;
   promoted_by?: string | null;
   promoted_at?: string | null;
   rollback_target_id?: string | null;
@@ -1132,6 +1134,9 @@ export interface EvidencePassport {
   validation_result: string;
   human_review_required: boolean;
   passport_digest: string;
+  signature_bundle?: Record<string, unknown> | null;
+  merkle_proof?: Record<string, unknown> | null;
+  is_digitally_signed?: boolean;
   is_verified: boolean;
   created_at: string;
 }
@@ -1183,6 +1188,44 @@ export interface ValidationPackage {
     validation_summary: Array<Record<string, unknown>>;
     controls_and_governance: Record<string, unknown>;
   };
+}
+
+export interface QuantitativeDriftEvaluation {
+  evaluation_id: string;
+  installation_id: string;
+  component_id: string;
+  component_version: string;
+  psi_score: number;
+  psi_severity: "STABLE" | "MODERATE" | "SIGNIFICANT";
+  requires_mitigation: boolean;
+  ks_statistic: number;
+  ks_p_value: number;
+  ks_drift_detected: boolean;
+  wasserstein_distance: number;
+  fairness_compliant: boolean;
+  is_compliant: boolean;
+  governance_findings: string[];
+  evaluation_details: Record<string, unknown>;
+  evaluated_by: string;
+  created_at: string;
+}
+
+export interface ChampionChallengerRun {
+  run_id: string;
+  installation_id: string;
+  component_id: string;
+  champion_version: string;
+  challenger_version: string;
+  decision: string;
+  is_promotable: boolean;
+  fdr_delta: number;
+  f1_ratio: number;
+  latency_p95_delta_ms: number;
+  reasons: string[];
+  champion_metrics: Record<string, unknown>;
+  challenger_metrics: Record<string, unknown>;
+  evaluated_by: string;
+  created_at: string;
 }
 
 

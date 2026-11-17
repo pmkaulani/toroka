@@ -64,6 +64,8 @@ import {
   GovernedAIProvider,
   ReadinessAssessment,
   ValidationPackage,
+  QuantitativeDriftEvaluation,
+  ChampionChallengerRun,
 } from "./types";
 
 export const BANK_PERSONAS: Persona[] = [
@@ -904,4 +906,68 @@ export const api = {
 
   getValidationPackage: (releaseVersion: string): Promise<ValidationPackage> =>
     request<ValidationPackage>(`/api/enterprise/v1/governance/readiness/validation-package/${encodeURIComponent(releaseVersion)}`),
+
+  // Phase 13: PKI Digital Signatures & Quantitative Model Risk
+  signPassport: (passportId: string, algorithm = "Ed25519"): Promise<EvidencePassport> =>
+    request<EvidencePassport>(`/api/enterprise/v1/governance/passports/${encodeURIComponent(passportId)}/sign`, {
+      method: "POST",
+      body: JSON.stringify({ algorithm }),
+    }),
+
+  verifyPassport: (passportId: string, trustedPublicKeyPem?: string): Promise<{ is_valid: boolean; digest_verified: boolean; is_digitally_signed: boolean; signature_verified: boolean; error?: string }> =>
+    request(`/api/enterprise/v1/governance/passports/${encodeURIComponent(passportId)}/verify`, {
+      method: "POST",
+      body: JSON.stringify({ trusted_public_key_pem: trustedPublicKeyPem }),
+    }),
+
+  signRelease: (releaseId: string, algorithm = "Ed25519"): Promise<ProductionRelease> =>
+    request<ProductionRelease>(`/api/enterprise/v1/governance/releases/${encodeURIComponent(releaseId)}/sign`, {
+      method: "POST",
+      body: JSON.stringify({ algorithm }),
+    }),
+
+  verifyRelease: (releaseId: string, trustedPublicKeyPem?: string): Promise<{ is_valid: boolean; digest_verified: boolean; is_digitally_signed: boolean; signature_verified: boolean; error?: string }> =>
+    request(`/api/enterprise/v1/governance/releases/${encodeURIComponent(releaseId)}/verify`, {
+      method: "POST",
+      body: JSON.stringify({ trusted_public_key_pem: trustedPublicKeyPem }),
+    }),
+
+  listQuantitativeDriftEvaluations: (componentId?: string): Promise<QuantitativeDriftEvaluation[]> => {
+    const qs = componentId ? `?component_id=${encodeURIComponent(componentId)}` : "";
+    return request<QuantitativeDriftEvaluation[]>(`/api/enterprise/v1/governance/model-risk/drift-evaluations${qs}`);
+  },
+
+  evaluateQuantitativeDrift: (payload: {
+    component_id: string;
+    component_version: string;
+    baseline_scores: number[];
+    current_scores: number[];
+    subgroup_predictions?: Record<string, boolean[]>;
+  }): Promise<QuantitativeDriftEvaluation> =>
+    request<QuantitativeDriftEvaluation>("/api/enterprise/v1/governance/model-risk/drift-evaluations", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  listChampionChallengerRuns: (componentId?: string): Promise<ChampionChallengerRun[]> => {
+    const qs = componentId ? `?component_id=${encodeURIComponent(componentId)}` : "";
+    return request<ChampionChallengerRun[]>(`/api/enterprise/v1/governance/model-risk/champion-challenger${qs}`);
+  },
+
+  evaluateChampionChallenger: (payload: {
+    component_id: string;
+    champion_version: string;
+    challenger_version: string;
+    champion_metrics: Record<string, unknown>;
+    challenger_metrics: Record<string, unknown>;
+    min_sample_size?: number;
+    max_fdr_increase?: number;
+    min_f1_retention?: number;
+    max_p95_latency_ms?: number;
+    subgroup_predictions?: Record<string, boolean[]>;
+  }): Promise<ChampionChallengerRun> =>
+    request<ChampionChallengerRun>("/api/enterprise/v1/governance/model-risk/champion-challenger", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
 };

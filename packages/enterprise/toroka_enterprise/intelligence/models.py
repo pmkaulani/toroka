@@ -958,6 +958,7 @@ class ProductionReleaseRecord(IntelligenceBase):
     readiness_gates: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False, default=list)
 
     manifest_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    signature_bundle: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     promoted_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
     promoted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     rollback_target_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
@@ -1087,6 +1088,8 @@ class EvidencePassportRecord(IntelligenceBase):
     validation_result: Mapped[str] = mapped_column(String(30), nullable=False, default="PASS")
     human_review_required: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     passport_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    signature_bundle: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    merkle_proof: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     payload: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
@@ -1112,6 +1115,66 @@ class GovernedAIProviderRecord(IntelligenceBase):
     evaluation_summary: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
     last_evaluated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+
+
+# ==============================================================================
+# Phase 13.0 Models: PKI Signatures, Quantitative Risk & Shadow Governance
+# ==============================================================================
+
+class QuantitativeDriftEvaluationRecord(IntelligenceBase):
+    """OCC SR 11-7 / Fed SR 15-18 quantitative model risk & PSI drift evaluation record."""
+    __tablename__ = "enterprise_quantitative_drift_evaluations"
+
+    evaluation_id: Mapped[str] = mapped_column(String(100), primary_key=True)
+    installation_id: Mapped[str] = mapped_column(String(100), primary_key=True, index=True)
+
+    component_id: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    component_version: Mapped[str] = mapped_column(String(50), nullable=False)
+
+    psi_score: Mapped[float] = mapped_column(Float, nullable=False)
+    psi_severity: Mapped[str] = mapped_column(String(30), nullable=False, index=True)
+    requires_mitigation: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, index=True)
+
+    ks_statistic: Mapped[float] = mapped_column(Float, nullable=False)
+    ks_p_value: Mapped[float] = mapped_column(Float, nullable=False)
+    ks_drift_detected: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+    wasserstein_distance: Mapped[float] = mapped_column(Float, nullable=False)
+    fairness_compliant: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+
+    is_compliant: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, index=True)
+    governance_findings: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    evaluation_details: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+
+    evaluated_by: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+
+
+class ChampionChallengerRunRecord(IntelligenceBase):
+    """Operational shadow evaluation run comparing Challenger model against Champion in production."""
+    __tablename__ = "enterprise_champion_challenger_runs"
+
+    run_id: Mapped[str] = mapped_column(String(100), primary_key=True)
+    installation_id: Mapped[str] = mapped_column(String(100), primary_key=True, index=True)
+
+    component_id: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    champion_version: Mapped[str] = mapped_column(String(50), nullable=False)
+    challenger_version: Mapped[str] = mapped_column(String(50), nullable=False)
+
+    decision: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+    is_promotable: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, index=True)
+
+    fdr_delta: Mapped[float] = mapped_column(Float, nullable=False)
+    f1_ratio: Mapped[float] = mapped_column(Float, nullable=False)
+    latency_p95_delta_ms: Mapped[float] = mapped_column(Float, nullable=False)
+
+    reasons: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    champion_metrics: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    challenger_metrics: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+
+    evaluated_by: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+
 
 
 

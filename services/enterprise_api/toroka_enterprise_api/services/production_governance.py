@@ -76,7 +76,23 @@ from toroka_enterprise.governance.validation import (
     ValidationRun,
     calculate_validation_result,
 )
+from toroka_enterprise.governance.champion_challenger import (
+    ModelPerformanceMetrics,
+    PromotionDecision,
+    evaluate_challenger_promotion,
+)
+from toroka_enterprise.governance.pki import (
+    AsymmetricAlgorithm,
+    LocalHSMKeyProvider,
+    SignatureBundle,
+    verify_asymmetric_signature,
+)
+from toroka_enterprise.governance.quantitative_risk import (
+    compute_disparate_impact,
+    evaluate_model_risk_comprehensive,
+)
 from toroka_enterprise.intelligence.models import (
+    ChampionChallengerRunRecord,
     DriftRecordEntity,
     EntityLinkCandidateRecord,
     EvidencePassportRecord,
@@ -87,6 +103,7 @@ from toroka_enterprise.intelligence.models import (
     IntelligenceSignalRecord,
     NetworkFindingRecord,
     ProductionReleaseRecord,
+    QuantitativeDriftEvaluationRecord,
     ReadinessAttestationRecord,
     SuspensionAuditRecord,
     ValidationRunRecord,
@@ -94,23 +111,28 @@ from toroka_enterprise.intelligence.models import (
 
 from ..governance_schemas import (
     ApproveComponentRequest,
+    ChampionChallengerRunResponse,
     CreateComponentRequest,
     CreateIncidentRequest,
     CreateReleaseRequest,
     CreateValidationRunRequest,
     DriftRecordResponse,
+    EvaluateChampionChallengerRequest,
+    EvaluateQuantitativeDriftRequest,
     EvaluateReadinessGatesRequest,
     EvidencePassportResponse,
     GovernanceIncidentResponse,
     GovernedAIProviderResponse,
     GovernedComponentResponse,
     ProductionReleaseResponse,
+    QuantitativeDriftEvaluationResponse,
     ReadinessAssessmentResponse,
     ReadinessAttestationResponse,
     RecordDriftRequest,
     RecordReadinessAttestationRequest,
     RegisterAIProviderRequest,
     ResumeComponentRequest,
+    SignArtifactRequest,
     SuspendComponentRequest,
     SuspensionRecordResponse,
     SystemHealthOverviewResponse,
@@ -118,6 +140,8 @@ from ..governance_schemas import (
     ValidationMetricSchema,
     ValidationPackageResponse,
     ValidationRunResponse,
+    VerifyArtifactRequest,
+    VerifyArtifactResponse,
 )
 from ..persistence.audit import append_audit, verify_audit_chain
 from ..persistence.models import EnterpriseCase
@@ -1390,6 +1414,12 @@ class ProductionGovernanceService:
             )
         ).scalars().all())
 
+        quant_drifts = list(self.session.execute(
+            select(QuantitativeDriftEvaluationRecord).where(
+                QuantitativeDriftEvaluationRecord.installation_id == self.installation_id
+            )
+        ).scalars().all())
+
         open_incidents = list(self.session.execute(
             select(GovernanceIncidentRecord).where(
                 and_(
@@ -1408,7 +1438,10 @@ class ProductionGovernanceService:
             )
         ).scalars().all())
 
-        active_drifts_num = len(drift_records)
+        has_critical_quant_drift = any(q.requires_mitigation or q.psi_severity == "SIGNIFICANT" for q in quant_drifts)
+        has_moderate_quant_drift = any(q.psi_severity == "MODERATE" for q in quant_drifts)
+
+        active_drifts_num = len(drift_records) + len([q for q in quant_drifts if q.requires_mitigation or q.psi_severity != "STABLE"])
         open_incidents_num = len(open_incidents)
 
         # 3. Detection health
@@ -1420,11 +1453,11 @@ class ProductionGovernanceService:
 
         if not components:
             detection_health = HealthStatus.UNKNOWN.value
-        elif active_suspensions:
-            detection_health = HealthStatus.DEGRADED.value
+        elif active_suspensions or has_critical_quant_drift:
+            detection_health = HealthStatus.CRITICAL.value if has_critical_quant_drift else HealthStatus.DEGRADED.value
         elif any(d.severity == "CRITICAL" for d in drift_records if d.drift_type == "detection"):
             detection_health = HealthStatus.CRITICAL.value
-        elif any(d.severity in ("HIGH", "MEDIUM") for d in drift_records if d.drift_type == "detection"):
+        elif has_moderate_quant_drift or any(d.severity in ("HIGH", "MEDIUM") for d in drift_records if d.drift_type == "detection"):
             detection_health = HealthStatus.DEGRADED.value
         else:
             detection_health = HealthStatus.HEALTHY.value
@@ -1749,6 +1782,418 @@ class ProductionGovernanceService:
         return [self._to_passport_response(r) for r in records]
 
     # =========================================================================
+    # Phase 13.0: PKI Digital Signatures, Quantitative Risk & Shadow Governance
+    # =========================================================================
+
+    def sign_evidence_passport(
+        self,
+        passport_id: str,
+        request: SignArtifactRequest,
+        actor_subject: str,
+        actor_role: str = "authoriser",
+    ) -> EvidencePassportResponse:
+        record = self.session.execute(
+            select(EvidencePassportRecord).where(
+                and_(
+                    EvidencePassportRecord.installation_id == self.installation_id,
+                    EvidencePassportRecord.passport_id == passport_id,
+                )
+            )
+        ).scalar_one_or_none()
+        if not record:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Evidence passport '{passport_id}' not found.")
+        if record.signature_bundle is not None:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Passport has already been digitally signed.")
+
+        algo = AsymmetricAlgorithm.ED25519 if request.algorithm.upper() in ("ED25519", "ED_25519") else AsymmetricAlgorithm.ECDSA_P256
+        signer = LocalHSMKeyProvider(key_id=request.key_id, algorithm=algo)
+
+        domain_passport = TorokaEvidencePassport.from_payload(record.payload, passport_digest=record.passport_digest)
+        signed_passport = domain_passport.sign(signer)
+
+        record.signature_bundle = signed_passport.signature_bundle
+        new_payload = dict(record.payload)
+        new_payload["signature_bundle"] = signed_passport.signature_bundle
+        new_payload["signing_key_id"] = signed_passport.signing_key_id
+        new_payload["signature_algorithm"] = signed_passport.signature_algorithm
+        new_payload["signature"] = signed_passport.signature
+        record.payload = new_payload
+
+        append_audit(
+            self.session,
+            installation_id=self.installation_id,
+            actor_subject=actor_subject,
+            actor_role=actor_role,
+            action="passport_digitally_signed",
+            target_type="passport",
+            target_id=passport_id,
+            safe_metadata={
+                "passport_id": passport_id,
+                "key_id": signer.key_id,
+                "algorithm": signer.algorithm.value,
+                "digest": record.passport_digest,
+            },
+        )
+        self.session.commit()
+        return self._to_passport_response(record)
+
+    def verify_evidence_passport(
+        self,
+        passport_id: str,
+        request: VerifyArtifactRequest,
+    ) -> VerifyArtifactResponse:
+        record = self.session.execute(
+            select(EvidencePassportRecord).where(
+                and_(
+                    EvidencePassportRecord.installation_id == self.installation_id,
+                    EvidencePassportRecord.passport_id == passport_id,
+                )
+            )
+        ).scalar_one_or_none()
+        if not record:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Evidence passport '{passport_id}' not found.")
+
+        domain_passport = TorokaEvidencePassport.from_payload(record.payload, passport_digest=record.passport_digest)
+        digest_ok = domain_passport.verify_integrity()
+
+        is_signed = bool(record.signature_bundle)
+        sig_ok = False
+        sig_err = None
+        key_id = None
+        algo = None
+
+        if is_signed:
+            try:
+                bundle = SignatureBundle.from_dict(record.signature_bundle)
+                key_id = bundle.key_id
+                algo = bundle.algorithm
+                sig_ok = verify_asymmetric_signature(
+                    payload=domain_passport.canonical_payload(),
+                    bundle=bundle,
+                    trusted_public_key_pem=request.trusted_public_key_pem,
+                )
+                if not sig_ok:
+                    sig_err = "Asymmetric digital signature verification failed against passport payload."
+            except Exception as exc:
+                sig_err = f"Digital signature error: {exc}"
+        else:
+            sig_err = "Artifact is not digitally signed (tamper-evident SHA-256 digest only)."
+
+        is_valid = digest_ok and (sig_ok if is_signed else True)
+
+        return VerifyArtifactResponse(
+            is_valid=is_valid,
+            artifact_id=passport_id,
+            artifact_type="passport",
+            digest_verified=digest_ok,
+            is_digitally_signed=is_signed,
+            signature_verified=sig_ok,
+            signing_key_id=key_id,
+            signing_algorithm=algo,
+            error=sig_err,
+        )
+
+    def sign_release(
+        self,
+        release_id: str,
+        request: SignArtifactRequest,
+        actor_subject: str,
+        actor_role: str = "authoriser",
+    ) -> ProductionReleaseResponse:
+        record = self.session.execute(
+            select(ProductionReleaseRecord).where(
+                and_(
+                    ProductionReleaseRecord.installation_id == self.installation_id,
+                    ProductionReleaseRecord.release_id == release_id,
+                )
+            )
+        ).scalar_one_or_none()
+        if not record:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Release '{release_id}' not found.")
+        if record.signature_bundle is not None:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Release has already been digitally signed.")
+
+        algo = AsymmetricAlgorithm.ED25519 if request.algorithm.upper() in ("ED25519", "ED_25519") else AsymmetricAlgorithm.ECDSA_P256
+        signer = LocalHSMKeyProvider(key_id=request.key_id, algorithm=algo)
+
+        manifest = ProductionReleaseManifest(
+            release_id=record.release_id,
+            version=record.version,
+            environment=DeploymentEnvironment(record.environment),
+            status=ReleaseStatus(record.status),
+            components=record.components_manifest or {},
+            validation_runs=tuple(record.validation_runs or []),
+            approval_records=tuple(record.approval_records or []),
+            readiness_gates=tuple(record.readiness_gates or []),
+            created_by=record.created_by,
+            created_at=record.created_at,
+            manifest_digest=record.manifest_digest,
+        )
+        signed_manifest = manifest.sign(signer)
+        record.signature_bundle = signed_manifest.signature_bundle
+
+        append_audit(
+            self.session,
+            installation_id=self.installation_id,
+            actor_subject=actor_subject,
+            actor_role=actor_role,
+            action="release_digitally_signed",
+            target_type="release",
+            target_id=release_id,
+            safe_metadata={
+                "release_id": release_id,
+                "key_id": signer.key_id,
+                "algorithm": signer.algorithm.value,
+                "manifest_digest": record.manifest_digest,
+            },
+        )
+        self.session.commit()
+        return self._to_release_response(record)
+
+    def verify_release_manifest(
+        self,
+        release_id: str,
+        request: VerifyArtifactRequest,
+    ) -> VerifyArtifactResponse:
+        record = self.session.execute(
+            select(ProductionReleaseRecord).where(
+                and_(
+                    ProductionReleaseRecord.installation_id == self.installation_id,
+                    ProductionReleaseRecord.release_id == release_id,
+                )
+            )
+        ).scalar_one_or_none()
+        if not record:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Release '{release_id}' not found.")
+
+        manifest = ProductionReleaseManifest(
+            release_id=record.release_id,
+            version=record.version,
+            environment=DeploymentEnvironment(record.environment),
+            status=ReleaseStatus(record.status),
+            components=record.components_manifest or {},
+            validation_runs=tuple(record.validation_runs or []),
+            approval_records=tuple(record.approval_records or []),
+            readiness_gates=tuple(record.readiness_gates or []),
+            created_by=record.created_by,
+            created_at=record.created_at,
+            manifest_digest=record.manifest_digest,
+            signature_bundle=record.signature_bundle,
+        )
+        digest_ok = manifest.verify_manifest_integrity()
+        is_signed = bool(record.signature_bundle)
+        sig_ok = False
+        sig_err = None
+        key_id = None
+        algo = None
+
+        if is_signed:
+            try:
+                bundle = SignatureBundle.from_dict(record.signature_bundle)
+                key_id = bundle.key_id
+                algo = bundle.algorithm
+                sig_ok = verify_asymmetric_signature(
+                    payload=manifest._compute_digest_payload(),
+                    bundle=bundle,
+                    trusted_public_key_pem=request.trusted_public_key_pem,
+                )
+                if not sig_ok:
+                    sig_err = "Asymmetric digital signature verification failed against release manifest payload."
+            except Exception as exc:
+                sig_err = f"Digital signature error: {exc}"
+        else:
+            sig_err = "Artifact is not digitally signed."
+
+        is_valid = digest_ok and (sig_ok if is_signed else True)
+
+        return VerifyArtifactResponse(
+            is_valid=is_valid,
+            artifact_id=release_id,
+            artifact_type="release",
+            digest_verified=digest_ok,
+            is_digitally_signed=is_signed,
+            signature_verified=sig_ok,
+            signing_key_id=key_id,
+            signing_algorithm=algo,
+            error=sig_err,
+        )
+
+    def evaluate_quantitative_drift(
+        self,
+        request: EvaluateQuantitativeDriftRequest,
+        actor_subject: str,
+        actor_role: str = "analyst",
+    ) -> QuantitativeDriftEvaluationResponse:
+        eval_id = f"qdr-{uuid.uuid4().hex[:12]}"
+        now = _utc_now()
+
+        assessment = evaluate_model_risk_comprehensive(
+            component_id=request.component_id,
+            component_version=request.component_version,
+            evaluation_id=eval_id,
+            baseline_scores=request.baseline_scores,
+            current_scores=request.current_scores,
+            subgroup_predictions=request.subgroup_predictions,
+        )
+
+        record = QuantitativeDriftEvaluationRecord(
+            evaluation_id=eval_id,
+            installation_id=self.installation_id,
+            component_id=request.component_id,
+            component_version=request.component_version,
+            psi_score=assessment.psi.score,
+            psi_severity=assessment.psi.severity.value,
+            requires_mitigation=assessment.psi.requires_mitigation,
+            ks_statistic=assessment.ks_test.statistic,
+            ks_p_value=assessment.ks_test.p_value,
+            ks_drift_detected=assessment.ks_test.is_drift_detected,
+            wasserstein_distance=assessment.wasserstein_distance,
+            fairness_compliant=assessment.fairness.has_adverse_impact is False if assessment.fairness else True,
+            is_compliant=assessment.is_compliant,
+            governance_findings=list(assessment.governance_findings),
+            evaluation_details=assessment.to_dict(),
+            evaluated_by=actor_subject,
+            created_at=now,
+        )
+        self.session.add(record)
+
+        append_audit(
+            self.session,
+            installation_id=self.installation_id,
+            actor_subject=actor_subject,
+            actor_role=actor_role,
+            action="quantitative_drift_evaluated",
+            target_type="component",
+            target_id=request.component_id,
+            safe_metadata={
+                "evaluation_id": eval_id,
+                "component_id": request.component_id,
+                "component_version": request.component_version,
+                "psi_score": assessment.psi.score,
+                "psi_severity": assessment.psi.severity.value,
+                "is_compliant": assessment.is_compliant,
+            },
+        )
+        self.session.commit()
+        return self._to_quantitative_drift_response(record)
+
+    def list_quantitative_drift_evaluations(
+        self,
+        component_id: str | None = None,
+    ) -> list[QuantitativeDriftEvaluationResponse]:
+        query = select(QuantitativeDriftEvaluationRecord).where(
+            QuantitativeDriftEvaluationRecord.installation_id == self.installation_id
+        )
+        if component_id:
+            query = query.where(QuantitativeDriftEvaluationRecord.component_id == component_id)
+        query = query.order_by(desc(QuantitativeDriftEvaluationRecord.created_at))
+        records = self.session.execute(query).scalars().all()
+        return [self._to_quantitative_drift_response(r) for r in records]
+
+    def evaluate_champion_challenger(
+        self,
+        request: EvaluateChampionChallengerRequest,
+        actor_subject: str,
+        actor_role: str = "analyst",
+    ) -> ChampionChallengerRunResponse:
+        run_id = f"ccr-{uuid.uuid4().hex[:12]}"
+        now = _utc_now()
+
+        c_m = request.champion_metrics
+        champ = ModelPerformanceMetrics(
+            model_role="CHAMPION",
+            component_id=request.component_id,
+            component_version=request.champion_version,
+            sample_size=int(c_m.get("sample_size", 0)),
+            true_positives=int(c_m.get("true_positives", 0)),
+            false_positives=int(c_m.get("false_positives", 0)),
+            true_negatives=int(c_m.get("true_negatives", 0)),
+            false_negatives=int(c_m.get("false_negatives", 0)),
+            latency_ms_p50=float(c_m.get("latency_ms_p50", 0.0)),
+            latency_ms_p95=float(c_m.get("latency_ms_p95", 0.0)),
+        )
+
+        ch_m = request.challenger_metrics
+        chall = ModelPerformanceMetrics(
+            model_role="CHALLENGER",
+            component_id=request.component_id,
+            component_version=request.challenger_version,
+            sample_size=int(ch_m.get("sample_size", 0)),
+            true_positives=int(ch_m.get("true_positives", 0)),
+            false_positives=int(ch_m.get("false_positives", 0)),
+            true_negatives=int(ch_m.get("true_negatives", 0)),
+            false_negatives=int(ch_m.get("false_negatives", 0)),
+            latency_ms_p50=float(ch_m.get("latency_ms_p50", 0.0)),
+            latency_ms_p95=float(ch_m.get("latency_ms_p95", 0.0)),
+        )
+
+        fairness_summary = None
+        if request.subgroup_predictions:
+            fairness_summary = compute_disparate_impact(request.subgroup_predictions)
+
+        res = evaluate_challenger_promotion(
+            champion=champ,
+            challenger=chall,
+            min_sample_size=request.min_sample_size,
+            max_fdr_increase=request.max_fdr_increase,
+            min_f1_retention=request.min_f1_retention,
+            max_p95_latency_ms=request.max_p95_latency_ms,
+            fairness_summary=fairness_summary,
+        )
+
+        record = ChampionChallengerRunRecord(
+            run_id=run_id,
+            installation_id=self.installation_id,
+            component_id=request.component_id,
+            champion_version=request.champion_version,
+            challenger_version=request.challenger_version,
+            decision=res.decision.value,
+            is_promotable=res.is_promotable,
+            fdr_delta=res.fdr_delta,
+            f1_ratio=res.f1_ratio,
+            latency_p95_delta_ms=res.latency_p95_delta_ms,
+            reasons=list(res.reasons),
+            champion_metrics=champ.to_dict(),
+            challenger_metrics=chall.to_dict(),
+            evaluated_by=actor_subject,
+            created_at=now,
+        )
+        self.session.add(record)
+
+        append_audit(
+            self.session,
+            installation_id=self.installation_id,
+            actor_subject=actor_subject,
+            actor_role=actor_role,
+            action="champion_challenger_evaluated",
+            target_type="component",
+            target_id=request.component_id,
+            safe_metadata={
+                "run_id": run_id,
+                "component_id": request.component_id,
+                "champion_version": request.champion_version,
+                "challenger_version": request.challenger_version,
+                "decision": res.decision.value,
+                "is_promotable": res.is_promotable,
+            },
+        )
+        self.session.commit()
+        return self._to_champion_challenger_response(record)
+
+    def list_champion_challenger_runs(
+        self,
+        component_id: str | None = None,
+    ) -> list[ChampionChallengerRunResponse]:
+        query = select(ChampionChallengerRunRecord).where(
+            ChampionChallengerRunRecord.installation_id == self.installation_id
+        )
+        if component_id:
+            query = query.where(ChampionChallengerRunRecord.component_id == component_id)
+        query = query.order_by(desc(ChampionChallengerRunRecord.created_at))
+        records = self.session.execute(query).scalars().all()
+        return [self._to_champion_challenger_response(r) for r in records]
+
+    # =========================================================================
     # 8. Governed AI Providers
     # =========================================================================
 
@@ -2041,6 +2486,8 @@ class ProductionGovernanceService:
             approval_records=r.approval_records or [],
             readiness_gates=r.readiness_gates or [],
             manifest_digest=r.manifest_digest,
+            signature_bundle=r.signature_bundle,
+            is_digitally_signed=bool(r.signature_bundle),
             promoted_by=r.promoted_by,
             promoted_at=r.promoted_at.isoformat() if r.promoted_at else None,
             rollback_target_id=r.rollback_target_id,
@@ -2172,6 +2619,9 @@ class ProductionGovernanceService:
             validation_result=r.validation_result,
             human_review_required=r.human_review_required,
             passport_digest=r.passport_digest,
+            signature_bundle=r.signature_bundle,
+            merkle_proof=r.merkle_proof,
+            is_digitally_signed=bool(r.signature_bundle),
             is_verified=is_verified,
             evidence_records=evidence_records_list,
             created_at=r.created_at.isoformat(),
@@ -2207,5 +2657,45 @@ class ProductionGovernanceService:
             risk_tier=r.risk_tier,
             evaluation_summary=r.evaluation_summary or {},
             last_evaluated_at=r.last_evaluated_at.isoformat() if r.last_evaluated_at else None,
+            created_at=r.created_at.isoformat(),
+        )
+
+    def _to_quantitative_drift_response(self, r: QuantitativeDriftEvaluationRecord) -> QuantitativeDriftEvaluationResponse:
+        return QuantitativeDriftEvaluationResponse(
+            evaluation_id=r.evaluation_id,
+            installation_id=r.installation_id,
+            component_id=r.component_id,
+            component_version=r.component_version,
+            psi_score=r.psi_score,
+            psi_severity=r.psi_severity,
+            requires_mitigation=r.requires_mitigation,
+            ks_statistic=r.ks_statistic,
+            ks_p_value=r.ks_p_value,
+            ks_drift_detected=r.ks_drift_detected,
+            wasserstein_distance=r.wasserstein_distance,
+            fairness_compliant=r.fairness_compliant,
+            is_compliant=r.is_compliant,
+            governance_findings=r.governance_findings or [],
+            evaluation_details=r.evaluation_details or {},
+            evaluated_by=r.evaluated_by,
+            created_at=r.created_at.isoformat(),
+        )
+
+    def _to_champion_challenger_response(self, r: ChampionChallengerRunRecord) -> ChampionChallengerRunResponse:
+        return ChampionChallengerRunResponse(
+            run_id=r.run_id,
+            installation_id=r.installation_id,
+            component_id=r.component_id,
+            champion_version=r.champion_version,
+            challenger_version=r.challenger_version,
+            decision=r.decision,
+            is_promotable=r.is_promotable,
+            fdr_delta=r.fdr_delta,
+            f1_ratio=r.f1_ratio,
+            latency_p95_delta_ms=r.latency_p95_delta_ms,
+            reasons=r.reasons or [],
+            champion_metrics=r.champion_metrics or {},
+            challenger_metrics=r.challenger_metrics or {},
+            evaluated_by=r.evaluated_by,
             created_at=r.created_at.isoformat(),
         )

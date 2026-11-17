@@ -12,6 +12,8 @@ import {
   GovernedAIProvider,
   ReadinessAssessment,
   ValidationPackage,
+  QuantitativeDriftEvaluation,
+  ChampionChallengerRun,
   Persona,
 } from "../types";
 
@@ -21,7 +23,7 @@ interface Props {
 
 export const ProductionGovernanceView: React.FC<Props> = ({ currentPersona }) => {
   const [activeTab, setActiveTab] = useState<
-    "overview" | "registry" | "validation" | "releases" | "killswitch" | "incidents" | "drift" | "passports" | "aiproviders" | "readiness"
+    "overview" | "registry" | "validation" | "releases" | "killswitch" | "incidents" | "drift" | "passports" | "aiproviders" | "readiness" | "modelrisk"
   >("overview");
 
   const [loading, setLoading] = useState<boolean>(true);
@@ -39,6 +41,8 @@ export const ProductionGovernanceView: React.FC<Props> = ({ currentPersona }) =>
   const [aiProviders, setAiProviders] = useState<GovernedAIProvider[]>([]);
   const [readiness, setReadiness] = useState<ReadinessAssessment | null>(null);
   const [validationPkg, setValidationPkg] = useState<ValidationPackage | null>(null);
+  const [quantDrifts, setQuantDrifts] = useState<QuantitativeDriftEvaluation[]>([]);
+  const [championChallengerRuns, setChampionChallengerRuns] = useState<ChampionChallengerRun[]>([]);
 
   // Action modals/inputs
   const [registerModalOpen, setRegisterModalOpen] = useState(false);
@@ -67,7 +71,7 @@ export const ProductionGovernanceView: React.FC<Props> = ({ currentPersona }) =>
     setLoading(true);
     setError(null);
     try {
-      const [h, comps, vRuns, rels, susps, incs, drifts, pass, providers] = await Promise.all([
+      const [h, comps, vRuns, rels, susps, incs, drifts, pass, providers, qDrifts, ccRuns] = await Promise.all([
         api.getSystemHealthOverview().catch(() => null),
         api.listGovernedComponents().catch(() => []),
         api.listValidationRuns().catch(() => []),
@@ -77,6 +81,8 @@ export const ProductionGovernanceView: React.FC<Props> = ({ currentPersona }) =>
         api.listDriftRecords().catch(() => []),
         api.listEvidencePassports().catch(() => []),
         api.listAIProviders().catch(() => []),
+        api.listQuantitativeDriftEvaluations().catch(() => []),
+        api.listChampionChallengerRuns().catch(() => []),
       ]);
 
       setHealth(h);
@@ -88,6 +94,8 @@ export const ProductionGovernanceView: React.FC<Props> = ({ currentPersona }) =>
       setDriftRecords(drifts);
       setPassports(pass);
       setAiProviders(providers);
+      setQuantDrifts(qDrifts);
+      setChampionChallengerRuns(ccRuns);
 
       // Attempt to load default validation package
       try {
@@ -281,6 +289,7 @@ export const ProductionGovernanceView: React.FC<Props> = ({ currentPersona }) =>
             { id: "incidents", label: `Incidents (${incidents.length})` },
             { id: "drift", label: `Drift Monitoring (${driftRecords.length})` },
             { id: "passports", label: `Evidence Passports (${passports.length})` },
+            { id: "modelrisk", label: `Model Risk & PSI (${quantDrifts.length})` },
             { id: "aiproviders", label: `AI Providers (${aiProviders.length})` },
             { id: "readiness", label: "Bank Validation Package" },
           ].map((tab) => (
@@ -583,6 +592,15 @@ export const ProductionGovernanceView: React.FC<Props> = ({ currentPersona }) =>
                         {rel.environment}
                       </span>
                       {getStatusBadge(rel.status)}
+                      {rel.is_digitally_signed || rel.signature_bundle ? (
+                        <span className="px-2 py-0.5 text-xs font-semibold rounded bg-indigo-950 text-indigo-300 border border-indigo-700 flex items-center gap-1">
+                          🔒 PKI SIGNED
+                        </span>
+                      ) : (
+                        <span className="px-2 py-0.5 text-xs font-semibold rounded bg-slate-800 text-slate-400">
+                          TAMPER-EVIDENT HASH
+                        </span>
+                      )}
                     </div>
                     <div className="text-xs font-mono text-slate-500 mt-1">ID: {rel.release_id} | Manifest: {rel.manifest_digest.slice(0, 16)}...</div>
                     <div className="text-xs text-slate-400 mt-2">
@@ -595,6 +613,40 @@ export const ProductionGovernanceView: React.FC<Props> = ({ currentPersona }) =>
                     )}
                   </div>
                   <div className="flex items-center space-x-2">
+                    {!rel.is_digitally_signed && !rel.signature_bundle && currentPersona.role === "authoriser" && (
+                      <button
+                        onClick={async () => {
+                          try {
+                            await api.signRelease(rel.release_id);
+                            fetchData();
+                          } catch (err: any) {
+                            alert(`Signing failed: ${err.message}`);
+                          }
+                        }}
+                        className="px-2.5 py-1.5 text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white rounded transition shadow-sm"
+                      >
+                        Sign with HSM
+                      </button>
+                    )}
+                    <button
+                      onClick={async () => {
+                        try {
+                          const res = await api.verifyRelease(rel.release_id);
+                          alert(
+                            `Release Verification:\nStatus: ${res.is_valid ? "VALID" : "INVALID"}\nDigest: ${
+                              res.digest_verified ? "MATCH" : "MISMATCH"
+                            }\nDigital Signature: ${
+                              res.signature_verified ? "VERIFIED" : res.is_digitally_signed ? "FAILED" : "NONE (Hash Only)"
+                            }`
+                          );
+                        } catch (err: any) {
+                          alert(`Verification error: ${err.message}`);
+                        }
+                      }}
+                      className="px-2.5 py-1.5 text-xs font-medium bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 rounded transition"
+                    >
+                      Verify
+                    </button>
                     {rel.status === "staged" && (
                       <button
                         onClick={async () => {
@@ -812,8 +864,53 @@ export const ProductionGovernanceView: React.FC<Props> = ({ currentPersona }) =>
                       <span className="px-2 py-0.5 text-xs font-semibold rounded bg-emerald-950 text-emerald-300 border border-emerald-800">
                         INTEGRITY VERIFIED
                       </span>
+                      {p.is_digitally_signed || p.signature_bundle ? (
+                        <span className="px-2 py-0.5 text-xs font-semibold rounded bg-indigo-950 text-indigo-300 border border-indigo-700 flex items-center gap-1">
+                          🔒 PKI SIGNED
+                        </span>
+                      ) : (
+                        <span className="px-2 py-0.5 text-xs font-semibold rounded bg-slate-800 text-slate-400">
+                          TAMPER-EVIDENT HASH
+                        </span>
+                      )}
                     </div>
-                    <span className="text-xs text-slate-500 font-mono">Case: {p.case_id}</span>
+                    <div className="flex items-center space-x-2">
+                      <span className="text-xs text-slate-500 font-mono">Case: {p.case_id}</span>
+                      {!p.is_digitally_signed && !p.signature_bundle && currentPersona.role === "authoriser" && (
+                        <button
+                          onClick={async () => {
+                            try {
+                              await api.signPassport(p.passport_id);
+                              fetchData();
+                            } catch (err: any) {
+                              alert(`Passport signing failed: ${err.message}`);
+                            }
+                          }}
+                          className="px-2.5 py-1 text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white rounded transition shadow-sm"
+                        >
+                          Sign with HSM
+                        </button>
+                      )}
+                      <button
+                        onClick={async () => {
+                          try {
+                            const res = await api.verifyPassport(p.passport_id);
+                            alert(
+                              `Passport Verification:\nStatus: ${res.is_valid ? "VALID" : "INVALID"}\nDigest: ${
+                                res.digest_verified ? "MATCH" : "MISMATCH"
+                              }\nDigital Signature: ${
+                                res.signature_verified ? "VERIFIED" : res.is_digitally_signed ? "FAILED" : "NONE (Hash Only)"
+                              }`
+                            );
+                          } catch (err: any) {
+                            alert(`Verification error: ${err.message}`);
+                          }
+                        }}
+                        className="px-2 py-1 text-xs font-medium bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 rounded transition"
+                      >
+                        Verify
+                      </button>
+                    </div>
                   </div>
                   <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-2 text-xs text-slate-300 bg-slate-950 p-3 rounded border border-slate-800/80">
                     <div>
@@ -845,6 +942,161 @@ export const ProductionGovernanceView: React.FC<Props> = ({ currentPersona }) =>
                   No evidence passports generated yet.
                 </div>
               )}
+            </div>
+          </div>
+        )}
+
+        {/* Phase 13.0: Model Risk & Quantitative Governance (OCC SR 11-7 / Fed SR 15-18) */}
+        {!loading && activeTab === "modelrisk" && (
+          <div className="space-y-6">
+            <div className="flex items-center justify-between flex-wrap gap-4">
+              <div>
+                <h2 className="text-lg font-semibold text-white">Quantitative Model Risk Governance (OCC SR 11-7)</h2>
+                <p className="text-xs text-slate-400">
+                  Statistical distribution stability (PSI), continuous Kolmogorov-Smirnov / Wasserstein drift monitoring, and Champion-Challenger shadow governance.
+                </p>
+              </div>
+              <div className="flex items-center space-x-2">
+                <span className="px-2.5 py-1 text-xs font-mono font-semibold rounded bg-emerald-950 text-emerald-300 border border-emerald-800">
+                  PSI &lt; 0.10: STABLE
+                </span>
+                <span className="px-2.5 py-1 text-xs font-mono font-semibold rounded bg-amber-950 text-amber-300 border border-amber-800">
+                  0.10 - 0.25: MODERATE
+                </span>
+                <span className="px-2.5 py-1 text-xs font-mono font-semibold rounded bg-rose-950 text-rose-300 border border-rose-800">
+                  &ge; 0.25: SIGNIFICANT
+                </span>
+              </div>
+            </div>
+
+            {/* 1. Quantitative Drift Evaluations */}
+            <div className="space-y-3">
+              <h3 className="text-sm font-semibold uppercase tracking-wider text-slate-400">
+                Population Stability Index (PSI) &amp; Drift Evaluations ({quantDrifts.length})
+              </h3>
+              <div className="grid grid-cols-1 gap-4">
+                {quantDrifts.map((qd) => (
+                  <div key={qd.evaluation_id} className="p-4 rounded-lg bg-slate-900 border border-slate-800 space-y-3">
+                    <div className="flex items-center justify-between flex-wrap gap-2">
+                      <div className="flex items-center space-x-3">
+                        <span className="text-base font-bold text-white">{qd.component_id}</span>
+                        <span className="text-xs font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-400">
+                          v{qd.component_version}
+                        </span>
+                        <span
+                          className={`px-2 py-0.5 text-xs font-semibold rounded border ${
+                            qd.psi_severity === "STABLE"
+                              ? "bg-emerald-950 text-emerald-300 border-emerald-800"
+                              : qd.psi_severity === "MODERATE"
+                              ? "bg-amber-950 text-amber-300 border-amber-800"
+                              : "bg-rose-950 text-rose-300 border-rose-800"
+                          }`}
+                        >
+                          PSI: {qd.psi_score.toFixed(4)} ({qd.psi_severity})
+                        </span>
+                        {qd.is_compliant ? (
+                          <span className="px-2 py-0.5 text-xs font-semibold rounded bg-emerald-900/60 text-emerald-300">
+                            SR 11-7 COMPLIANT
+                          </span>
+                        ) : (
+                          <span className="px-2 py-0.5 text-xs font-semibold rounded bg-rose-900/60 text-rose-300">
+                            NON-COMPLIANT
+                          </span>
+                        )}
+                      </div>
+                      <span className="text-xs font-mono text-slate-500">{qd.evaluation_id}</span>
+                    </div>
+
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs bg-slate-950 p-3 rounded border border-slate-800/80">
+                      <div>
+                        <span className="text-slate-500">KS Statistic:</span> D={qd.ks_statistic.toFixed(4)} (p={qd.ks_p_value.toExponential(2)})
+                      </div>
+                      <div>
+                        <span className="text-slate-500">Wasserstein-1:</span> {qd.wasserstein_distance.toFixed(4)}
+                      </div>
+                      <div>
+                        <span className="text-slate-500">Mitigation Required:</span> {qd.requires_mitigation ? "YES (FAIL-CLOSED)" : "NO"}
+                      </div>
+                      <div>
+                        <span className="text-slate-500">Fairness (DIR &ge; 0.80):</span> {qd.fairness_compliant ? "PASS" : "VIOLATION"}
+                      </div>
+                    </div>
+
+                    {qd.governance_findings.length > 0 && (
+                      <div className="text-xs text-rose-300 bg-rose-950/30 p-2.5 rounded border border-rose-900/40 space-y-1">
+                        {qd.governance_findings.map((f, i) => (
+                          <div key={i} className="flex items-center gap-1.5">
+                            <span>⚠</span>
+                            <span>{f}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+                {quantDrifts.length === 0 && (
+                  <div className="p-8 text-center text-slate-500 bg-slate-900/40 rounded-lg border border-slate-800">
+                    No quantitative drift evaluations recorded yet. Run scheduled or on-demand model validation.
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* 2. Champion-Challenger Shadow Governance */}
+            <div className="space-y-3 pt-4 border-t border-slate-800">
+              <h3 className="text-sm font-semibold uppercase tracking-wider text-slate-400">
+                Champion-Challenger Shadow Testing &amp; Promotion Gates ({championChallengerRuns.length})
+              </h3>
+              <div className="grid grid-cols-1 gap-4">
+                {championChallengerRuns.map((run) => (
+                  <div key={run.run_id} className="p-4 rounded-lg bg-slate-900 border border-slate-800 space-y-3">
+                    <div className="flex items-center justify-between flex-wrap gap-2">
+                      <div className="flex items-center space-x-3">
+                        <span className="text-base font-bold text-white">{run.component_id}</span>
+                        <span className="text-xs font-mono text-slate-400">
+                          Champion v{run.champion_version} vs Challenger v{run.challenger_version}
+                        </span>
+                        <span
+                          className={`px-2 py-0.5 text-xs font-semibold rounded border ${
+                            run.is_promotable
+                              ? "bg-emerald-950 text-emerald-300 border-emerald-800"
+                              : "bg-rose-950 text-rose-300 border-rose-800"
+                          }`}
+                        >
+                          {run.decision}
+                        </span>
+                      </div>
+                      <span className="text-xs font-mono text-slate-500">{run.run_id}</span>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-2 text-xs bg-slate-950 p-3 rounded border border-slate-800/80">
+                      <div>
+                        <span className="text-slate-500">FDR Delta:</span> {(run.fdr_delta * 100).toFixed(2)}% (limit: &le; +2.00%)
+                      </div>
+                      <div>
+                        <span className="text-slate-500">F1 Retention:</span> {(run.f1_ratio * 100).toFixed(2)}% (limit: &ge; 98.00%)
+                      </div>
+                      <div>
+                        <span className="text-slate-500">p95 Latency Delta:</span> {run.latency_p95_delta_ms.toFixed(1)}ms
+                      </div>
+                    </div>
+
+                    <div className="text-xs text-slate-300 space-y-1">
+                      {run.reasons.map((r, i) => (
+                        <div key={i} className="flex items-center gap-1.5 text-slate-400">
+                          <span>•</span>
+                          <span>{r}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+                {championChallengerRuns.length === 0 && (
+                  <div className="p-8 text-center text-slate-500 bg-slate-900/40 rounded-lg border border-slate-800">
+                    No Champion-Challenger shadow runs executed. Parallel traffic evaluation tracks candidate non-inferiority.
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         )}

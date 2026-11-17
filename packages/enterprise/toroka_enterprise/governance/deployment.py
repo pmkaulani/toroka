@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from enum import StrEnum
 from typing import Any
@@ -94,6 +94,7 @@ class ProductionReleaseManifest:
     created_by: str = ""
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     manifest_digest: str = ""
+    signature_bundle: dict[str, Any] | None = None
     promoted_by: str | None = None
     promoted_at: datetime | None = None
     rollback_target_id: str | None = None
@@ -145,6 +146,45 @@ class ProductionReleaseManifest:
     def verify_manifest_integrity(self) -> bool:
         expected = hashlib.sha256(self._compute_digest_payload().encode("utf-8")).hexdigest()
         return hmac.compare_digest(self.manifest_digest, expected)
+
+    def sign(self, signer: Any) -> ProductionReleaseManifest:
+        """Asymmetrically signs the immutable manifest payload using bank HSM or KMS."""
+        bundle = signer.sign(self._compute_digest_payload())
+        return replace(self, signature_bundle=bundle.to_dict())
+
+    def verify_digital_signature(self, trusted_public_key_pem: str | None = None) -> bool:
+        """Verifies asymmetric digital signature against the canonical manifest payload."""
+        if not self.signature_bundle:
+            return False
+        from toroka_enterprise.governance.pki import SignatureBundle, verify_asymmetric_signature
+        bundle = SignatureBundle.from_dict(self.signature_bundle)
+        return verify_asymmetric_signature(
+            payload=self._compute_digest_payload(),
+            bundle=bundle,
+            trusted_public_key_pem=trusted_public_key_pem,
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        """Produces full serializable representation including signature bundle."""
+        return {
+            "release_id": self.release_id,
+            "version": self.version,
+            "environment": self.environment.value if hasattr(self.environment, "value") else str(self.environment),
+            "status": self.status.value if hasattr(self.status, "value") else str(self.status),
+            "components": self.components,
+            "validation_runs": list(self.validation_runs),
+            "approval_records": list(self.approval_records),
+            "readiness_gates": list(self.readiness_gates),
+            "created_by": self.created_by,
+            "created_at": _canonical_utc(self.created_at),
+            "manifest_digest": self.manifest_digest,
+            "signature_bundle": self.signature_bundle,
+            "promoted_by": self.promoted_by,
+            "promoted_at": _canonical_utc(self.promoted_at) if self.promoted_at else None,
+            "rollback_target_id": self.rollback_target_id,
+            "has_blocking_incidents": self.has_blocking_incidents,
+            "has_active_suspensions": self.has_active_suspensions,
+        }
 
     def validate_promotion_eligibility(
         self,

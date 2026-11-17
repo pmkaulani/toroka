@@ -123,6 +123,8 @@ class ProductionReleaseResponse(BaseModel):
     approval_records: list[str]
     readiness_gates: list[dict[str, Any]]
     manifest_digest: str
+    signature_bundle: dict[str, Any] | None = None
+    is_digitally_signed: bool = False
     promoted_by: str | None = None
     promoted_at: str | None = None
     rollback_target_id: str | None = None
@@ -257,6 +259,9 @@ class EvidencePassportResponse(BaseModel):
     validation_result: str
     human_review_required: bool
     passport_digest: str
+    signature_bundle: dict[str, Any] | None = None
+    merkle_proof: dict[str, Any] | None = None
+    is_digitally_signed: bool = False
     is_verified: bool
     evidence_records: list[dict[str, Any]] = Field(default_factory=list)
     created_at: str
@@ -346,3 +351,87 @@ class ValidationPackageResponse(BaseModel):
     active_suspensions_count: int
     executive_summary: str
     document_sections: dict[str, Any]
+
+
+# ==============================================================================
+# Phase 13.0 Schemas: PKI Signatures, Quantitative Risk & Shadow Governance
+# ==============================================================================
+
+class SignArtifactRequest(BaseModel):
+    key_id: str = "key-toroka-bank-root"
+    algorithm: str = "Ed25519"  # Ed25519 or ECDSA_P256
+
+
+class VerifyArtifactRequest(BaseModel):
+    trusted_public_key_pem: str | None = None
+
+
+class VerifyArtifactResponse(BaseModel):
+    is_valid: bool
+    artifact_id: str
+    artifact_type: str  # passport or release
+    digest_verified: bool
+    is_digitally_signed: bool
+    signature_verified: bool
+    signing_key_id: str | None = None
+    signing_algorithm: str | None = None
+    error: str | None = None
+
+
+class EvaluateQuantitativeDriftRequest(BaseModel):
+    component_id: str
+    component_version: str
+    baseline_scores: list[float]
+    current_scores: list[float]
+    subgroup_predictions: dict[str, list[bool]] | None = None
+
+
+class QuantitativeDriftEvaluationResponse(BaseModel):
+    evaluation_id: str
+    installation_id: str
+    component_id: str
+    component_version: str
+    psi_score: float
+    psi_severity: str
+    requires_mitigation: bool
+    ks_statistic: float
+    ks_p_value: float
+    ks_drift_detected: bool
+    wasserstein_distance: float
+    fairness_compliant: bool
+    is_compliant: bool
+    governance_findings: list[str]
+    evaluation_details: dict[str, Any]
+    evaluated_by: str
+    created_at: str
+
+
+class EvaluateChampionChallengerRequest(BaseModel):
+    component_id: str
+    champion_version: str
+    challenger_version: str
+    champion_metrics: dict[str, Any]
+    challenger_metrics: dict[str, Any]
+    min_sample_size: int = 100
+    max_fdr_increase: float = 0.02
+    min_f1_retention: float = 0.98
+    max_p95_latency_ms: float = 250.0
+    subgroup_predictions: dict[str, list[bool]] | None = None
+
+
+class ChampionChallengerRunResponse(BaseModel):
+    run_id: str
+    installation_id: str
+    component_id: str
+    champion_version: str
+    challenger_version: str
+    decision: str
+    is_promotable: bool
+    fdr_delta: float
+    f1_ratio: float
+    latency_p95_delta_ms: float
+    reasons: list[str]
+    champion_metrics: dict[str, Any]
+    challenger_metrics: dict[str, Any]
+    evaluated_by: str
+    created_at: str

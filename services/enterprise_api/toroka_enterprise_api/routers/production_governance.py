@@ -8,11 +8,14 @@ from ..auth import EnterprisePrincipal, get_current_principal, require_roles
 from ..dependencies import get_db, get_installation_id
 from ..governance_schemas import (
     ApproveComponentRequest,
+    ChampionChallengerRunResponse,
     CreateComponentRequest,
     CreateIncidentRequest,
     CreateReleaseRequest,
     CreateValidationRunRequest,
     DriftRecordResponse,
+    EvaluateChampionChallengerRequest,
+    EvaluateQuantitativeDriftRequest,
     EvaluateReadinessGatesRequest,
     EvidencePassportResponse,
     GenerateEvidencePassportRequest,
@@ -21,6 +24,7 @@ from ..governance_schemas import (
     GovernedComponentResponse,
     ProductionReleaseResponse,
     PromoteReleaseRequest,
+    QuantitativeDriftEvaluationResponse,
     ReadinessAssessmentResponse,
     ReadinessAttestationResponse,
     RecordDriftRequest,
@@ -28,12 +32,15 @@ from ..governance_schemas import (
     RegisterAIProviderRequest,
     ResumeComponentRequest,
     RollbackReleaseRequest,
+    SignArtifactRequest,
     SuspendComponentRequest,
     SuspensionRecordResponse,
     SystemHealthOverviewResponse,
     UpdateIncidentStatusRequest,
     ValidationPackageResponse,
     ValidationRunResponse,
+    VerifyArtifactRequest,
+    VerifyArtifactResponse,
 )
 from ..permissions import (
     ROLE_AUDITOR,
@@ -643,3 +650,172 @@ def list_readiness_attestations(
     effective_inst = principal.installation_id or installation_id
     service = ProductionGovernanceService(db, effective_inst)
     return service.list_readiness_attestations(release_version=release_version, gate_name=gate_name)
+
+
+# =============================================================================
+# Phase 13.0: PKI Digital Signatures, Quantitative Risk & Shadow Governance
+# =============================================================================
+
+@router.post(
+    "/passports/{passport_id}/sign",
+    response_model=EvidencePassportResponse,
+    dependencies=[Depends(require_roles(ROLE_AUTHORISER, ROLE_SYSTEM_ADMINISTRATOR))],
+)
+def sign_evidence_passport(
+    passport_id: str,
+    request: SignArtifactRequest,
+    principal: EnterprisePrincipal = Depends(get_current_principal),
+    installation_id: str = Depends(get_installation_id),
+    db: Session = Depends(get_db),
+) -> EvidencePassportResponse:
+    effective_inst = principal.installation_id or installation_id
+    service = ProductionGovernanceService(db, effective_inst)
+    return service.sign_evidence_passport(
+        passport_id=passport_id,
+        request=request,
+        actor_subject=principal.subject,
+        actor_role=_primary_role(principal),
+    )
+
+
+@router.post(
+    "/passports/{passport_id}/verify",
+    response_model=VerifyArtifactResponse,
+    dependencies=[
+        Depends(require_roles(ROLE_AUTHORISER, ROLE_AUDITOR, ROLE_INVESTIGATOR, ROLE_SYSTEM_ADMINISTRATOR))
+    ],
+)
+def verify_evidence_passport(
+    passport_id: str,
+    request: VerifyArtifactRequest,
+    principal: EnterprisePrincipal = Depends(get_current_principal),
+    installation_id: str = Depends(get_installation_id),
+    db: Session = Depends(get_db),
+) -> VerifyArtifactResponse:
+    effective_inst = principal.installation_id or installation_id
+    service = ProductionGovernanceService(db, effective_inst)
+    return service.verify_evidence_passport(passport_id=passport_id, request=request)
+
+
+@router.post(
+    "/releases/{release_id}/sign",
+    response_model=ProductionReleaseResponse,
+    dependencies=[Depends(require_roles(ROLE_AUTHORISER, ROLE_SYSTEM_ADMINISTRATOR))],
+)
+def sign_release(
+    release_id: str,
+    request: SignArtifactRequest,
+    principal: EnterprisePrincipal = Depends(get_current_principal),
+    installation_id: str = Depends(get_installation_id),
+    db: Session = Depends(get_db),
+) -> ProductionReleaseResponse:
+    effective_inst = principal.installation_id or installation_id
+    service = ProductionGovernanceService(db, effective_inst)
+    return service.sign_release(
+        release_id=release_id,
+        request=request,
+        actor_subject=principal.subject,
+        actor_role=_primary_role(principal),
+    )
+
+
+@router.post(
+    "/releases/{release_id}/verify",
+    response_model=VerifyArtifactResponse,
+    dependencies=[
+        Depends(require_roles(ROLE_AUTHORISER, ROLE_AUDITOR, ROLE_INVESTIGATOR, ROLE_SYSTEM_ADMINISTRATOR))
+    ],
+)
+def verify_release(
+    release_id: str,
+    request: VerifyArtifactRequest,
+    principal: EnterprisePrincipal = Depends(get_current_principal),
+    installation_id: str = Depends(get_installation_id),
+    db: Session = Depends(get_db),
+) -> VerifyArtifactResponse:
+    effective_inst = principal.installation_id or installation_id
+    service = ProductionGovernanceService(db, effective_inst)
+    return service.verify_release_manifest(release_id=release_id, request=request)
+
+
+@router.post(
+    "/model-risk/drift-evaluations",
+    response_model=QuantitativeDriftEvaluationResponse,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[
+        Depends(require_roles(ROLE_AUTHORISER, ROLE_INVESTIGATOR, ROLE_SYSTEM_ADMINISTRATOR))
+    ],
+)
+def evaluate_quantitative_drift(
+    request: EvaluateQuantitativeDriftRequest,
+    principal: EnterprisePrincipal = Depends(get_current_principal),
+    installation_id: str = Depends(get_installation_id),
+    db: Session = Depends(get_db),
+) -> QuantitativeDriftEvaluationResponse:
+    effective_inst = principal.installation_id or installation_id
+    service = ProductionGovernanceService(db, effective_inst)
+    return service.evaluate_quantitative_drift(
+        request=request,
+        actor_subject=principal.subject,
+        actor_role=_primary_role(principal),
+    )
+
+
+@router.get(
+    "/model-risk/drift-evaluations",
+    response_model=list[QuantitativeDriftEvaluationResponse],
+    dependencies=[
+        Depends(require_roles(ROLE_AUTHORISER, ROLE_AUDITOR, ROLE_INVESTIGATOR, ROLE_SYSTEM_ADMINISTRATOR))
+    ],
+)
+def list_quantitative_drift_evaluations(
+    component_id: str | None = Query(default=None),
+    principal: EnterprisePrincipal = Depends(get_current_principal),
+    installation_id: str = Depends(get_installation_id),
+    db: Session = Depends(get_db),
+) -> list[QuantitativeDriftEvaluationResponse]:
+    effective_inst = principal.installation_id or installation_id
+    service = ProductionGovernanceService(db, effective_inst)
+    return service.list_quantitative_drift_evaluations(component_id=component_id)
+
+
+@router.post(
+    "/model-risk/champion-challenger",
+    response_model=ChampionChallengerRunResponse,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[
+        Depends(require_roles(ROLE_AUTHORISER, ROLE_INVESTIGATOR, ROLE_SYSTEM_ADMINISTRATOR))
+    ],
+)
+def evaluate_champion_challenger(
+    request: EvaluateChampionChallengerRequest,
+    principal: EnterprisePrincipal = Depends(get_current_principal),
+    installation_id: str = Depends(get_installation_id),
+    db: Session = Depends(get_db),
+) -> ChampionChallengerRunResponse:
+    effective_inst = principal.installation_id or installation_id
+    service = ProductionGovernanceService(db, effective_inst)
+    return service.evaluate_champion_challenger(
+        request=request,
+        actor_subject=principal.subject,
+        actor_role=_primary_role(principal),
+    )
+
+
+@router.get(
+    "/model-risk/champion-challenger",
+    response_model=list[ChampionChallengerRunResponse],
+    dependencies=[
+        Depends(require_roles(ROLE_AUTHORISER, ROLE_AUDITOR, ROLE_INVESTIGATOR, ROLE_SYSTEM_ADMINISTRATOR))
+    ],
+)
+def list_champion_challenger_runs(
+    component_id: str | None = Query(default=None),
+    principal: EnterprisePrincipal = Depends(get_current_principal),
+    installation_id: str = Depends(get_installation_id),
+    db: Session = Depends(get_db),
+) -> list[ChampionChallengerRunResponse]:
+    effective_inst = principal.installation_id or installation_id
+    service = ProductionGovernanceService(db, effective_inst)
+    return service.list_champion_challenger_runs(component_id=component_id)
+

@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from typing import Any
 
@@ -86,6 +86,8 @@ class TorokaEvidencePassport:
     signing_key_id: str | None = None
     signature_algorithm: str | None = None
     signature: str | None = None
+    signature_bundle: dict[str, Any] | None = None
+    merkle_proof: dict[str, Any] | None = None
     passport_digest: str = ""
 
     @classmethod
@@ -175,6 +177,8 @@ class TorokaEvidencePassport:
             signing_key_id=payload.get("signing_key_id"),
             signature_algorithm=payload.get("signature_algorithm"),
             signature=payload.get("signature"),
+            signature_bundle=payload.get("signature_bundle"),
+            merkle_proof=payload.get("merkle_proof"),
             passport_digest=passport_digest,
         )
 
@@ -257,4 +261,38 @@ class TorokaEvidencePassport:
         """
         expected = hashlib.sha256(self._compute_canonical_payload().encode("utf-8")).hexdigest()
         return hmac.compare_digest(self.passport_digest, expected)
+
+    def sign(self, signer: Any) -> TorokaEvidencePassport:
+        """Asymmetrically signs the canonical passport payload using bank HSM or KMS."""
+        bundle = signer.sign(self.canonical_payload())
+        return replace(
+            self,
+            signature_bundle=bundle.to_dict(),
+            signing_key_id=bundle.key_id,
+            signature_algorithm=bundle.algorithm,
+            signature=bundle.signature,
+        )
+
+    def verify_digital_signature(self, trusted_public_key_pem: str | None = None) -> bool:
+        """Verifies the asymmetric digital signature against the canonical passport payload."""
+        if not self.signature_bundle:
+            return False
+        from toroka_enterprise.governance.pki import SignatureBundle, verify_asymmetric_signature
+        bundle = SignatureBundle.from_dict(self.signature_bundle)
+        return verify_asymmetric_signature(
+            payload=self.canonical_payload(),
+            bundle=bundle,
+            trusted_public_key_pem=trusted_public_key_pem,
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        """Produces full serializable dictionary representation."""
+        data = dict(self.canonical_payload())
+        data["passport_digest"] = self.passport_digest
+        data["signing_key_id"] = self.signing_key_id
+        data["signature_algorithm"] = self.signature_algorithm
+        data["signature"] = self.signature
+        data["signature_bundle"] = self.signature_bundle
+        data["merkle_proof"] = self.merkle_proof
+        return data
 
