@@ -435,3 +435,118 @@ class ChampionChallengerRunResponse(BaseModel):
     challenger_metrics: dict[str, Any]
     evaluated_by: str
     created_at: str
+
+
+# ==============================================================================
+# Phase 13.1 Schemas: Forensic Dossiers, ISO 20022 & Semantic Grounding
+# ==============================================================================
+
+class CustodyEventSchema(BaseModel):
+    event_id: str
+    timestamp: str
+    actor_subject: str
+    actor_role: str
+    action: str
+    source_hash: str
+    destination_hash: str
+    notes: str = ""
+
+
+class Section106BCertificateSchema(BaseModel):
+    certificate_id: str
+    statutory_framework: str
+    certifier_name: str
+    certifier_designation: str
+    certifier_organization: str
+    device_identification: str
+    operating_condition_statement: str
+    hash_algorithm: str
+    merkle_root_hash: str
+    certified_at: str
+    declaration_text: str
+
+
+class CreateForensicDossierRequest(BaseModel):
+    case_id: str
+    title: str
+    incident_type: str = "Financial Fraud & Mule Syndicate"
+    fraud_loss_amount: float = 0.0
+    currency: str = "KES"
+    case_summary: str
+    attack_path_summary: dict[str, Any] = Field(default_factory=dict)
+    identified_mule_nodes: list[dict[str, Any]] = Field(default_factory=list)
+    evidence_records: list[dict[str, Any]] = Field(default_factory=list)
+    certifier_name: str | None = None
+    certifier_designation: str | None = None
+    declaration_text: str | None = None
+
+
+class ForensicDossierResponse(BaseModel):
+    dossier_id: str
+    installation_id: str
+    case_id: str
+    title: str
+    incident_type: str
+    fraud_loss_amount: float
+    currency: str
+    examiner_subject: str
+    examiner_role: str
+    case_summary: str
+    attack_path_summary: dict[str, Any]
+    identified_mule_nodes: list[dict[str, Any]]
+    evidence_records: list[dict[str, Any]]
+    chain_of_custody: list[dict[str, Any]]
+    section_106b_certificate: dict[str, Any] | None = None
+    dossier_digest: str
+    signature_bundle: dict[str, Any] | None = None
+    is_digitally_signed: bool = False
+    is_verified: bool
+    status: str
+    created_at: str
+
+
+class InflightPaymentEvaluationRequest(BaseModel):
+    end_to_end_id: str
+    msg_id: str | None = None
+    amount: float
+    currency: str = "KES"
+    clearing_rail: str = "PESALINK"
+    debtor_name: str
+    debtor_account: str
+    debtor_bic: str = "KCBKKENA"
+    debtor_msisdn: str | None = None
+    debtor_national_id: str | None = None
+    creditor_name: str
+    creditor_account: str
+    creditor_bic: str = "EQBLKENA"
+    creditor_msisdn: str | None = None
+    creditor_national_id: str | None = None
+    remittance_narrative: str = ""
+    account_prior_transfers_count: int = 10
+
+
+class InflightPaymentEvaluationResponse(BaseModel):
+    end_to_end_id: str
+    decision: str
+    risk_score: float
+    risk_tier: str
+    triggered_rules: list[str]
+    recommended_action: str
+    latency_ms: float
+    evaluated_at: str
+
+
+class SemanticVerifyRequest(BaseModel):
+    claims: list[dict[str, Any]]
+    evidence_context: list[dict[str, Any]]
+
+
+class SemanticVerifyResponse(BaseModel):
+    is_valid: bool
+    total_claims: int
+    entailed_claims: int
+    contradicted_claims: int
+    numeric_mismatches: int
+    ungrounded_claims: int
+    evaluations: list[dict[str, Any]]
+

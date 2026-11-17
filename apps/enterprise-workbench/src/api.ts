@@ -66,6 +66,8 @@ import {
   ValidationPackage,
   QuantitativeDriftEvaluation,
   ChampionChallengerRun,
+  ForensicDossier,
+  InflightPaymentEvaluation,
 } from "./types";
 
 export const BANK_PERSONAS: Persona[] = [
@@ -967,6 +969,59 @@ export const api = {
     subgroup_predictions?: Record<string, boolean[]>;
   }): Promise<ChampionChallengerRun> =>
     request<ChampionChallengerRun>("/api/enterprise/v1/governance/model-risk/champion-challenger", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  createForensicDossier: (payload: {
+    case_id: string;
+    title: string;
+    incident_type?: string;
+    fraud_loss_amount?: number;
+    currency?: string;
+    case_summary: string;
+    attack_path_summary?: Record<string, unknown>;
+    identified_mule_nodes?: Array<Record<string, unknown>>;
+    evidence_records?: Array<Record<string, unknown>>;
+    certifier_name?: string;
+    certifier_designation?: string;
+    declaration_text?: string;
+  }): Promise<ForensicDossier> =>
+    request<ForensicDossier>("/api/enterprise/v1/governance/forensic-dossiers", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  getForensicDossier: (dossierId: string): Promise<ForensicDossier> =>
+    request<ForensicDossier>(`/api/enterprise/v1/governance/forensic-dossiers/${encodeURIComponent(dossierId)}`),
+
+  signForensicDossier: (dossierId: string, algorithm = "Ed25519"): Promise<ForensicDossier> =>
+    request<ForensicDossier>(`/api/enterprise/v1/governance/forensic-dossiers/${encodeURIComponent(dossierId)}/sign`, {
+      method: "POST",
+      body: JSON.stringify({ algorithm }),
+    }),
+
+  verifyForensicDossier: (dossierId: string, trustedPublicKeyPem?: string): Promise<{ is_valid: boolean; digest_verified: boolean; is_digitally_signed: boolean; signature_verified: boolean; error?: string }> =>
+    request(`/api/enterprise/v1/governance/forensic-dossiers/${encodeURIComponent(dossierId)}/verify`, {
+      method: "POST",
+      body: JSON.stringify({ trusted_public_key_pem: trustedPublicKeyPem }),
+    }),
+
+  evaluateInflightPayment: (payload: {
+    end_to_end_id: string;
+    amount: number;
+    currency?: string;
+    clearing_rail?: string;
+    debtor_name: string;
+    debtor_account: string;
+    debtor_bic?: string;
+    creditor_name: string;
+    creditor_account: string;
+    creditor_bic?: string;
+    remittance_narrative?: string;
+    account_prior_transfers_count?: number;
+  }): Promise<InflightPaymentEvaluation> =>
+    request<InflightPaymentEvaluation>("/api/enterprise/v1/governance/integrations/iso20022/evaluate-inflight", {
       method: "POST",
       body: JSON.stringify(payload),
     }),

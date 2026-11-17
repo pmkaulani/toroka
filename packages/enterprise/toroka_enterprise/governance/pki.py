@@ -61,6 +61,13 @@ class SignatureBundle:
     digest_algorithm: str
     content_digest: str  # SHA-256 of canonical payload
 
+    @property
+    def signature_hex(self) -> str:
+        try:
+            return base64.b64decode(self.signature).hex()
+        except Exception:
+            return self.signature
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "key_id": self.key_id,
@@ -130,6 +137,10 @@ class LocalHSMKeyProvider:
     @property
     def algorithm(self) -> AsymmetricAlgorithm:
         return self._algorithm
+
+    @property
+    def public_key_pem(self) -> str:
+        return self.get_public_key_pem()
 
     def get_public_key_pem(self) -> str:
         pub = self._private_key.public_key()

@@ -14,6 +14,8 @@ import {
   ValidationPackage,
   QuantitativeDriftEvaluation,
   ChampionChallengerRun,
+  ForensicDossier,
+  InflightPaymentEvaluation,
   Persona,
 } from "../types";
 
@@ -23,7 +25,7 @@ interface Props {
 
 export const ProductionGovernanceView: React.FC<Props> = ({ currentPersona }) => {
   const [activeTab, setActiveTab] = useState<
-    "overview" | "registry" | "validation" | "releases" | "killswitch" | "incidents" | "drift" | "passports" | "aiproviders" | "readiness" | "modelrisk"
+    "overview" | "registry" | "validation" | "releases" | "killswitch" | "incidents" | "drift" | "passports" | "aiproviders" | "readiness" | "modelrisk" | "forensics_iso"
   >("overview");
 
   const [loading, setLoading] = useState<boolean>(true);
@@ -66,6 +68,23 @@ export const ProductionGovernanceView: React.FC<Props> = ({ currentPersona }) =>
   const [rollbackReleaseId, setRollbackReleaseId] = useState<string | null>(null);
   const [rollbackTargetId, setRollbackTargetId] = useState("");
   const [rollbackReason, setRollbackReason] = useState("");
+
+  // Forensic Dossier & ISO 20022 simulator state
+  const [dossierCaseId, setDossierCaseId] = useState("case-001");
+  const [dossierTitle, setDossierTitle] = useState("M-PESA Pass-Through Laundering Ring");
+  const [dossierAmount, setDossierAmount] = useState(1500000);
+  const [dossierSummary, setDossierSummary] = useState("Corroborated 4-hop pass-through velocity anomaly transferring illicit funds across 3 commercial banks and 2 telco wallets.");
+  const [dossierCertifier, setDossierCertifier] = useState("Inspector J. Kamau");
+  const [activeDossier, setActiveDossier] = useState<ForensicDossier | null>(null);
+
+  // ISO 20022 simulator state
+  const [isoAmount, setIsoAmount] = useState(350000);
+  const [isoRail, setIsoRail] = useState("PESALINK");
+  const [isoDebtorAcct, setIsoDebtorAcct] = useState("01129384756");
+  const [isoCreditorAcct, setIsoCreditorAcct] = useState("01199887766");
+  const [isoNarrative, setIsoNarrative] = useState("Urgent unlock fee for pending deposit");
+  const [isoEvaluation, setIsoEvaluation] = useState<InflightPaymentEvaluation | null>(null);
+  const [isoEvaluating, setIsoEvaluating] = useState(false);
 
   const fetchData = async () => {
     setLoading(true);
@@ -192,6 +211,77 @@ export const ProductionGovernanceView: React.FC<Props> = ({ currentPersona }) =>
     }
   };
 
+  const handleCreateDossier = async () => {
+    try {
+      const res = await api.createForensicDossier({
+        case_id: dossierCaseId,
+        title: dossierTitle,
+        fraud_loss_amount: dossierAmount,
+        currency: "KES",
+        case_summary: dossierSummary,
+        certifier_name: dossierCertifier,
+        certifier_designation: "Senior Forensic Investigator",
+        declaration_text: "I certify under Section 106B of the Kenya Evidence Act that this electronic evidence record was generated during the ordinary course of computer operations without malfunction.",
+        identified_mule_nodes: [
+          { account_number: "01199887766", entity_name: "Kamau Enterprises", risk_score: 0.94, role: "Pass-Through Mule" },
+          { account_number: "+254712345678", entity_name: "Cash-Out Wallet A", risk_score: 0.88, role: "Terminal Cash-Out" },
+        ],
+      });
+      setActiveDossier(res);
+      alert(`Forensic Dossier ${res.dossier_id} compiled successfully!`);
+    } catch (err: any) {
+      alert(`Failed to compile dossier: ${err.message}`);
+    }
+  };
+
+  const handleSignDossier = async (dossierId: string) => {
+    try {
+      const res = await api.signForensicDossier(dossierId, "Ed25519");
+      setActiveDossier(res);
+      alert(`Dossier signed with examiner Ed25519 HSM key! Signature hex: ${res.signature_bundle?.signature_hex.slice(0, 16)}...`);
+    } catch (err: any) {
+      alert(`Dossier signing failed: ${err.message}`);
+    }
+  };
+
+  const handleVerifyDossier = async (dossierId: string) => {
+    try {
+      const res = await api.verifyForensicDossier(dossierId);
+      if (res.is_valid && res.digest_verified) {
+        alert(`Dossier ${dossierId} verified! Content hash unbroken. PKI signature: ${res.signature_verified ? "VALID" : "N/A"}`);
+      } else {
+        alert(`Verification failed: ${res.error || "Digest mismatch"}`);
+      }
+    } catch (err: any) {
+      alert(`Verification exception: ${err.message}`);
+    }
+  };
+
+  const handleEvaluateInflightPayment = async () => {
+    setIsoEvaluating(true);
+    try {
+      const res = await api.evaluateInflightPayment({
+        end_to_end_id: `E2E-${Date.now().toString(16)}`,
+        amount: isoAmount,
+        currency: "KES",
+        clearing_rail: isoRail,
+        debtor_name: "James Kariuki (Payer)",
+        debtor_account: isoDebtorAcct,
+        debtor_bic: "KCBKKENA",
+        creditor_name: "Kamau Enterprises (Mule)",
+        creditor_account: isoCreditorAcct,
+        creditor_bic: "EQBLKENA",
+        remittance_narrative: isoNarrative,
+        account_prior_transfers_count: 0,
+      });
+      setIsoEvaluation(res);
+    } catch (err: any) {
+      alert(`Evaluation failed: ${err.message}`);
+    } finally {
+      setIsoEvaluating(false);
+    }
+  };
+
   const handleEvaluateReadiness = async () => {
     try {
       const gates = [
@@ -290,6 +380,7 @@ export const ProductionGovernanceView: React.FC<Props> = ({ currentPersona }) =>
             { id: "drift", label: `Drift Monitoring (${driftRecords.length})` },
             { id: "passports", label: `Evidence Passports (${passports.length})` },
             { id: "modelrisk", label: `Model Risk & PSI (${quantDrifts.length})` },
+            { id: "forensics_iso", label: "Court Dossiers & ISO 20022" },
             { id: "aiproviders", label: `AI Providers (${aiProviders.length})` },
             { id: "readiness", label: "Bank Validation Package" },
           ].map((tab) => (
@@ -1130,6 +1221,287 @@ export const ProductionGovernanceView: React.FC<Props> = ({ currentPersona }) =>
                   </div>
                 </div>
               ))}
+            </div>
+          </div>
+        )}
+
+        {/* 10. Court Dossiers (Sec 106B) & ISO 20022 Clearing */}
+        {!loading && activeTab === "forensics_iso" && (
+          <div className="space-y-8">
+            {/* Header */}
+            <div>
+              <h2 className="text-lg font-semibold text-white">Court-Ready Forensic Evidence Dossiers & ISO 20022 Core Banking Clearing</h2>
+              <p className="text-xs text-slate-400">
+                Judicial admissibility packages under Section 106B of the Kenya Evidence Act and sub-100ms in-flight payment risk scoring.
+              </p>
+            </div>
+
+            {/* Split layout: Dossiers on left, ISO 20022 on right */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* Section 1: Court Dossier Compiler */}
+              <div className="p-5 rounded-lg bg-slate-900 border border-slate-800 space-y-4">
+                <div className="border-b border-slate-800 pb-3">
+                  <h3 className="text-sm font-bold text-white flex items-center">
+                    <span className="mr-2">⚖️</span> Section 106B Court Dossier Compiler
+                  </h3>
+                  <p className="text-xs text-slate-400 mt-1">
+                    Compile an immutable, tamper-evident judicial evidence package with chain of custody and sworn statutory declaration.
+                  </p>
+                </div>
+
+                <div className="space-y-3 text-xs">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-slate-400 block mb-1">Case Reference ID</label>
+                      <input
+                        value={dossierCaseId}
+                        onChange={(e) => setDossierCaseId(e.target.value)}
+                        className="w-full bg-slate-950 border border-slate-800 rounded px-2.5 py-1.5 text-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block mb-1">Quantified Loss (KES)</label>
+                      <input
+                        type="number"
+                        value={dossierAmount}
+                        onChange={(e) => setDossierAmount(parseFloat(e.target.value) || 0)}
+                        className="w-full bg-slate-950 border border-slate-800 rounded px-2.5 py-1.5 text-white"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-slate-400 block mb-1">Incident / Syndicate Title</label>
+                    <input
+                      value={dossierTitle}
+                      onChange={(e) => setDossierTitle(e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-800 rounded px-2.5 py-1.5 text-white"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-slate-400 block mb-1">Certifying Forensic Examiner</label>
+                    <input
+                      value={dossierCertifier}
+                      onChange={(e) => setDossierCertifier(e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-800 rounded px-2.5 py-1.5 text-white"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-slate-400 block mb-1">Executive Findings Summary</label>
+                    <textarea
+                      rows={3}
+                      value={dossierSummary}
+                      onChange={(e) => setDossierSummary(e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-800 rounded px-2.5 py-1.5 text-white"
+                    />
+                  </div>
+
+                  <button
+                    onClick={handleCreateDossier}
+                    className="w-full py-2 bg-indigo-600 hover:bg-indigo-500 font-semibold text-white rounded transition shadow-sm"
+                  >
+                    Compile Court-Ready Forensic Dossier
+                  </button>
+                </div>
+
+                {activeDossier && (
+                  <div className="mt-4 p-4 rounded bg-slate-950 border border-slate-800 text-xs space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-white text-sm">{activeDossier.dossier_id}</span>
+                      <div className="flex items-center space-x-2">
+                        {activeDossier.is_digitally_signed ? (
+                          <span className="px-2 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-700 text-xs">
+                            🔒 PKI SIGNED
+                          </span>
+                        ) : (
+                          <span className="px-2 py-0.5 rounded bg-amber-950 text-amber-300 border border-amber-700 text-xs">
+                            TAMPER-EVIDENT HASH
+                          </span>
+                        )}
+                        <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-300 font-mono">
+                          {activeDossier.status}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div>
+                      <span className="text-slate-400">Canonical SHA-256 Digest:</span>
+                      <div className="font-mono text-[11px] text-indigo-300 break-all bg-slate-900 p-1.5 rounded mt-0.5">
+                        {activeDossier.dossier_digest}
+                      </div>
+                    </div>
+
+                    {activeDossier.section_106b_certificate && (
+                      <div className="p-2.5 bg-slate-900 rounded border border-slate-800">
+                        <div className="font-semibold text-emerald-400 mb-1">
+                          ✓ Section 106B Electronic Records Certificate Attached
+                        </div>
+                        <div className="text-slate-400">
+                          Certifier: {activeDossier.section_106b_certificate.certifier_name} ({activeDossier.section_106b_certificate.certifier_designation})
+                        </div>
+                        <div className="text-slate-400">
+                          Statute: {activeDossier.section_106b_certificate.statutory_framework}
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="flex items-center space-x-2 pt-2 border-t border-slate-800">
+                      {!activeDossier.is_digitally_signed && (
+                        <button
+                          onClick={() => handleSignDossier(activeDossier.dossier_id)}
+                          className="px-3 py-1 bg-emerald-700 hover:bg-emerald-600 text-white rounded font-medium transition"
+                        >
+                          Sign with HSM (Ed25519)
+                        </button>
+                      )}
+                      <button
+                        onClick={() => handleVerifyDossier(activeDossier.dossier_id)}
+                        className="px-3 py-1 bg-slate-800 hover:bg-slate-700 text-white rounded font-medium transition"
+                      >
+                        Verify Integrity
+                      </button>
+                      <a
+                        href={`/api/enterprise/v1/governance/forensic-dossiers/${encodeURIComponent(activeDossier.dossier_id)}/export-html`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="px-3 py-1 bg-indigo-700 hover:bg-indigo-600 text-white rounded font-medium transition text-center"
+                      >
+                        Export Court Dossier (HTML)
+                      </a>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Section 2: ISO 20022 In-Flight Real-Time Risk Simulator */}
+              <div className="p-5 rounded-lg bg-slate-900 border border-slate-800 space-y-4">
+                <div className="border-b border-slate-800 pb-3">
+                  <h3 className="text-sm font-bold text-white flex items-center">
+                    <span className="mr-2">⚡</span> ISO 20022 In-Flight Risk Scoring (&lt;100ms)
+                  </h3>
+                  <p className="text-xs text-slate-400 mt-1">
+                    Simulate real-time pacs.008 customer credit transfers across Kenya clearing rails before clearing window confirmation.
+                  </p>
+                </div>
+
+                <div className="space-y-3 text-xs">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-slate-400 block mb-1">Clearing Rail</label>
+                      <select
+                        value={isoRail}
+                        onChange={(e) => setIsoRail(e.target.value)}
+                        className="w-full bg-slate-950 border border-slate-800 rounded px-2.5 py-1.5 text-white"
+                      >
+                        <option value="PESALINK">PESALINK (IPSL Real-Time)</option>
+                        <option value="KEPSS_RTGS">KEPSS (Central Bank RTGS)</option>
+                        <option value="MPESA_B2C">M-PESA B2C (Daraja Clearing)</option>
+                        <option value="SWIFT">SWIFT Cross-Border Wire</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block mb-1">Transfer Amount (KES)</label>
+                      <input
+                        type="number"
+                        value={isoAmount}
+                        onChange={(e) => setIsoAmount(parseFloat(e.target.value) || 0)}
+                        className="w-full bg-slate-950 border border-slate-800 rounded px-2.5 py-1.5 text-white"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-slate-400 block mb-1">Debtor Account (Payer)</label>
+                      <input
+                        value={isoDebtorAcct}
+                        onChange={(e) => setIsoDebtorAcct(e.target.value)}
+                        className="w-full bg-slate-950 border border-slate-800 rounded px-2.5 py-1.5 text-white font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block mb-1">Creditor Account (Payee)</label>
+                      <input
+                        value={isoCreditorAcct}
+                        onChange={(e) => setIsoCreditorAcct(e.target.value)}
+                        className="w-full bg-slate-950 border border-slate-800 rounded px-2.5 py-1.5 text-white font-mono"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-slate-400 block mb-1">Remittance Narrative / Memo</label>
+                    <input
+                      value={isoNarrative}
+                      onChange={(e) => setIsoNarrative(e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-800 rounded px-2.5 py-1.5 text-white"
+                    />
+                  </div>
+
+                  <button
+                    onClick={handleEvaluateInflightPayment}
+                    disabled={isoEvaluating}
+                    className="w-full py-2 bg-emerald-600 hover:bg-emerald-500 font-semibold text-white rounded transition shadow-sm flex items-center justify-center"
+                  >
+                    {isoEvaluating ? "Evaluating in &lt;100ms..." : "Evaluate In-Flight Clearing Decision"}
+                  </button>
+                </div>
+
+                {isoEvaluation && (
+                  <div className="mt-4 p-4 rounded bg-slate-950 border border-slate-800 text-xs space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-white text-sm">Advisory Decision</span>
+                      <div className="flex items-center space-x-2">
+                        <span
+                          className={`px-2.5 py-1 rounded font-bold text-xs ${
+                            isoEvaluation.decision === "ALLOW"
+                              ? "bg-emerald-950 text-emerald-300 border border-emerald-700"
+                              : isoEvaluation.decision === "STEP_UP_AUTH"
+                              ? "bg-amber-950 text-amber-300 border border-amber-700"
+                              : isoEvaluation.decision === "QUARANTINE_HOLD"
+                              ? "bg-orange-950 text-orange-300 border border-orange-700"
+                              : "bg-rose-950 text-rose-300 border border-rose-700"
+                          }`}
+                        >
+                          {isoEvaluation.decision}
+                        </span>
+                        <span className="px-2 py-0.5 rounded bg-slate-900 text-indigo-300 font-mono text-[11px]">
+                          ⚡ {isoEvaluation.latency_ms.toFixed(2)} ms
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 text-slate-400">
+                      <div>
+                        Risk Score: <strong className="text-white">{isoEvaluation.risk_score.toFixed(3)}</strong>
+                      </div>
+                      <div>
+                        Risk Tier: <strong className="text-white">{isoEvaluation.risk_tier}</strong>
+                      </div>
+                    </div>
+
+                    <div>
+                      <span className="text-slate-400 block mb-1">Recommended Clearing Action:</span>
+                      <div className="p-2 rounded bg-slate-900 text-slate-200 border border-slate-800">
+                        {isoEvaluation.recommended_action}
+                      </div>
+                    </div>
+
+                    {isoEvaluation.triggered_rules.length > 0 && (
+                      <div>
+                        <span className="text-slate-400 block mb-1">Triggered Risk Rules:</span>
+                        <ul className="list-disc list-inside space-y-0.5 text-rose-300">
+                          {isoEvaluation.triggered_rules.map((rule, idx) => (
+                            <li key={idx}>{rule}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         )}

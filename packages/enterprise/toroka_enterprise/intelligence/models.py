@@ -1176,6 +1176,67 @@ class ChampionChallengerRunRecord(IntelligenceBase):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
 
 
+# ==============================================================================
+# Phase 13.1 Models: Court-Ready Forensic Dossiers & ISO 20022 In-Flight Records
+# ==============================================================================
+
+class ForensicDossierRecord(IntelligenceBase):
+    """Court-ready forensic evidence dossier with Section 106B certificate and HSM signature."""
+    __tablename__ = "enterprise_forensic_dossiers"
+
+    dossier_id: Mapped[str] = mapped_column(String(100), primary_key=True)
+    installation_id: Mapped[str] = mapped_column(String(100), primary_key=True, index=True)
+
+    case_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    incident_type: Mapped[str] = mapped_column(String(100), nullable=False)
+    fraud_loss_amount: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    currency: Mapped[str] = mapped_column(String(10), nullable=False, default="KES")
+
+    examiner_subject: Mapped[str] = mapped_column(String(255), nullable=False)
+    examiner_role: Mapped[str] = mapped_column(String(100), nullable=False)
+    case_summary: Mapped[str] = mapped_column(Text, nullable=False)
+
+    attack_path_summary: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    identified_mule_nodes: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False, default=list)
+    evidence_records: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False, default=list)
+    chain_of_custody: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False, default=list)
+
+    section_106b_certificate: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    dossier_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    signature_bundle: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+
+    status: Mapped[str] = mapped_column(String(50), nullable=False, default="SEALED")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+
+
+class InflightPaymentRiskRecord(IntelligenceBase):
+    """Real-time in-flight transaction evaluation record for ISO 20022 payments."""
+    __tablename__ = "enterprise_inflight_payment_evaluations"
+
+    evaluation_id: Mapped[str] = mapped_column(String(100), primary_key=True)
+    installation_id: Mapped[str] = mapped_column(String(100), primary_key=True, index=True)
+
+    end_to_end_id: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    clearing_rail: Mapped[str] = mapped_column(String(50), nullable=False)
+    amount: Mapped[float] = mapped_column(Float, nullable=False)
+    currency: Mapped[str] = mapped_column(String(10), nullable=False, default="KES")
+
+    debtor_account: Mapped[str] = mapped_column(String(100), nullable=False)
+    creditor_account: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+
+    decision: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+    risk_score: Mapped[float] = mapped_column(Float, nullable=False)
+    risk_tier: Mapped[str] = mapped_column(String(30), nullable=False)
+
+    triggered_rules: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    recommended_action: Mapped[str] = mapped_column(Text, nullable=False)
+    latency_ms: Mapped[float] = mapped_column(Float, nullable=False)
+
+    evaluated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+
+
+
 
 
 

@@ -91,14 +91,42 @@ from toroka_enterprise.governance.quantitative_risk import (
     compute_disparate_impact,
     evaluate_model_risk_comprehensive,
 )
+from toroka_enterprise.governance.forensic_dossier import (
+    CustodyEvent,
+    ForensicDossier,
+    Section106BCertificate,
+    compute_forensic_dossier_digest,
+)
+from toroka_enterprise.integrations.iso20022 import (
+    ClearingRail,
+    InflightRiskEvaluation,
+    ISO20022Engine,
+    Pacs008CreditTransfer,
+    PartyIdentification,
+)
+from toroka_enterprise.intelligence.copilot.contracts import (
+    ClaimKind,
+    EvidenceContext,
+    EvidenceItem,
+    EvidenceQuote,
+    GroundedClaim,
+)
+from toroka_enterprise.intelligence.copilot.advanced_defense import sanitize_narrative
+from toroka_enterprise.intelligence.copilot.semantic_grounding import (
+    EntailmentStatus,
+    SemanticGroundingReport,
+    verify_report_semantics,
+)
 from toroka_enterprise.intelligence.models import (
     ChampionChallengerRunRecord,
     DriftRecordEntity,
     EntityLinkCandidateRecord,
     EvidencePassportRecord,
+    ForensicDossierRecord,
     GovernanceIncidentRecord,
     GovernedAIProviderRecord,
     GovernedComponentRecord,
+    InflightPaymentRiskRecord,
     IntelligenceEventRecord,
     IntelligenceSignalRecord,
     NetworkFindingRecord,
@@ -113,6 +141,7 @@ from ..governance_schemas import (
     ApproveComponentRequest,
     ChampionChallengerRunResponse,
     CreateComponentRequest,
+    CreateForensicDossierRequest,
     CreateIncidentRequest,
     CreateReleaseRequest,
     CreateValidationRunRequest,
@@ -121,9 +150,12 @@ from ..governance_schemas import (
     EvaluateQuantitativeDriftRequest,
     EvaluateReadinessGatesRequest,
     EvidencePassportResponse,
+    ForensicDossierResponse,
     GovernanceIncidentResponse,
     GovernedAIProviderResponse,
     GovernedComponentResponse,
+    InflightPaymentEvaluationRequest,
+    InflightPaymentEvaluationResponse,
     ProductionReleaseResponse,
     QuantitativeDriftEvaluationResponse,
     ReadinessAssessmentResponse,
@@ -132,6 +164,8 @@ from ..governance_schemas import (
     RecordReadinessAttestationRequest,
     RegisterAIProviderRequest,
     ResumeComponentRequest,
+    SemanticVerifyRequest,
+    SemanticVerifyResponse,
     SignArtifactRequest,
     SuspendComponentRequest,
     SuspensionRecordResponse,
@@ -2699,3 +2733,497 @@ class ProductionGovernanceService:
             evaluated_by=r.evaluated_by,
             created_at=r.created_at.isoformat(),
         )
+
+    def _to_forensic_dossier_response(self, r: ForensicDossierRecord) -> ForensicDossierResponse:
+        is_verified = False
+        is_signed = r.signature_bundle is not None
+        try:
+            dossier = ForensicDossier.from_dict({
+                "dossier_id": r.dossier_id,
+                "case_id": r.case_id,
+                "installation_id": r.installation_id,
+                "title": r.title,
+                "incident_type": r.incident_type,
+                "fraud_loss_amount": r.fraud_loss_amount,
+                "currency": r.currency,
+                "examiner_subject": r.examiner_subject,
+                "examiner_role": r.examiner_role,
+                "created_at": r.created_at.isoformat(),
+                "case_summary": r.case_summary,
+                "attack_path_summary": r.attack_path_summary or {},
+                "identified_mule_nodes": r.identified_mule_nodes or [],
+                "evidence_records": r.evidence_records or [],
+                "chain_of_custody": r.chain_of_custody or [],
+                "section_106b_certificate": r.section_106b_certificate,
+                "dossier_digest": r.dossier_digest,
+                "signature_bundle": r.signature_bundle,
+            })
+            is_verified = dossier.verify_dossier_integrity()
+            if is_signed:
+                is_verified = is_verified and dossier.verify_digital_signature()
+        except Exception:
+            is_verified = False
+
+        return ForensicDossierResponse(
+            dossier_id=r.dossier_id,
+            installation_id=r.installation_id,
+            case_id=r.case_id,
+            title=r.title,
+            incident_type=r.incident_type,
+            fraud_loss_amount=r.fraud_loss_amount,
+            currency=r.currency,
+            examiner_subject=r.examiner_subject,
+            examiner_role=r.examiner_role,
+            case_summary=r.case_summary,
+            attack_path_summary=r.attack_path_summary or {},
+            identified_mule_nodes=r.identified_mule_nodes or [],
+            evidence_records=r.evidence_records or [],
+            chain_of_custody=r.chain_of_custody or [],
+            section_106b_certificate=r.section_106b_certificate,
+            dossier_digest=r.dossier_digest,
+            signature_bundle=r.signature_bundle,
+            is_digitally_signed=is_signed,
+            is_verified=is_verified,
+            status=r.status,
+            created_at=r.created_at.isoformat(),
+        )
+
+    def create_forensic_dossier(
+        self,
+        request: CreateForensicDossierRequest,
+        actor_subject: str,
+    ) -> ForensicDossierResponse:
+        dossier_id = f"dos-{uuid.uuid4().hex[:12]}"
+        now = _utc_now()
+
+        custody_event = CustodyEvent(
+            event_id=f"cust-{uuid.uuid4().hex[:8]}",
+            timestamp=now,
+            actor_subject=actor_subject,
+            actor_role="LEAD_EXAMINER",
+            action="DOSSIER_COMPILED",
+            source_hash="0000000000000000000000000000000000000000000000000000000000000000",
+            destination_hash="",
+            notes="Initial compilation of court-ready forensic evidence dossier",
+        )
+
+        cert = None
+        if request.certifier_name:
+            cert = Section106BCertificate(
+                certificate_id=f"cert-106b-{uuid.uuid4().hex[:8]}",
+                statutory_framework="Kenya Evidence Act (Cap 80) Section 106B",
+                certifier_name=request.certifier_name,
+                certifier_designation=request.certifier_designation or "Lead Financial Crime Investigator",
+                certifier_organization="Toroka Financial Crime Compliance",
+                device_identification=f"TOROKA-NODE-{self.installation_id[:8]}",
+                operating_condition_statement="At all material times, the computer system was operating properly and there was no malfunction affecting the production of the electronic record or accuracy of its contents.",
+                hash_algorithm="SHA-256",
+                merkle_root_hash="PENDING_ROOT",
+                certified_at=now,
+                declaration_text=request.declaration_text or "I certify under penalty of perjury that this electronic evidence record was generated in the ordinary course of financial crime detection.",
+            )
+
+        # Build initial domain dossier
+        dossier = ForensicDossier(
+            dossier_id=dossier_id,
+            case_id=request.case_id,
+            installation_id=self.installation_id,
+            title=request.title,
+            incident_type=request.incident_type,
+            fraud_loss_amount=request.fraud_loss_amount,
+            currency=request.currency,
+            examiner_subject=actor_subject,
+            examiner_role="LEAD_EXAMINER",
+            created_at=now,
+            case_summary=request.case_summary,
+            attack_path_summary=request.attack_path_summary,
+            identified_mule_nodes=tuple(request.identified_mule_nodes),
+            evidence_records=tuple(request.evidence_records),
+            chain_of_custody=(custody_event,),
+            section_106b_certificate=cert,
+        )
+
+        # Update custody destination hash to computed digest
+        updated_custody = (
+            CustodyEvent(
+                event_id=custody_event.event_id,
+                timestamp=custody_event.timestamp,
+                actor_subject=custody_event.actor_subject,
+                actor_role=custody_event.actor_role,
+                action=custody_event.action,
+                source_hash=custody_event.source_hash,
+                destination_hash=dossier.dossier_digest,
+                notes=custody_event.notes,
+            ),
+        )
+
+        updated_cert = cert
+        if cert:
+            updated_cert = Section106BCertificate(
+                certificate_id=cert.certificate_id,
+                statutory_framework=cert.statutory_framework,
+                certifier_name=cert.certifier_name,
+                certifier_designation=cert.certifier_designation,
+                certifier_organization=cert.certifier_organization,
+                device_identification=cert.device_identification,
+                operating_condition_statement=cert.operating_condition_statement,
+                hash_algorithm=cert.hash_algorithm,
+                merkle_root_hash=dossier.dossier_digest,
+                certified_at=cert.certified_at,
+                declaration_text=cert.declaration_text,
+            )
+
+        final_dossier = ForensicDossier(
+            dossier_id=dossier_id,
+            case_id=request.case_id,
+            installation_id=self.installation_id,
+            title=request.title,
+            incident_type=request.incident_type,
+            fraud_loss_amount=request.fraud_loss_amount,
+            currency=request.currency,
+            examiner_subject=actor_subject,
+            examiner_role="LEAD_EXAMINER",
+            created_at=now,
+            case_summary=request.case_summary,
+            attack_path_summary=request.attack_path_summary,
+            identified_mule_nodes=tuple(request.identified_mule_nodes),
+            evidence_records=tuple(request.evidence_records),
+            chain_of_custody=updated_custody,
+            section_106b_certificate=updated_cert,
+        )
+
+        record = ForensicDossierRecord(
+            dossier_id=final_dossier.dossier_id,
+            installation_id=self.installation_id,
+            case_id=final_dossier.case_id,
+            title=final_dossier.title,
+            incident_type=final_dossier.incident_type,
+            fraud_loss_amount=final_dossier.fraud_loss_amount,
+            currency=final_dossier.currency,
+            examiner_subject=final_dossier.examiner_subject,
+            examiner_role=final_dossier.examiner_role,
+            case_summary=final_dossier.case_summary,
+            attack_path_summary=final_dossier.attack_path_summary,
+            identified_mule_nodes=list(final_dossier.identified_mule_nodes),
+            evidence_records=list(final_dossier.evidence_records),
+            chain_of_custody=[c.to_dict() for c in final_dossier.chain_of_custody],
+            section_106b_certificate=final_dossier.section_106b_certificate.to_dict() if final_dossier.section_106b_certificate else None,
+            dossier_digest=final_dossier.dossier_digest,
+            signature_bundle=None,
+            status="SEALED",
+            created_at=final_dossier.created_at,
+        )
+        self.session.add(record)
+        self.session.commit()
+        self.session.refresh(record)
+
+        return self._to_forensic_dossier_response(record)
+
+    def get_forensic_dossier(self, dossier_id: str) -> ForensicDossierResponse:
+        record = self.session.execute(
+            select(ForensicDossierRecord).where(
+                and_(
+                    ForensicDossierRecord.installation_id == self.installation_id,
+                    ForensicDossierRecord.dossier_id == dossier_id,
+                )
+            )
+        ).scalar_one_or_none()
+        if not record:
+            raise HTTPException(status_code=404, detail="Forensic dossier not found")
+        return self._to_forensic_dossier_response(record)
+
+    def sign_forensic_dossier(
+        self,
+        dossier_id: str,
+        request: SignArtifactRequest,
+        actor_subject: str,
+    ) -> ForensicDossierResponse:
+        record = self.session.execute(
+            select(ForensicDossierRecord).where(
+                and_(
+                    ForensicDossierRecord.installation_id == self.installation_id,
+                    ForensicDossierRecord.dossier_id == dossier_id,
+                )
+            )
+        ).scalar_one_or_none()
+        if not record:
+            raise HTTPException(status_code=404, detail="Forensic dossier not found")
+
+        dossier = ForensicDossier.from_dict({
+            "dossier_id": record.dossier_id,
+            "case_id": record.case_id,
+            "installation_id": record.installation_id,
+            "title": record.title,
+            "incident_type": record.incident_type,
+            "fraud_loss_amount": record.fraud_loss_amount,
+            "currency": record.currency,
+            "examiner_subject": record.examiner_subject,
+            "examiner_role": record.examiner_role,
+            "created_at": record.created_at.isoformat(),
+            "case_summary": record.case_summary,
+            "attack_path_summary": record.attack_path_summary or {},
+            "identified_mule_nodes": record.identified_mule_nodes or [],
+            "evidence_records": record.evidence_records or [],
+            "chain_of_custody": record.chain_of_custody or [],
+            "section_106b_certificate": record.section_106b_certificate,
+            "dossier_digest": record.dossier_digest,
+            "signature_bundle": record.signature_bundle,
+        })
+
+        algo = AsymmetricAlgorithm.ED25519 if request.algorithm.upper() in ("ED25519", "ED_25519") else AsymmetricAlgorithm.ECDSA_P256
+        signer = LocalHSMKeyProvider(key_id=request.key_id, algorithm=algo)
+        dossier.sign(signer)
+
+        now = _utc_now()
+        custody_event = CustodyEvent(
+            event_id=f"cust-{uuid.uuid4().hex[:8]}",
+            timestamp=now,
+            actor_subject=actor_subject,
+            actor_role="CERTIFYING_OFFICER",
+            action="EXAMINER_DIGITALLY_SIGNED",
+            source_hash=record.dossier_digest,
+            destination_hash=dossier.signature_bundle.signature_hex[:32],
+            notes=f"Digitally signed with algorithm {algo.value} (Key: {request.key_id})",
+        )
+        updated_custody = list(record.chain_of_custody or [])
+        updated_custody.append(custody_event.to_dict())
+
+        record.signature_bundle = dossier.signature_bundle.to_dict()
+        record.chain_of_custody = updated_custody
+        record.status = "SEALED_SIGNED"
+
+        self.session.commit()
+        self.session.refresh(record)
+        return self._to_forensic_dossier_response(record)
+
+    def verify_forensic_dossier(
+        self,
+        dossier_id: str,
+        request: VerifyArtifactRequest,
+    ) -> VerifyArtifactResponse:
+        record = self.session.execute(
+            select(ForensicDossierRecord).where(
+                and_(
+                    ForensicDossierRecord.installation_id == self.installation_id,
+                    ForensicDossierRecord.dossier_id == dossier_id,
+                )
+            )
+        ).scalar_one_or_none()
+        if not record:
+            raise HTTPException(status_code=404, detail="Forensic dossier not found")
+
+        dossier = ForensicDossier.from_dict({
+            "dossier_id": record.dossier_id,
+            "case_id": record.case_id,
+            "installation_id": record.installation_id,
+            "title": record.title,
+            "incident_type": record.incident_type,
+            "fraud_loss_amount": record.fraud_loss_amount,
+            "currency": record.currency,
+            "examiner_subject": record.examiner_subject,
+            "examiner_role": record.examiner_role,
+            "created_at": record.created_at.isoformat(),
+            "case_summary": record.case_summary,
+            "attack_path_summary": record.attack_path_summary or {},
+            "identified_mule_nodes": record.identified_mule_nodes or [],
+            "evidence_records": record.evidence_records or [],
+            "chain_of_custody": record.chain_of_custody or [],
+            "section_106b_certificate": record.section_106b_certificate,
+            "dossier_digest": record.dossier_digest,
+            "signature_bundle": record.signature_bundle,
+        })
+
+        is_digest_valid = dossier.verify_dossier_integrity()
+        sig_verified = False
+        sig_err = None
+
+        if dossier.signature_bundle:
+            sig_verified = dossier.verify_digital_signature(request.trusted_public_key_pem)
+            if not sig_verified:
+                sig_err = "Cryptographic signature does not match canonical dossier digest"
+        else:
+            sig_err = "Dossier has no digital signature attached"
+
+        return VerifyArtifactResponse(
+            artifact_id=record.dossier_id,
+            artifact_type="forensic_dossier",
+            is_valid=is_digest_valid and (sig_verified if dossier.signature_bundle else True),
+            digest_verified=is_digest_valid,
+            signature_verified=sig_verified,
+            is_digitally_signed=dossier.signature_bundle is not None,
+            signature_error=sig_err,
+        )
+
+    def export_forensic_dossier_html(self, dossier_id: str) -> str:
+        record = self.session.execute(
+            select(ForensicDossierRecord).where(
+                and_(
+                    ForensicDossierRecord.installation_id == self.installation_id,
+                    ForensicDossierRecord.dossier_id == dossier_id,
+                )
+            )
+        ).scalar_one_or_none()
+        if not record:
+            raise HTTPException(status_code=404, detail="Forensic dossier not found")
+
+        dossier = ForensicDossier.from_dict({
+            "dossier_id": record.dossier_id,
+            "case_id": record.case_id,
+            "installation_id": record.installation_id,
+            "title": record.title,
+            "incident_type": record.incident_type,
+            "fraud_loss_amount": record.fraud_loss_amount,
+            "currency": record.currency,
+            "examiner_subject": record.examiner_subject,
+            "examiner_role": record.examiner_role,
+            "created_at": record.created_at.isoformat(),
+            "case_summary": record.case_summary,
+            "attack_path_summary": record.attack_path_summary or {},
+            "identified_mule_nodes": record.identified_mule_nodes or [],
+            "evidence_records": record.evidence_records or [],
+            "chain_of_custody": record.chain_of_custody or [],
+            "section_106b_certificate": record.section_106b_certificate,
+            "dossier_digest": record.dossier_digest,
+            "signature_bundle": record.signature_bundle,
+        })
+        return dossier.render_html_dossier()
+
+    def evaluate_inflight_payment(
+        self,
+        request: InflightPaymentEvaluationRequest,
+        actor_subject: str,
+    ) -> InflightPaymentEvaluationResponse:
+        debtor = PartyIdentification(
+            name=request.debtor_name,
+            account_number=request.debtor_account,
+            agent_bic=request.debtor_bic,
+            national_id=request.debtor_national_id,
+            msisdn=request.debtor_msisdn,
+        )
+        creditor = PartyIdentification(
+            name=request.creditor_name,
+            account_number=request.creditor_account,
+            agent_bic=request.creditor_bic,
+            national_id=request.creditor_national_id,
+            msisdn=request.creditor_msisdn,
+        )
+        clearing_rail = (
+            ClearingRail(request.clearing_rail)
+            if request.clearing_rail in ClearingRail.__members__.values()
+            else ClearingRail.PESALINK
+        )
+        transfer = Pacs008CreditTransfer(
+            msg_id=request.msg_id or f"MSG-{uuid.uuid4().hex[:12]}",
+            end_to_end_id=request.end_to_end_id,
+            tx_id=f"TX-{uuid.uuid4().hex[:12]}",
+            amount=request.amount,
+            currency=request.currency,
+            debtor=debtor,
+            creditor=creditor,
+            clearing_rail=clearing_rail,
+            remittance_narrative=request.remittance_narrative,
+        )
+
+        mule_accounts: set[str] = set()
+        findings = self.session.execute(
+            select(NetworkFindingRecord).where(
+                NetworkFindingRecord.installation_id == self.installation_id
+            )
+        ).scalars().all()
+        for f in findings:
+            if f.finding_data and "mule_accounts" in f.finding_data:
+                mule_accounts.update(f.finding_data["mule_accounts"])
+
+        eval_result = ISO20022Engine.evaluate_inflight_payment(
+            transfer=transfer,
+            known_mule_accounts=mule_accounts,
+            account_prior_transfers_count=request.account_prior_transfers_count,
+        )
+
+        record = InflightPaymentRiskRecord(
+            evaluation_id=f"eval-pmt-{uuid.uuid4().hex[:12]}",
+            installation_id=self.installation_id,
+            end_to_end_id=transfer.end_to_end_id,
+            clearing_rail=clearing_rail.value,
+            amount=transfer.amount,
+            currency=transfer.currency,
+            debtor_account=transfer.debtor.account_number,
+            creditor_account=transfer.creditor.account_number,
+            decision=eval_result.decision.value,
+            risk_score=eval_result.risk_score,
+            risk_tier=eval_result.risk_tier.value,
+            triggered_rules=list(eval_result.triggered_rules),
+            recommended_action=eval_result.recommended_action,
+            latency_ms=eval_result.latency_ms,
+            evaluated_at=eval_result.evaluated_at,
+        )
+        self.session.add(record)
+        self.session.commit()
+        self.session.refresh(record)
+
+        return InflightPaymentEvaluationResponse(
+            end_to_end_id=record.end_to_end_id,
+            decision=record.decision,
+            risk_score=record.risk_score,
+            risk_tier=record.risk_tier,
+            triggered_rules=record.triggered_rules,
+            recommended_action=record.recommended_action,
+            latency_ms=record.latency_ms,
+            evaluated_at=record.evaluated_at.isoformat(),
+        )
+
+    def verify_copilot_semantics(
+        self,
+        request: SemanticVerifyRequest,
+    ) -> SemanticVerifyResponse:
+        evidence_items = []
+        for d in request.evidence_context:
+            clean_scan = sanitize_narrative(d.get("excerpt", ""))
+            evidence_items.append(
+                EvidenceItem.create(
+                    evidence_id=d["evidence_id"],
+                    installation_id=self.installation_id,
+                    case_id="default",
+                    source_system=d.get("source_system", "CORE_BANKING"),
+                    source_record_id=d.get("source_record_id", d["evidence_id"]),
+                    excerpt=clean_scan.clean_text,
+                )
+            )
+        ctx = EvidenceContext(
+            installation_id=self.installation_id,
+            case_id="default",
+            items=tuple(evidence_items),
+        )
+
+        claims = []
+        for c in request.claims:
+            quotes = tuple(
+                EvidenceQuote(
+                    evidence_id=q["evidence_id"],
+                    quoted_text=q["quoted_text"],
+                )
+                for q in c.get("quotes", [])
+            )
+            kind_str = c.get("kind", "fact").upper()
+            kind = ClaimKind.FACT if kind_str == "FACT" else ClaimKind.INFERENCE
+            claims.append(
+                GroundedClaim(
+                    claim_id=c["claim_id"],
+                    statement=c["statement"],
+                    kind=kind,
+                    evidence_ids=tuple(c.get("evidence_ids", [])),
+                    quotes=quotes,
+                )
+            )
+
+        report = verify_report_semantics(claims, ctx)
+        return SemanticVerifyResponse(
+            is_valid=report.is_valid,
+            total_claims=report.total_claims,
+            entailed_claims=report.entailed_claims,
+            contradicted_claims=report.contradicted_claims,
+            numeric_mismatches=report.numeric_mismatches,
+            ungrounded_claims=report.ungrounded_claims,
+            evaluations=[e.to_dict() for e in report.evaluations],
+        )
+

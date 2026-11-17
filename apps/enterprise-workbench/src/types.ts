@@ -1228,5 +1228,74 @@ export interface ChampionChallengerRun {
   created_at: string;
 }
 
+export interface SignatureBundle {
+  algorithm: string;
+  signature_hex: string;
+  public_key_pem: string;
+  key_id: string;
+  signed_at: string;
+}
+
+export interface CustodyEvent {
+  event_id: string;
+  timestamp: string;
+  actor_subject: string;
+  actor_role: string;
+  action: string;
+  source_hash: string;
+  destination_hash: string;
+  notes?: string;
+}
+
+export interface Section106BCertificate {
+  certificate_id: string;
+  statutory_framework: string;
+  certifier_name: string;
+  certifier_designation: string;
+  certifier_organization: string;
+  device_identification: string;
+  operating_condition_statement: string;
+  hash_algorithm: string;
+  merkle_root_hash: string;
+  certified_at: string;
+  declaration_text: string;
+}
+
+export interface ForensicDossier {
+  dossier_id: string;
+  installation_id: string;
+  case_id: string;
+  title: string;
+  incident_type: string;
+  fraud_loss_amount: number;
+  currency: string;
+  examiner_subject: string;
+  examiner_role: string;
+  case_summary: string;
+  attack_path_summary: Record<string, unknown>;
+  identified_mule_nodes: Array<Record<string, unknown>>;
+  evidence_records: Array<Record<string, unknown>>;
+  chain_of_custody: CustodyEvent[];
+  section_106b_certificate?: Section106BCertificate | null;
+  dossier_digest: string;
+  signature_bundle?: SignatureBundle | null;
+  is_digitally_signed: boolean;
+  is_verified: boolean;
+  status: string;
+  created_at: string;
+}
+
+export interface InflightPaymentEvaluation {
+  end_to_end_id: string;
+  decision: "ALLOW" | "STEP_UP_AUTH" | "QUARANTINE_HOLD" | "BLOCK";
+  risk_score: number;
+  risk_tier: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
+  triggered_rules: string[];
+  recommended_action: string;
+  latency_ms: number;
+  evaluated_at: string;
+}
+
+
 
 

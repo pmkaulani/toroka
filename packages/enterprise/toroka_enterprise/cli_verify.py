@@ -23,6 +23,10 @@ from toroka_enterprise.governance.evidence_passport import (
     TorokaEvidencePassport,
     compute_evidence_digest,
 )
+from toroka_enterprise.governance.forensic_dossier import (
+    ForensicDossier,
+    compute_forensic_dossier_digest,
+)
 from toroka_enterprise.governance.pki import (
     SignatureBundle,
     verify_asymmetric_signature,
@@ -186,6 +190,64 @@ def verify_release_manifest_file(
     }
 
 
+def verify_dossier_file(
+    file_path: str,
+    trusted_public_key_pem: str | None = None,
+) -> dict[str, Any]:
+    """Offline verification of a Court-Ready Forensic Evidence Dossier."""
+    data = _load_json(file_path)
+    try:
+        dossier = ForensicDossier.from_dict(data)
+    except Exception as exc:
+        return {
+            "is_valid": False,
+            "error": f"Malformed dossier payload: {exc}",
+            "dossier_id": data.get("dossier_id", "unknown"),
+        }
+
+    # 1. Verify content digest integrity
+    is_digest_valid = dossier.verify_dossier_integrity()
+
+    # 2. Verify digital signature
+    sig_verified = False
+    sig_error: str | None = None
+    if dossier.signature_bundle:
+        try:
+            sig_verified = dossier.verify_digital_signature(trusted_public_key_pem)
+            if not sig_verified:
+                sig_error = "Digital signature failed verification against dossier digest"
+        except Exception as exc:
+            sig_error = f"Signature verification exception: {exc}"
+    else:
+        sig_error = "Dossier is unsigned (tamper-evident SHA-256 digest only, no non-repudiation signature)"
+
+    # 3. Section 106B Certificate
+    has_106b = dossier.section_106b_certificate is not None
+    cert_dict = dossier.section_106b_certificate.to_dict() if has_106b else None
+
+    is_overall_valid = is_digest_valid and (sig_verified if dossier.signature_bundle else True)
+
+    return {
+        "is_valid": is_overall_valid,
+        "dossier_id": dossier.dossier_id,
+        "case_id": dossier.case_id,
+        "installation_id": dossier.installation_id,
+        "title": dossier.title,
+        "fraud_loss_amount": dossier.fraud_loss_amount,
+        "currency": dossier.currency,
+        "digest_verified": is_digest_valid,
+        "dossier_digest": dossier.dossier_digest,
+        "is_digitally_signed": dossier.signature_bundle is not None,
+        "signature_verified": sig_verified,
+        "signing_algorithm": dossier.signature_bundle.algorithm if dossier.signature_bundle else None,
+        "signature_error": sig_error,
+        "has_section_106b_certificate": has_106b,
+        "section_106b_certificate": cert_dict,
+        "custody_steps_count": len(dossier.chain_of_custody),
+        "evidence_records_count": len(dossier.evidence_records),
+    }
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="toroka-verify",
@@ -204,12 +266,17 @@ def main(argv: list[str] | None = None) -> int:
     p_rel.add_argument("--file", "-f", required=True, help="Path to Release Manifest JSON file")
     p_rel.add_argument("--key", "-k", help="Path to trusted bank public key PEM file (optional)")
 
+    # Subcommand: dossier
+    p_dos = subparsers.add_parser("dossier", help="Verify a Court-Ready Forensic Evidence Dossier (Sec 106B)")
+    p_dos.add_argument("--file", "-f", required=True, help="Path to Forensic Dossier JSON file")
+    p_dos.add_argument("--key", "-k", help="Path to trusted examiner public key PEM file (optional)")
+
     # Subcommand: merkle
     p_merk = subparsers.add_parser("merkle", help="Verify a Merkle inclusion proof file")
     p_merk.add_argument("--proof-file", required=True, help="Path to Merkle proof JSON file")
     p_merk.add_argument("--leaf-file", required=True, help="Path to leaf content JSON file")
 
-    for subp in (p_pass, p_rel, p_merk):
+    for subp in (p_pass, p_rel, p_dos, p_merk):
         subp.add_argument("--json", action="store_true", help="Output verification report in machine-readable JSON")
 
     args = parser.parse_args(argv)
@@ -223,6 +290,8 @@ def main(argv: list[str] | None = None) -> int:
         result = verify_passport_file(args.file, trusted_public_key_pem=trusted_pem)
     elif args.command == "release":
         result = verify_release_manifest_file(args.file, trusted_public_key_pem=trusted_pem)
+    elif args.command == "dossier":
+        result = verify_dossier_file(args.file, trusted_public_key_pem=trusted_pem)
     elif args.command == "merkle":
         proof_data = _load_json(args.proof_file)
         leaf_data = _load_json(args.leaf_file)

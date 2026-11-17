@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 from fastapi import APIRouter, Depends, Query, status
+from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 
 from ..auth import EnterprisePrincipal, get_current_principal, require_roles
@@ -10,6 +11,7 @@ from ..governance_schemas import (
     ApproveComponentRequest,
     ChampionChallengerRunResponse,
     CreateComponentRequest,
+    CreateForensicDossierRequest,
     CreateIncidentRequest,
     CreateReleaseRequest,
     CreateValidationRunRequest,
@@ -18,10 +20,13 @@ from ..governance_schemas import (
     EvaluateQuantitativeDriftRequest,
     EvaluateReadinessGatesRequest,
     EvidencePassportResponse,
+    ForensicDossierResponse,
     GenerateEvidencePassportRequest,
     GovernanceIncidentResponse,
     GovernedAIProviderResponse,
     GovernedComponentResponse,
+    InflightPaymentEvaluationRequest,
+    InflightPaymentEvaluationResponse,
     ProductionReleaseResponse,
     PromoteReleaseRequest,
     QuantitativeDriftEvaluationResponse,
@@ -32,6 +37,8 @@ from ..governance_schemas import (
     RegisterAIProviderRequest,
     ResumeComponentRequest,
     RollbackReleaseRequest,
+    SemanticVerifyRequest,
+    SemanticVerifyResponse,
     SignArtifactRequest,
     SuspendComponentRequest,
     SuspensionRecordResponse,
@@ -818,4 +825,147 @@ def list_champion_challenger_runs(
     effective_inst = principal.installation_id or installation_id
     service = ProductionGovernanceService(db, effective_inst)
     return service.list_champion_challenger_runs(component_id=component_id)
+
+
+# =============================================================================
+# 12. Court-Ready Forensic Evidence Dossiers (Sec 106B & Chain of Custody)
+# =============================================================================
+
+@router.post(
+    "/forensic-dossiers",
+    response_model=ForensicDossierResponse,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_roles(ROLE_INVESTIGATOR, ROLE_AUTHORISER, ROLE_SYSTEM_ADMINISTRATOR))],
+)
+def create_forensic_dossier(
+    request: CreateForensicDossierRequest,
+    principal: EnterprisePrincipal = Depends(get_current_principal),
+    installation_id: str = Depends(get_installation_id),
+    db: Session = Depends(get_db),
+) -> ForensicDossierResponse:
+    effective_inst = principal.installation_id or installation_id
+    service = ProductionGovernanceService(db, effective_inst)
+    return service.create_forensic_dossier(request=request, actor_subject=principal.subject)
+
+
+@router.get(
+    "/forensic-dossiers/{dossier_id}",
+    response_model=ForensicDossierResponse,
+    dependencies=[
+        Depends(require_roles(ROLE_INVESTIGATOR, ROLE_AUDITOR, ROLE_AUTHORISER, ROLE_SYSTEM_ADMINISTRATOR))
+    ],
+)
+def get_forensic_dossier(
+    dossier_id: str,
+    principal: EnterprisePrincipal = Depends(get_current_principal),
+    installation_id: str = Depends(get_installation_id),
+    db: Session = Depends(get_db),
+) -> ForensicDossierResponse:
+    effective_inst = principal.installation_id or installation_id
+    service = ProductionGovernanceService(db, effective_inst)
+    return service.get_forensic_dossier(dossier_id=dossier_id)
+
+
+@router.post(
+    "/forensic-dossiers/{dossier_id}/sign",
+    response_model=ForensicDossierResponse,
+    dependencies=[Depends(require_roles(ROLE_AUTHORISER, ROLE_SYSTEM_ADMINISTRATOR))],
+)
+def sign_forensic_dossier(
+    dossier_id: str,
+    request: SignArtifactRequest,
+    principal: EnterprisePrincipal = Depends(get_current_principal),
+    installation_id: str = Depends(get_installation_id),
+    db: Session = Depends(get_db),
+) -> ForensicDossierResponse:
+    effective_inst = principal.installation_id or installation_id
+    service = ProductionGovernanceService(db, effective_inst)
+    return service.sign_forensic_dossier(
+        dossier_id=dossier_id,
+        request=request,
+        actor_subject=principal.subject,
+    )
+
+
+@router.post(
+    "/forensic-dossiers/{dossier_id}/verify",
+    response_model=VerifyArtifactResponse,
+    dependencies=[
+        Depends(require_roles(ROLE_INVESTIGATOR, ROLE_AUDITOR, ROLE_AUTHORISER, ROLE_SYSTEM_ADMINISTRATOR))
+    ],
+)
+def verify_forensic_dossier(
+    dossier_id: str,
+    request: VerifyArtifactRequest,
+    principal: EnterprisePrincipal = Depends(get_current_principal),
+    installation_id: str = Depends(get_installation_id),
+    db: Session = Depends(get_db),
+) -> VerifyArtifactResponse:
+    effective_inst = principal.installation_id or installation_id
+    service = ProductionGovernanceService(db, effective_inst)
+    return service.verify_forensic_dossier(dossier_id=dossier_id, request=request)
+
+
+@router.get(
+    "/forensic-dossiers/{dossier_id}/export-html",
+    response_class=HTMLResponse,
+    dependencies=[
+        Depends(require_roles(ROLE_INVESTIGATOR, ROLE_AUDITOR, ROLE_AUTHORISER, ROLE_SYSTEM_ADMINISTRATOR))
+    ],
+)
+def export_forensic_dossier_html(
+    dossier_id: str,
+    principal: EnterprisePrincipal = Depends(get_current_principal),
+    installation_id: str = Depends(get_installation_id),
+    db: Session = Depends(get_db),
+) -> HTMLResponse:
+    effective_inst = principal.installation_id or installation_id
+    service = ProductionGovernanceService(db, effective_inst)
+    html_content = service.export_forensic_dossier_html(dossier_id=dossier_id)
+    return HTMLResponse(content=html_content)
+
+
+# =============================================================================
+# 13. ISO 20022 Financial Messaging & In-Flight Risk Scoring
+# =============================================================================
+
+@router.post(
+    "/integrations/iso20022/evaluate-inflight",
+    response_model=InflightPaymentEvaluationResponse,
+    dependencies=[
+        Depends(require_roles(ROLE_INVESTIGATOR, ROLE_AUTHORISER, ROLE_SYSTEM_ADMINISTRATOR))
+    ],
+)
+def evaluate_inflight_payment(
+    request: InflightPaymentEvaluationRequest,
+    principal: EnterprisePrincipal = Depends(get_current_principal),
+    installation_id: str = Depends(get_installation_id),
+    db: Session = Depends(get_db),
+) -> InflightPaymentEvaluationResponse:
+    effective_inst = principal.installation_id or installation_id
+    service = ProductionGovernanceService(db, effective_inst)
+    return service.evaluate_inflight_payment(request=request, actor_subject=principal.subject)
+
+
+# =============================================================================
+# 14. Semantic Grounding & Copilot Anti-Evasion Verification
+# =============================================================================
+
+@router.post(
+    "/copilot/semantic-verify",
+    response_model=SemanticVerifyResponse,
+    dependencies=[
+        Depends(require_roles(ROLE_INVESTIGATOR, ROLE_AUDITOR, ROLE_AUTHORISER, ROLE_SYSTEM_ADMINISTRATOR))
+    ],
+)
+def verify_copilot_semantics(
+    request: SemanticVerifyRequest,
+    principal: EnterprisePrincipal = Depends(get_current_principal),
+    installation_id: str = Depends(get_installation_id),
+    db: Session = Depends(get_db),
+) -> SemanticVerifyResponse:
+    effective_inst = principal.installation_id or installation_id
+    service = ProductionGovernanceService(db, effective_inst)
+    return service.verify_copilot_semantics(request=request)
+
 
