@@ -139,13 +139,13 @@ class DeterministicRuleBasedProvider(CopilotModelProvider):
             claims.append({
                 "claim_id": "inf_1",
                 "kind": "inference",
-                "statement": "The chronological sequence suggests potential account takeover followed by rapid fund movement.",
+                "statement": "The recorded sequence indicates related chronological events across monitored banking systems.",
                 "evidence_ids": primary_ev,
                 "quotes": [],
-                "limitations": "Inference based on temporal proximity. Legitimate customer emergency mandate cannot be ruled out without call logs.",
+                "limitations": "Inference based on recorded timestamps. Legitimate customer mandate cannot be ruled out without independent authorization records.",
                 "investigative_basis": None,
                 "alternative_explanations": [
-                    "Authorized high-value transaction executed under legitimate customer power of attorney."
+                    "Authorized customer-initiated activity executed under dual branch control."
                 ],
             })
 
@@ -153,7 +153,7 @@ class DeterministicRuleBasedProvider(CopilotModelProvider):
         claims.append({
             "claim_id": "unk_1",
             "kind": "unknown",
-            "statement": "Customer authorization has not been verified from independent out-of-band communication records.",
+            "statement": "Customer authorization and out-of-band communication records have not yet been independently verified.",
             "evidence_ids": [],
             "quotes": [],
             "limitations": None,
@@ -165,7 +165,7 @@ class DeterministicRuleBasedProvider(CopilotModelProvider):
         claims.append({
             "claim_id": "rec_1",
             "kind": "recommendation",
-            "statement": "Request branch telephony audio records and supervisor override ticket for the beneficiary modification.",
+            "statement": "Request customer-service authorization records and supervisor override tickets before drawing fraud conclusions.",
             "evidence_ids": [],
             "quotes": [],
             "limitations": None,
@@ -173,10 +173,12 @@ class DeterministicRuleBasedProvider(CopilotModelProvider):
             "alternative_explanations": [],
         })
 
+        systems = sorted({item.get("source_system", "banking_system") for item in evidence_items})
+        sys_str = ", ".join(systems) if systems else "banking systems"
         summary = (
-            f"Synthesized analysis of {len(evidence_items)} evidence records across "
-            f"{len(tools_executed)} investigation domains. Observed sequence indicates "
-            "credential usage, parameter adjustment, and funds movement without verified customer authorization."
+            f"Synthesized evidence-grounded review of {len(evidence_items)} records across [{sys_str}]. "
+            f"Observed event sequence establishes chronological execution across {len(tools_executed)} investigation domains; "
+            "supporting customer-service authorisation records have not yet been verified."
         )
 
         # Plan steps
@@ -288,9 +290,17 @@ class OpenAiCompatibleProvider(CopilotModelProvider):
         except Exception as exc:
             logger.error("HTTP Model Provider error: %s. Falling back to deterministic provider.", exc)
             fallback = DeterministicRuleBasedProvider(self.config)
-            return fallback.generate_structured_response(
+            res = fallback.generate_structured_response(
                 prompt, system_prompt, task_type, evidence_items, tools_executed
             )
+            res["fallback_used"] = True
+            res["fallback_reason"] = f"HTTP Model Provider error: {str(exc)}"
+            res["requested_provider"] = "openai_compatible"
+            res["actual_provider"] = "deterministic_rule_based"
+            res["requested_model"] = self.config.model_name
+            res["actual_model"] = "toroka-investigation-engine-v1"
+            res["is_degraded_mode"] = True
+            return res
 
 
 def get_copilot_provider(config: CopilotModelConfig | None = None) -> CopilotModelProvider:

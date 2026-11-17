@@ -268,6 +268,14 @@ class CopilotOrchestrator:
             )
 
         response_id = f"resp_{uuid.uuid4().hex[:12]}"
+        provider_info = dict(self.provider.check_health())
+        fallback_used = bool(raw_output.get("fallback_used", False))
+        if fallback_used:
+            provider_info["fallback_used"] = True
+            provider_info["fallback_reason"] = raw_output.get("fallback_reason")
+            provider_info["actual_provider"] = raw_output.get("actual_provider", "deterministic_rule_based")
+            provider_info["is_degraded_mode"] = True
+
         initial_response = InvestigationCopilotResponse(
             response_id=response_id,
             thread_id=thread_id or f"thread_{uuid.uuid4().hex[:8]}",
@@ -281,7 +289,14 @@ class CopilotOrchestrator:
             plan=plan,
             report_draft=report_draft,
             tool_calls_executed=tuple(executed_tool_records),
-            provider_info=self.provider.check_health(),
+            provider_info=provider_info,
+            requested_provider=str(raw_output.get("requested_provider", self.provider.config.provider_type)),
+            actual_provider=str(raw_output.get("actual_provider", self.provider.config.provider_type)),
+            requested_model=str(raw_output.get("requested_model", self.provider.config.model_name)),
+            actual_model=str(raw_output.get("actual_model", "toroka-investigation-engine-v1" if fallback_used else self.provider.config.model_name)),
+            fallback_used=fallback_used,
+            fallback_reason=raw_output.get("fallback_reason"),
+            is_degraded_mode=bool(raw_output.get("is_degraded_mode", False)),
             created_at=datetime.now(timezone.utc),
         )
 

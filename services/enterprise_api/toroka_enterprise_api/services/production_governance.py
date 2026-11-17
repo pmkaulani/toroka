@@ -40,6 +40,7 @@ from toroka_enterprise.governance.incidents import (
 from toroka_enterprise.governance.kill_switch import (
     ComponentSuspended,
     KillSwitch,
+    KillSwitchStore,
     SuspensionRecord,
 )
 from toroka_enterprise.governance.models import (
@@ -112,12 +113,99 @@ def _utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+class DatabaseKillSwitchStore:
+    """Persistent KillSwitchStore backed by SQLAlchemy database records."""
+
+    def __init__(self, session: Session, installation_id: str) -> None:
+        self.session = session
+        self.installation_id = installation_id
+
+    def get_active_suspension(self, component_id: str, version: str) -> SuspensionRecord | None:
+        rec = self.session.execute(
+            select(SuspensionAuditRecord).where(
+                and_(
+                    SuspensionAuditRecord.installation_id == self.installation_id,
+                    SuspensionAuditRecord.component_id == component_id,
+                    SuspensionAuditRecord.component_version == version,
+                    SuspensionAuditRecord.is_active == True,  # noqa: E712
+                )
+            )
+        ).scalar_one_or_none()
+        if rec:
+            return SuspensionRecord(
+                component_id=rec.component_id,
+                component_version=rec.component_version,
+                suspended_by=rec.suspended_by,
+                suspended_at=rec.suspended_at,
+                reason=rec.reason,
+                incident_id=rec.incident_id,
+                automatic=False,
+            )
+        comp = self.session.execute(
+            select(GovernedComponentRecord).where(
+                and_(
+                    GovernedComponentRecord.installation_id == self.installation_id,
+                    GovernedComponentRecord.component_id == component_id,
+                    GovernedComponentRecord.version == version,
+                    GovernedComponentRecord.status == GovernanceStatus.SUSPENDED.value,
+                )
+            )
+        ).scalar_one_or_none()
+        if comp:
+            return SuspensionRecord(
+                component_id=comp.component_id,
+                component_version=comp.version,
+                suspended_by=comp.suspended_by or "system",
+                suspended_at=comp.suspended_at or comp.updated_at,
+                reason=f"Component status is {comp.status}",
+                incident_id=None,
+                automatic=False,
+            )
+        return None
+
+    def list_active_suspensions(self) -> list[SuspensionRecord]:
+        records = self.session.execute(
+            select(SuspensionAuditRecord).where(
+                and_(
+                    SuspensionAuditRecord.installation_id == self.installation_id,
+                    SuspensionAuditRecord.is_active == True,  # noqa: E712
+                )
+            )
+        ).scalars().all()
+        return [
+            SuspensionRecord(
+                component_id=r.component_id,
+                component_version=r.component_version,
+                suspended_by=r.suspended_by,
+                suspended_at=r.suspended_at,
+                reason=r.reason,
+                incident_id=r.incident_id,
+                automatic=False,
+            )
+            for r in records
+        ]
+
+    def record_suspension(self, record: SuspensionRecord) -> None:
+        pass
+
+    def record_resume(self, record: SuspensionRecord) -> None:
+        pass
+
+
 class ProductionGovernanceService:
     """Operational service for Toroka production governance, model risk, and deployment readiness."""
 
     def __init__(self, session: Session, installation_id: str) -> None:
         self.session = session
         self.installation_id = installation_id
+
+    def get_kill_switch(self) -> KillSwitch:
+        """Returns a domain KillSwitch backed by the persistent database store."""
+        return KillSwitch(store=DatabaseKillSwitchStore(self.session, self.installation_id))
+
+    def is_component_suspended(self, component_id: str, version: str) -> bool:
+        """Consult persistent governance database records for component active suspension."""
+        return self.get_kill_switch().is_suspended(component_id, version)
 
     # =========================================================================
     # 1. Model & Component Registry
@@ -503,6 +591,29 @@ class ProductionGovernanceService:
                 detail=f"Release '{release_id}' not found.",
             )
 
+        # Check active suspensions for release components
+        active_susp = self.session.execute(
+            select(SuspensionAuditRecord).where(
+                and_(
+                    SuspensionAuditRecord.installation_id == self.installation_id,
+                    SuspensionAuditRecord.is_active == True,
+                )
+            )
+        ).scalars().all()
+        has_susp = any(s.component_id in (record.components_manifest or {}) for s in active_susp)
+
+        # Check blocking incidents
+        blocking_inc = self.session.execute(
+            select(IncidentRecord).where(
+                and_(
+                    IncidentRecord.installation_id == self.installation_id,
+                    IncidentRecord.severity.in_(["CRITICAL", "HIGH"]),
+                    IncidentRecord.status.in_(["OPEN", "TRIAGED", "INVESTIGATING"]),
+                )
+            )
+        ).scalars().all()
+        has_inc = len(blocking_inc) > 0
+
         manifest = ProductionReleaseManifest(
             release_id=record.release_id,
             version=record.version,
@@ -513,13 +624,17 @@ class ProductionGovernanceService:
             readiness_gates=tuple(record.readiness_gates or []),
             status=ReleaseStatus(record.status),
             manifest_digest=record.manifest_digest,
+            has_blocking_incidents=has_inc,
+            has_active_suspensions=has_susp,
         )
 
-        if target_environment == "production" and not can_promote_to_production(manifest):
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail="Release does not meet mandatory production readiness criteria (validation runs, approvals, or gates incomplete).",
-            )
+        if target_environment == "production":
+            eligible, blocking_reasons = manifest.validate_promotion_eligibility()
+            if not eligible:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail=f"Release does not meet mandatory production readiness criteria: {'; '.join(blocking_reasons)}",
+                )
 
         now = _utc_now()
         record.environment = target_environment

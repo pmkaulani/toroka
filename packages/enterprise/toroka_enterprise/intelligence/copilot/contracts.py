@@ -183,3 +183,14 @@ class InvestigationCopilotResponse:
     grounding_report: Any | None = None
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     provider_info: dict[str, Any] = field(default_factory=dict)
+    requested_provider: str = ""
+    actual_provider: str = ""
+    requested_model: str = ""
+    actual_model: str = ""
+    fallback_used: bool = False
+    fallback_reason: str | None = None
+    is_degraded_mode: bool = False
+    provider_version: str = "v1.0.0"
+    summary_grounded: bool = True
+    report_grounded: bool = True
+

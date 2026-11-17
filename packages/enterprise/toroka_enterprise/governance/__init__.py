@@ -25,7 +25,9 @@ from .registry import (
 )
 from .kill_switch import (
     ComponentSuspended,
+    InMemoryKillSwitchStore,
     KillSwitch,
+    KillSwitchStore,
     SuspensionRecord,
 )
 from .incidents import (
@@ -44,6 +46,8 @@ from .drift import (
 )
 from .evidence_passport import (
     TorokaEvidencePassport,
+    BoundEvidenceItem,
+    compute_evidence_digest,
 )
 from .readiness import (
     GateStatus,
@@ -66,6 +70,12 @@ from .third_party import (
     GovernedAIProvider,
     verify_provider_compliance,
 )
+from .control_plane import (
+    PillarHealth,
+    PillarStatus,
+    SystemGovernanceHealth,
+    TorokaControlPlane,
+)
 
 __all__ = [
     "ComponentType",
@@ -85,6 +95,8 @@ __all__ = [
     "RegistryError",
     "ComponentSuspended",
     "KillSwitch",
+    "KillSwitchStore",
+    "InMemoryKillSwitchStore",
     "SuspensionRecord",
     "GovernanceIncident",
     "IncidentCategory",
@@ -110,4 +122,8 @@ __all__ = [
     "evaluate_copilot_benchmark",
     "GovernedAIProvider",
     "verify_provider_compliance",
+    "TorokaControlPlane",
+    "SystemGovernanceHealth",
+    "PillarHealth",
+    "PillarStatus",
 ]

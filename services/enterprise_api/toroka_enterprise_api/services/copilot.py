@@ -280,6 +280,13 @@ class CopilotService:
                 "task_type": copilot_resp.task_type.value,
                 "verified_claims": len(claims_json),
                 "grounding_valid": str(copilot_resp.grounding_report.valid if copilot_resp.grounding_report else True),
+                "requested_provider": copilot_resp.requested_provider,
+                "actual_provider": copilot_resp.actual_provider,
+                "requested_model": copilot_resp.requested_model,
+                "actual_model": copilot_resp.actual_model,
+                "fallback_used": copilot_resp.fallback_used,
+                "fallback_reason": str(copilot_resp.fallback_reason or ""),
+                "is_degraded_mode": copilot_resp.is_degraded_mode,
             },
         )
         self.session.commit()

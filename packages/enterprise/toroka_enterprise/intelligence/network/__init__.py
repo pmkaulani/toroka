@@ -19,10 +19,13 @@ from .motifs import (
     detect_shared_infrastructure,
 )
 from .resolution import (
+    AttributeRiskTier,
     EntityLinkCandidate,
     EntityLinkStatus,
     EntityResolutionEngine,
     MatchType,
+    can_collapse_entities,
+    classify_attribute_risk,
     normalize_identifier,
 )
 from .temporal import (
@@ -62,6 +65,9 @@ __all__ = [
     "detect_circular_movement",
     "detect_common_beneficiaries",
     "detect_shared_infrastructure",
+    "AttributeRiskTier",
+    "classify_attribute_risk",
+    "can_collapse_entities",
     "EntityLinkCandidate",
     "EntityLinkStatus",
     "EntityResolutionEngine",

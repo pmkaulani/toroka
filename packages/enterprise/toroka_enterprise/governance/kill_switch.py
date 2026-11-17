@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any
+from typing import Any, Protocol, runtime_checkable
 
 
 @dataclass(frozen=True)
@@ -27,11 +27,54 @@ class ComponentSuspended(Exception):
     pass
 
 
-class KillSwitch:
-    """Manages component-level suspension and rapid fault isolation."""
+@runtime_checkable
+class KillSwitchStore(Protocol):
+    """Protocol for persistent storage of component suspensions."""
+
+    def get_active_suspension(self, component_id: str, version: str) -> SuspensionRecord | None:
+        ...
+
+    def list_active_suspensions(self) -> list[SuspensionRecord]:
+        ...
+
+    def record_suspension(self, record: SuspensionRecord) -> None:
+        ...
+
+    def record_resume(self, record: SuspensionRecord) -> None:
+        ...
+
+
+class InMemoryKillSwitchStore:
+    """Default in-memory store for kill switch records."""
 
     def __init__(self) -> None:
-        self._suspended: dict[tuple[str, str], SuspensionRecord] = {}
+        self._records: dict[tuple[str, str], SuspensionRecord] = {}
+
+    def get_active_suspension(self, component_id: str, version: str) -> SuspensionRecord | None:
+        rec = self._records.get((component_id, version))
+        if rec and rec.is_active:
+            return rec
+        return None
+
+    def list_active_suspensions(self) -> list[SuspensionRecord]:
+        return [r for r in self._records.values() if r.is_active]
+
+    def record_suspension(self, record: SuspensionRecord) -> None:
+        self._records[(record.component_id, record.component_version)] = record
+
+    def record_resume(self, record: SuspensionRecord) -> None:
+        self._records[(record.component_id, record.component_version)] = record
+
+
+class KillSwitch:
+    """Manages component-level suspension and rapid fault isolation with persistent store backing."""
+
+    def __init__(self, store: KillSwitchStore | None = None) -> None:
+        self._store: KillSwitchStore = store if store is not None else InMemoryKillSwitchStore()
+
+    @property
+    def store(self) -> KillSwitchStore:
+        return self._store
 
     def suspend(
         self,
@@ -58,7 +101,7 @@ class KillSwitch:
             incident_id=incident_id,
             automatic=automatic,
         )
-        self._suspended[(component_id, version)] = record
+        self._store.record_suspension(record)
         return record
 
     def resume(
@@ -70,15 +113,14 @@ class KillSwitch:
         reason: str,
         now: datetime,
     ) -> SuspensionRecord:
-        key = (component_id, version)
-        if key not in self._suspended or not self._suspended[key].is_active:
+        prev = self._store.get_active_suspension(component_id, version)
+        if prev is None:
             raise ValueError(f"Component {component_id}:{version} is not currently suspended")
         if not actor or not actor.strip():
             raise ValueError("Resume requires an authenticated actor")
         if not reason or not reason.strip():
             raise ValueError("Resume requires a reason")
 
-        prev = self._suspended[key]
         updated = SuspensionRecord(
             component_id=prev.component_id,
             component_version=prev.component_version,
@@ -91,21 +133,19 @@ class KillSwitch:
             resumed_at=now,
             resume_reason=reason,
         )
-        self._suspended[key] = updated
+        self._store.record_resume(updated)
         return updated
 
     def is_suspended(self, component_id: str, version: str) -> bool:
-        key = (component_id, version)
-        rec = self._suspended.get(key)
-        return rec is not None and rec.is_active
+        return self._store.get_active_suspension(component_id, version) is not None
 
     def assert_active(self, component_id: str, version: str) -> None:
-        if self.is_suspended(component_id, version):
-            rec = self._suspended[(component_id, version)]
+        rec = self._store.get_active_suspension(component_id, version)
+        if rec is not None:
             raise ComponentSuspended(
                 f"Component '{component_id}:{version}' is suspended by {rec.suspended_by}. "
                 f"Reason: {rec.reason}"
             )
 
     def get_active_suspensions(self) -> list[SuspensionRecord]:
-        return [rec for rec in self._suspended.values() if rec.is_active]
+        return self._store.list_active_suspensions()

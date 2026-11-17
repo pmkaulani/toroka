@@ -14,6 +14,42 @@ class EntityLinkStatus(StrEnum):
     RELATIONSHIP_DISPROVEN = "RELATIONSHIP_DISPROVEN"
 
 
+class AttributeRiskTier(StrEnum):
+    STRONG_IDENTIFIER = "strong_identifier"
+    COMMODITY_IDENTIFIER = "commodity_identifier"
+    EPHEMERAL_INFRASTRUCTURE = "ephemeral_infrastructure"
+    UNCLASSIFIED = "unclassified"
+
+
+def classify_attribute_risk(attribute_type: str) -> AttributeRiskTier:
+    """Categorize attribute specificity to prevent accidental identity collapses."""
+    attr = (attribute_type or "").lower().strip()
+    if attr in ("national_id_hash", "ssn_hash", "tax_id_hash", "passport_hash", "id_number_hash"):
+        return AttributeRiskTier.STRONG_IDENTIFIER
+    if attr in (
+        "phone",
+        "telephone",
+        "phone_number",
+        "email",
+        "email_address",
+        "device",
+        "device_id",
+        "mac_address",
+        "hardware_fingerprint",
+    ):
+        return AttributeRiskTier.COMMODITY_IDENTIFIER
+    if attr in (
+        "ip_address",
+        "ip_subnet",
+        "branch_workstation",
+        "workstation",
+        "wifi_bssid",
+        "asn",
+    ):
+        return AttributeRiskTier.EPHEMERAL_INFRASTRUCTURE
+    return AttributeRiskTier.UNCLASSIFIED
+
+
 class MatchType(StrEnum):
     EXACT = "exact"
     NORMALIZED = "normalized"
@@ -49,6 +85,28 @@ class EntityLinkCandidate:
             raise ValueError("Source and target entity keys are required")
         if not (0.0 <= self.confidence <= 1.0):
             raise ValueError(f"Confidence must be between 0.0 and 1.0, got {self.confidence}")
+        if self.status == EntityLinkStatus.SAME_ENTITY_CONFIRMED:
+            if not self.reviewed_by or not self.reviewed_by.strip():
+                raise ValueError(
+                    "SAME_ENTITY_CONFIRMED status requires human maker-checker review with reviewed_by"
+                )
+            if not self.review_rationale or len(self.review_rationale.strip()) < 5:
+                raise ValueError(
+                    "SAME_ENTITY_CONFIRMED status requires human maker-checker review with substantive review_rationale"
+                )
+
+    @property
+    def is_confirmed_identity(self) -> bool:
+        """Strict governance guard: identity confirmation is ONLY valid when explicitly reviewed."""
+        return (
+            self.status == EntityLinkStatus.SAME_ENTITY_CONFIRMED
+            and bool(self.reviewed_by and self.reviewed_by.strip())
+            and bool(self.review_rationale and len(self.review_rationale.strip()) >= 5)
+        )
+
+    @property
+    def attribute_risk_tier(self) -> AttributeRiskTier:
+        return classify_attribute_risk(self.attribute_type)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -58,8 +116,10 @@ class EntityLinkCandidate:
             "target_entity_key": self.target_entity_key,
             "attribute_type": self.attribute_type,
             "attribute_value": self.attribute_value,
+            "attribute_risk_tier": self.attribute_risk_tier.value,
             "match_type": self.match_type.value,
             "status": self.status.value,
+            "is_confirmed_identity": self.is_confirmed_identity,
             "confidence": self.confidence,
             "supporting_evidence": list(self.supporting_evidence),
             "contradicting_evidence": list(self.contradicting_evidence),
@@ -204,3 +264,22 @@ class EntityResolutionEngine:
             reviewed_at=t,
             review_rationale=rationale.strip(),
         )
+
+
+def can_collapse_entities(candidate: EntityLinkCandidate) -> bool:
+    """Strict identity collapsing gate.
+
+    Prevents probabilistic identity collapse. Returns True ONLY when:
+    1. The candidate is explicitly confirmed via maker-checker human review (is_confirmed_identity is True).
+    2. Commodity identifiers (phone, email, device) alone without confirmed review never collapse identities.
+    3. Ephemeral infrastructure attributes (IP address, subnet, branch workstation) cannot collapse entities
+       into a single physical person unless corroborated across at least two distinct banking systems and multiple evidence items.
+    """
+    if not candidate.is_confirmed_identity:
+        return False
+    risk = classify_attribute_risk(candidate.attribute_type)
+    if risk == AttributeRiskTier.EPHEMERAL_INFRASTRUCTURE:
+        if len(candidate.supporting_evidence) < 2 or len(candidate.source_systems) < 2:
+            return False
+    return True
+
