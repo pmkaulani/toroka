@@ -47,6 +47,7 @@ from .drift import (
 from .evidence_passport import (
     TorokaEvidencePassport,
     BoundEvidenceItem,
+    canonical_evidence_record,
     compute_evidence_digest,
 )
 from .readiness import (
@@ -61,6 +62,9 @@ from .deployment import (
     ProductionReleaseManifest,
     ReleaseStatus,
     can_promote_to_production,
+    canonical_json,
+    compute_release_manifest_digest,
+    release_manifest_payload,
 )
 from .ai_evaluation import (
     CopilotBenchmarkMetrics,
@@ -109,6 +113,9 @@ __all__ = [
     "SystemHealthOverview",
     "evaluate_metric_drift",
     "TorokaEvidencePassport",
+    "BoundEvidenceItem",
+    "canonical_evidence_record",
+    "compute_evidence_digest",
     "GateStatus",
     "MANDATORY_GATES",
     "ReadinessAssessment",
@@ -118,6 +125,9 @@ __all__ = [
     "ProductionReleaseManifest",
     "ReleaseStatus",
     "can_promote_to_production",
+    "canonical_json",
+    "compute_release_manifest_digest",
+    "release_manifest_payload",
     "CopilotBenchmarkMetrics",
     "evaluate_copilot_benchmark",
     "GovernedAIProvider",

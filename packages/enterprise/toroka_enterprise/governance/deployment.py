@@ -1,12 +1,67 @@
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import StrEnum
 from typing import Any
 from .readiness import ReadinessAssessment, MANDATORY_GATES, GateStatus
+
+
+def _canonical_utc(value: datetime) -> str:
+    # SQL backends may return naive datetimes. Treat those as UTC consistently.
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc).isoformat(timespec="microseconds")
+
+
+def canonical_json(value: Any) -> str:
+    return json.dumps(
+        value,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+        allow_nan=False,
+    )
+
+
+def release_manifest_payload(
+    *,
+    release_id: str,
+    version: str,
+    components: dict[str, str],
+    validation_runs: tuple[str, ...] | list[str],
+    approval_records: tuple[str, ...] | list[str],
+    readiness_gates: tuple[dict[str, Any], ...] | list[dict[str, Any]],
+    created_by: str,
+    created_at: datetime,
+) -> dict[str, Any]:
+    # Do not include environment/status/promoted_by/promoted_at: these are mutable
+    # lifecycle fields and would invalidate the immutable release-content digest.
+    gates = sorted(
+        (dict(g) for g in readiness_gates),
+        key=lambda g: (str(g.get("gate_name", "")), canonical_json(g)),
+    )
+    return {
+        "schema": "toroka.release-manifest.v1",
+        "release_id": release_id,
+        "version": version,
+        "components": dict(sorted(components.items())),
+        "validation_runs": sorted(set(validation_runs)),
+        "approval_records": sorted(set(approval_records)),
+        "readiness_gates": gates,
+        "created_by": created_by,
+        "created_at": _canonical_utc(created_at),
+    }
+
+
+def compute_release_manifest_digest(payload: dict[str, Any] | None = None, **kwargs: Any) -> str:
+    if payload is None:
+        payload = release_manifest_payload(**kwargs)
+    raw = canonical_json(payload).encode("utf-8")
+    return hashlib.sha256(raw).hexdigest()
 
 
 class DeploymentEnvironment(StrEnum):
@@ -47,29 +102,49 @@ class ProductionReleaseManifest:
     readiness_assessment: ReadinessAssessment | None = None
 
     def __post_init__(self) -> None:
+        if not self.readiness_gates and self.readiness_assessment:
+            gates_data = tuple(
+                {
+                    "gate_name": g.gate_name,
+                    "status": g.status.value,
+                    "verified_by": g.verified_by,
+                    "rationale": g.rationale,
+                    "evidence_reference": g.evidence_reference,
+                }
+                for g in self.readiness_assessment.gates
+            )
+            object.__setattr__(self, "readiness_gates", gates_data)
+
         if not self.manifest_digest:
-            payload = self._compute_digest_payload()
-            digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+            digest = compute_release_manifest_digest(
+                release_id=self.release_id,
+                version=self.version,
+                components=self.components,
+                validation_runs=self.validation_runs,
+                approval_records=self.approval_records,
+                readiness_gates=self.readiness_gates,
+                created_by=self.created_by,
+                created_at=self.created_at,
+            )
             object.__setattr__(self, "manifest_digest", digest)
 
     def _compute_digest_payload(self) -> str:
-        gates_summary = ",".join(
-            sorted(
-                f"{g.get('gate_name')}:{g.get('status')}"
-                for g in self.readiness_gates
-                if isinstance(g, dict) and "gate_name" in g
+        return canonical_json(
+            release_manifest_payload(
+                release_id=self.release_id,
+                version=self.version,
+                components=self.components,
+                validation_runs=self.validation_runs,
+                approval_records=self.approval_records,
+                readiness_gates=self.readiness_gates,
+                created_by=self.created_by,
+                created_at=self.created_at,
             )
-        )
-        return (
-            f"{self.release_id}:{self.version}:{self.environment.value}:"
-            f"{json.dumps(self.components, sort_keys=True)}:"
-            f"{','.join(sorted(self.validation_runs))}:{','.join(sorted(self.approval_records))}:"
-            f"{gates_summary}"
         )
 
     def verify_manifest_integrity(self) -> bool:
         expected = hashlib.sha256(self._compute_digest_payload().encode("utf-8")).hexdigest()
-        return self.manifest_digest == expected
+        return hmac.compare_digest(self.manifest_digest, expected)
 
     def validate_promotion_eligibility(
         self,
@@ -131,7 +206,7 @@ class ProductionReleaseManifest:
             gate_stat = evaluated_gate_statuses.get(mandatory_gate)
             if gate_stat is None:
                 reasons.append(f"Mandatory readiness gate '{mandatory_gate}' has not been evaluated")
-            elif gate_stat != GateStatus.PASS.value:
+            elif str(gate_stat).upper() != GateStatus.PASS.value:
                 reasons.append(f"Mandatory readiness gate '{mandatory_gate}' is {gate_stat} (requires PASS)")
 
         # 7. Blocking incidents

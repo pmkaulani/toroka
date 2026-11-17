@@ -92,6 +92,12 @@ class CopilotReportDraftResponse(BaseModel):
     evidence_context_hash: str
     citations: list[dict[str, Any]] = Field(default_factory=list)
     model_info: dict[str, Any] = Field(default_factory=dict)
+    created_by: str = "system"
+    edited_by: str | None = None
+    edit_version: int = 0
+    content_digest: str = ""
+    grounding_status: str = "UNVERIFIED"
+    grounding_report: dict[str, Any] = Field(default_factory=dict)
     review_notes: str | None = None
     reviewed_by: str | None = None
     reviewed_at: str | None = None

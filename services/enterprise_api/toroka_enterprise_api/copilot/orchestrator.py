@@ -303,3 +303,19 @@ class CopilotOrchestrator:
         # 9. Grounding and citation validation
         validated_response = filter_unsupported_claims(initial_response, evidence_ctx)
         return validated_response
+
+    def get_evidence_context(self, case_id: str) -> EvidenceContext:
+        retriever = EvidenceRetriever(self.session, self.installation_id)
+        registry = retriever.build_tool_registry()
+        tool_ctx = ToolContext(
+            installation_id=self.installation_id,
+            case_id=case_id,
+            actor_subject="system",
+            actor_role="investigator",
+        )
+        for tool_name in ["get_case_snapshot", "get_case_timeline", "get_reconstruction", "get_network_subgraph", "get_evidence_coverage"]:
+            try:
+                registry.execute(tool_name, {}, tool_ctx)
+            except Exception:
+                pass
+        return retriever.get_evidence_context(case_id)

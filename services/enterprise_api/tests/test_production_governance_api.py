@@ -84,7 +84,7 @@ def test_component_registry_and_maker_checker_approval(oidc_client, token_factor
             "component_id": "det_rapid_flow",
             "component_version": "1.0.0",
             "dataset_digest": "d" * 64,
-            "configuration_digest": "e" * 64,
+            "configuration_digest": "b" * 64,
             "metrics": [
                 {"name": "precision", "value": 0.95, "threshold": 0.85, "direction": "gte", "result": "pass"},
             ],
@@ -92,14 +92,15 @@ def test_component_registry_and_maker_checker_approval(oidc_client, token_factor
         },
     )
     assert val_resp.status_code == 201
+    val_data = val_resp.json()
 
     # 3. Maker-checker violation: Alice cannot approve her own high-risk component
     self_approve_resp = oidc_client.post(
         "/api/enterprise/v1/governance/components/det_rapid_flow/1.0.0/approve",
         headers={"Authorization": f"Bearer {token_author_a}"},
         json={
-            "validation_run_id": "val_123",
-            "validation_digest": "c" * 64,
+            "validation_run_id": val_data["run_id"],
+            "validation_digest": val_data["validation_digest"],
             "rationale": "Self approval should fail",
         },
     )
@@ -111,8 +112,8 @@ def test_component_registry_and_maker_checker_approval(oidc_client, token_factor
         "/api/enterprise/v1/governance/components/det_rapid_flow/1.0.0/approve",
         headers={"Authorization": f"Bearer {token_author_b}"},
         json={
-            "validation_run_id": "val_123",
-            "validation_digest": "c" * 64,
+            "validation_run_id": val_data["run_id"],
+            "validation_digest": val_data["validation_digest"],
             "rationale": "Independent validation verified across synthetic test datasets",
         },
     )

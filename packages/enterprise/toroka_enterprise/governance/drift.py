@@ -21,6 +21,7 @@ class HealthStatus(StrEnum):
     DEGRADED = "degraded"
     WARNING = "warning"
     CRITICAL = "critical"
+    UNKNOWN = "unknown"
 
 
 @dataclass(frozen=True)

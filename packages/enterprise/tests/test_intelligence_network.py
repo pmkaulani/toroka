@@ -421,16 +421,25 @@ def test_entity_resolution_candidate_proposal_and_review():
     assert cand.status == EntityLinkStatus.SHARED_ATTRIBUTE_ONLY
     assert cand.confidence <= 0.50
 
-    # Reviewer confirms relationship
+    # First reviewer proposes confirmation -> enters PENDING_SECOND_REVIEW
     reviewed = EntityResolutionEngine.apply_human_review(
         cand,
         reviewer_subject="investigator.alice",
         decision=EntityLinkStatus.SAME_ENTITY_CONFIRMED,
         rationale="Customer verified device ownership during in-branch interview with government ID.",
     )
-    assert reviewed.status == EntityLinkStatus.SAME_ENTITY_CONFIRMED
-    assert reviewed.confidence == 1.0
-    assert reviewed.reviewed_by == "investigator.alice"
+    assert reviewed.status == EntityLinkStatus.PENDING_SECOND_REVIEW
+    assert reviewed.first_reviewed_by == "investigator.alice"
+
+    # Second independent reviewer confirms relationship
+    confirmed = EntityResolutionEngine.approve_identity_link(
+        reviewed,
+        second_reviewer_subject="authoriser.bob",
+        rationale="Second independent authoriser verifies KYC documentation and device binding.",
+    )
+    assert confirmed.status == EntityLinkStatus.SAME_ENTITY_CONFIRMED
+    assert confirmed.confidence == 1.0
+    assert confirmed.second_reviewed_by == "authoriser.bob"
 
 
 # =============================================================================

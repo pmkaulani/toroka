@@ -215,6 +215,9 @@ export const ProductionGovernanceView: React.FC<Props> = ({ currentPersona }) =>
 
   const getStatusBadge = (statusStr: string) => {
     const s = statusStr.toLowerCase();
+    if (s === "unknown") {
+      return <span className="px-2 py-0.5 text-xs font-semibold rounded bg-amber-950/60 text-amber-300 border border-amber-600/70">UNKNOWN / UNVERIFIED</span>;
+    }
     if (s === "active" || s === "pass" || s === "approved" || s === "healthy") {
       return <span className="px-2 py-0.5 text-xs font-semibold rounded bg-emerald-900/40 text-emerald-300 border border-emerald-700/50">ACTIVE / PASS</span>;
     }
@@ -225,6 +228,14 @@ export const ProductionGovernanceView: React.FC<Props> = ({ currentPersona }) =>
       return <span className="px-2 py-0.5 text-xs font-semibold rounded bg-amber-900/40 text-amber-300 border border-amber-700/50">STAGED / REVIEW</span>;
     }
     return <span className="px-2 py-0.5 text-xs font-semibold rounded bg-slate-800 text-slate-300 border border-slate-700">{statusStr.toUpperCase()}</span>;
+  };
+
+  const getPillarColorClass = (status?: string) => {
+    const s = (status || "UNKNOWN").toUpperCase();
+    if (s === "HEALTHY" || s === "UNBROKEN") return "text-emerald-400 font-semibold";
+    if (s === "DEGRADED" || s === "WARNING") return "text-amber-400 font-semibold";
+    if (s === "CRITICAL" || s === "FAIL") return "text-rose-400 font-semibold";
+    return "text-slate-400 font-semibold";
   };
 
   return (
@@ -314,9 +325,9 @@ export const ProductionGovernanceView: React.FC<Props> = ({ currentPersona }) =>
                 <div className="text-xs font-semibold text-slate-400 uppercase">Engine Status</div>
                 <div className="mt-2 flex items-center justify-between">
                   <div className="text-2xl font-bold text-white">
-                    {health ? health.overall_status.toUpperCase() : "HEALTHY"}
+                    {health ? health.overall_status.toUpperCase() : "UNKNOWN"}
                   </div>
-                  {getStatusBadge(health?.overall_status || "healthy")}
+                  {getStatusBadge(health?.overall_status || "unknown")}
                 </div>
                 <div className="text-xs text-slate-500 mt-1">Autonomous containment ready</div>
               </div>
@@ -353,19 +364,19 @@ export const ProductionGovernanceView: React.FC<Props> = ({ currentPersona }) =>
               <div className="mt-4 pt-4 border-t border-slate-800/80 flex items-center gap-6 text-xs text-slate-400">
                 <div>
                   <span className="text-slate-500">Detection Health:</span>{" "}
-                  <span className="text-emerald-400 font-semibold">{health?.detection_health || "HEALTHY"}</span>
+                  <span className={getPillarColorClass(health?.detection_health)}>{health?.detection_health || "UNKNOWN"}</span>
                 </div>
                 <div>
                   <span className="text-slate-500">Data Contract:</span>{" "}
-                  <span className="text-emerald-400 font-semibold">{health?.data_quality_health || "HEALTHY"}</span>
+                  <span className={getPillarColorClass(health?.data_quality_health)}>{health?.data_quality_health || "UNKNOWN"}</span>
                 </div>
                 <div>
                   <span className="text-slate-500">Copilot Evaluation:</span>{" "}
-                  <span className="text-emerald-400 font-semibold">{health?.copilot_health || "HEALTHY"}</span>
+                  <span className={getPillarColorClass(health?.copilot_health)}>{health?.copilot_health || "UNKNOWN"}</span>
                 </div>
                 <div>
                   <span className="text-slate-500">Audit Ledger:</span>{" "}
-                  <span className="text-emerald-400 font-semibold">{health?.audit_integrity_health || "UNBROKEN"}</span>
+                  <span className={getPillarColorClass(health?.audit_integrity_health)}>{health?.audit_integrity_health || "UNKNOWN"}</span>
                 </div>
               </div>
             </div>

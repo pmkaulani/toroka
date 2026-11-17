@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import hmac
 import logging
 import uuid
 from datetime import datetime, timezone
@@ -12,6 +14,10 @@ from toroka_enterprise.intelligence.copilot.contracts import (
     ClaimKind,
     CopilotTaskType,
     ReportDraftStatus,
+)
+from toroka_enterprise.intelligence.copilot.grounding import (
+    evidence_context_from_snapshot,
+    validate_report_markdown,
 )
 from toroka_enterprise.intelligence.copilot.tool_policy import (
     ALLOWED_TOOLS,
@@ -328,6 +334,9 @@ class CopilotService:
     ) -> CopilotReportDraftResponse:
         self._verify_case(request.case_id)
 
+        # Retrieve exact evidence context for the case
+        evidence_ctx = self.orchestrator.get_evidence_context(request.case_id)
+
         # Run turn with DRAFT_REPORT task
         resp = self.orchestrator.run_investigation_turn(
             case_id=request.case_id,
@@ -343,7 +352,33 @@ class CopilotService:
             for c in resp.claims
             for q in c.quotes
         ]
-        context_hash = resp.report_draft.evidence_context_hash if resp.report_draft else "sha256_mock"
+
+        # Context hash must be real SHA-256, never a mock fallback
+        context_hash = (
+            resp.report_draft.evidence_context_hash
+            if resp.report_draft and resp.report_draft.evidence_context_hash and len(resp.report_draft.evidence_context_hash) == 64
+            else evidence_ctx.context_digest
+        )
+
+        snapshot = {
+            "installation_id": self.installation_id,
+            "case_id": request.case_id,
+            "actor_subject": actor_subject,
+            "actor_role": actor_role,
+            "items": [
+                {
+                    "evidence_id": item.evidence_id,
+                    "source_system": item.source_system,
+                    "source_record_id": item.source_record_id,
+                    "event_type": item.record_type,
+                    "timestamp": item.event_time.isoformat() if item.event_time else None,
+                    "excerpt": item.excerpt,
+                    "title": item.title,
+                }
+                for item in evidence_ctx.items
+            ],
+        }
+        content_digest = hashlib.sha256(md.encode("utf-8")).hexdigest()
 
         draft_id = f"draft_{uuid.uuid4().hex[:12]}"
         now = _utc_now()
@@ -360,6 +395,13 @@ class CopilotService:
             evidence_context_hash=context_hash,
             citations=citations,
             model_info=resp.provider_info,
+            created_by=actor_subject,
+            edited_by=None,
+            edit_version=0,
+            content_digest=content_digest,
+            grounding_status="VALID" if getattr(resp, "report_grounded", True) else "REQUIRES_REVIEW",
+            grounding_report=getattr(resp.grounding_report, "__dict__", {}) if getattr(resp, "grounding_report", None) else {},
+            evidence_context_snapshot=snapshot,
             review_notes=None,
             reviewed_by=None,
             reviewed_at=None,
@@ -427,9 +469,47 @@ class CopilotService:
         if not draft:
             raise HTTPException(status_code=404, detail="Draft not found")
 
-        draft.investigator_edits_markdown = investigator_edits_markdown
-        draft.status = ReportDraftStatus.INVESTIGATOR_REVIEW.value
+        before_text = draft.investigator_edits_markdown or draft.content_markdown
+        before_digest = hashlib.sha256(before_text.encode("utf-8")).hexdigest()
+
+        # Rebuild the exact persisted EvidenceContext from snapshot
+        if draft.evidence_context_snapshot:
+            context = evidence_context_from_snapshot(draft.evidence_context_snapshot)
+        else:
+            context = self.orchestrator.get_evidence_context(draft.case_id)
+
+        clean_text, is_valid, grounding_details = validate_report_markdown(
+            investigator_edits_markdown,
+            context,
+        )
+
+        after_digest = hashlib.sha256(clean_text.encode("utf-8")).hexdigest()
+        draft.investigator_edits_markdown = clean_text
+        draft.edited_by = actor_subject
+        draft.edit_version = (draft.edit_version or 0) + 1
+        draft.content_digest = after_digest
+        draft.grounding_status = "VALID" if is_valid else "REQUIRES_REVIEW"
+        draft.grounding_report = grounding_details
+        draft.status = "INVESTIGATOR_REVIEW" if is_valid else "GROUNDING_REVIEW_REQUIRED"
         draft.updated_at = _utc_now()
+
+        append_audit(
+            self.session,
+            installation_id=self.installation_id,
+            actor_subject=actor_subject,
+            actor_role="investigator",
+            action="copilot_report_edited",
+            target_type="copilot_report_draft",
+            target_id=draft_id,
+            safe_metadata={
+                "draft_id": draft_id,
+                "case_id": draft.case_id,
+                "previous_content_digest": before_digest,
+                "content_digest": after_digest,
+                "edit_version": draft.edit_version,
+                "grounding_status": draft.grounding_status,
+            },
+        )
         self.session.commit()
 
         return self._to_report_draft_response(draft)
@@ -455,13 +535,34 @@ class CopilotService:
         if not draft:
             raise HTTPException(status_code=404, detail="Draft not found")
 
+        # Independent maker-checker review enforcement: creator/editor cannot approve own report
+        if actor_subject in {draft.created_by, draft.edited_by}:
+            raise HTTPException(status_code=403, detail="Report maker/editor cannot approve their own report")
+
+        normalized_role = (actor_role or "").lower()
+        if "investigator" in normalized_role and not any(r in normalized_role for r in ("authoriser", "admin", "system_administrator")):
+            raise HTTPException(status_code=403, detail="Independent review role required to review or accept reports")
+
+        if draft.status not in ("INVESTIGATOR_REVIEW",):
+            raise HTTPException(status_code=409, detail="Report is not ready for independent review")
+
+        if draft.grounding_status != "VALID":
+            raise HTTPException(status_code=422, detail="Report grounding must pass before acceptance")
+
+        if decision == "ACCEPTED" and not (notes and notes.strip()):
+            raise HTTPException(status_code=422, detail="Acceptance requires a review rationale")
+
+        current_text = draft.investigator_edits_markdown or draft.content_markdown
+        current_digest = hashlib.sha256(current_text.encode("utf-8")).hexdigest()
+        if draft.content_digest and not hmac.compare_digest(draft.content_digest, current_digest):
+            raise HTTPException(status_code=422, detail="Report content digest mismatch; revalidation required")
+
         now = _utc_now()
         draft.status = decision
-        draft.review_notes = notes
+        draft.review_notes = notes.strip() if notes else None
         draft.reviewed_by = actor_subject
         draft.reviewed_at = now
         draft.updated_at = now
-        self.session.commit()
 
         append_audit(
             self.session,
@@ -616,6 +717,12 @@ class CopilotService:
             evidence_context_hash=r.evidence_context_hash,
             citations=r.citations,
             model_info=r.model_info,
+            created_by=r.created_by or "system",
+            edited_by=r.edited_by,
+            edit_version=r.edit_version or 0,
+            content_digest=r.content_digest or "",
+            grounding_status=r.grounding_status or "UNVERIFIED",
+            grounding_report=r.grounding_report or {},
             review_notes=r.review_notes,
             reviewed_by=r.reviewed_by,
             reviewed_at=r.reviewed_at.isoformat() if r.reviewed_at else None,

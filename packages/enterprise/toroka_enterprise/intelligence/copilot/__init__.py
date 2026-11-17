@@ -25,10 +25,13 @@ from .tool_policy import (
 from .grounding import (
     GroundingError,
     GroundingReport,
+    evidence_context_from_snapshot,
     filter_unsupported_claims,
     normalize_text,
     validate_claim,
+    validate_report_markdown,
     validate_response,
+    validate_summary_and_report_grounding,
 )
 from .defense import (
     build_safe_evidence_prompt_block,
@@ -57,10 +60,13 @@ __all__ = [
     "ToolPolicyError",
     "GroundingError",
     "GroundingReport",
+    "evidence_context_from_snapshot",
     "filter_unsupported_claims",
     "normalize_text",
     "validate_claim",
+    "validate_report_markdown",
     "validate_response",
+    "validate_summary_and_report_grounding",
     "build_safe_evidence_prompt_block",
     "sanitize_and_wrap_evidence",
     "scan_for_prompt_injection",

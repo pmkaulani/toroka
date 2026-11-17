@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
 import logging
 import uuid
@@ -21,6 +22,10 @@ from toroka_enterprise.governance.deployment import (
     ProductionReleaseManifest,
     ReleaseStatus,
     can_promote_to_production,
+    _canonical_utc,
+    canonical_json,
+    release_manifest_payload,
+    compute_release_manifest_digest,
 )
 from toroka_enterprise.governance.drift import (
     DriftRecord,
@@ -29,7 +34,11 @@ from toroka_enterprise.governance.drift import (
     SystemHealthOverview,
     evaluate_metric_drift,
 )
-from toroka_enterprise.governance.evidence_passport import TorokaEvidencePassport
+from toroka_enterprise.governance.evidence_passport import (
+    TorokaEvidencePassport,
+    BoundEvidenceItem,
+    compute_evidence_digest,
+)
 from toroka_enterprise.governance.incidents import (
     GovernanceIncident,
     IncidentCategory,
@@ -69,11 +78,16 @@ from toroka_enterprise.governance.validation import (
 )
 from toroka_enterprise.intelligence.models import (
     DriftRecordEntity,
+    EntityLinkCandidateRecord,
     EvidencePassportRecord,
     GovernanceIncidentRecord,
     GovernedAIProviderRecord,
     GovernedComponentRecord,
+    IntelligenceEventRecord,
+    IntelligenceSignalRecord,
+    NetworkFindingRecord,
     ProductionReleaseRecord,
+    ReadinessAttestationRecord,
     SuspensionAuditRecord,
     ValidationRunRecord,
 )
@@ -92,7 +106,9 @@ from ..governance_schemas import (
     GovernedComponentResponse,
     ProductionReleaseResponse,
     ReadinessAssessmentResponse,
+    ReadinessAttestationResponse,
     RecordDriftRequest,
+    RecordReadinessAttestationRequest,
     RegisterAIProviderRequest,
     ResumeComponentRequest,
     SuspendComponentRequest,
@@ -103,7 +119,7 @@ from ..governance_schemas import (
     ValidationPackageResponse,
     ValidationRunResponse,
 )
-from ..persistence.audit import append_audit
+from ..persistence.audit import append_audit, verify_audit_chain
 from ..persistence.models import EnterpriseCase
 
 logger = logging.getLogger(__name__)
@@ -111,6 +127,26 @@ logger = logging.getLogger(__name__)
 
 def _utc_now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def compute_validation_run_digest(run: ValidationRunRecord) -> str:
+    payload = {
+        "schema": "toroka.validation-run.v1",
+        "run_id": run.run_id,
+        "installation_id": run.installation_id,
+        "component_id": run.component_id,
+        "component_version": run.component_version,
+        "dataset_digest": run.dataset_digest,
+        "configuration_digest": run.configuration_digest,
+        "metrics": sorted((dict(m) for m in (run.metrics or [])), key=lambda m: str(m.get("name", ""))),
+        "result": run.result,
+        "evaluator": run.evaluator,
+        "limitations": sorted(run.limitations or []),
+        "started_at": _canonical_utc(run.started_at),
+        "completed_at": _canonical_utc(run.completed_at),
+    }
+    raw = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False)
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
 class DatabaseKillSwitchStore:
@@ -185,11 +221,117 @@ class DatabaseKillSwitchStore:
             for r in records
         ]
 
-    def record_suspension(self, record: SuspensionRecord) -> None:
-        pass
+    def record_suspension(self, record: SuspensionRecord) -> SuspensionAuditRecord:
+        active = self.get_active_suspension(record.component_id, record.component_version)
+        if active:
+            raise ValueError(f"Component '{record.component_id}' version '{record.component_version}' is already suspended.")
 
-    def record_resume(self, record: SuspensionRecord) -> None:
-        pass
+        comp = self.session.execute(
+            select(GovernedComponentRecord).where(
+                and_(
+                    GovernedComponentRecord.installation_id == self.installation_id,
+                    GovernedComponentRecord.component_id == record.component_id,
+                    GovernedComponentRecord.version == record.component_version,
+                )
+            )
+        ).scalar_one_or_none()
+        if not comp:
+            raise ValueError(f"Component '{record.component_id}' version '{record.component_version}' not found.")
+
+        suspension_id = f"susp-{uuid.uuid4().hex[:12]}"
+        now = record.suspended_at or _utc_now()
+        suspension_rec = SuspensionAuditRecord(
+            suspension_id=suspension_id,
+            installation_id=self.installation_id,
+            component_id=record.component_id,
+            component_version=record.component_version,
+            suspended_by=record.suspended_by,
+            reason=record.reason,
+            incident_id=record.incident_id,
+            is_active=True,
+            suspended_at=now,
+        )
+        self.session.add(suspension_rec)
+
+        comp.status = GovernanceStatus.SUSPENDED.value
+        comp.suspended_by = record.suspended_by
+        comp.suspended_at = now
+        comp.updated_at = now
+
+        append_audit(
+            self.session,
+            installation_id=self.installation_id,
+            actor_subject=record.suspended_by,
+            actor_role="authoriser",
+            action="kill_switch_suspended",
+            target_type="component",
+            target_id=record.component_id,
+            safe_metadata={
+                "component_id": record.component_id,
+                "component_version": record.component_version,
+                "suspension_id": suspension_id,
+                "reason": record.reason,
+                "status": GovernanceStatus.SUSPENDED.value,
+            },
+        )
+        self.session.flush()
+        return suspension_rec
+
+    def record_resume(self, record: SuspensionRecord) -> SuspensionAuditRecord:
+        susp_rec = self.session.execute(
+            select(SuspensionAuditRecord).where(
+                and_(
+                    SuspensionAuditRecord.installation_id == self.installation_id,
+                    SuspensionAuditRecord.component_id == record.component_id,
+                    SuspensionAuditRecord.component_version == record.component_version,
+                    SuspensionAuditRecord.is_active == True,  # noqa: E712
+                )
+            )
+        ).scalar_one_or_none()
+
+        if not susp_rec:
+            raise ValueError(f"No active suspension found for component '{record.component_id}' version '{record.component_version}'.")
+
+        comp = self.session.execute(
+            select(GovernedComponentRecord).where(
+                and_(
+                    GovernedComponentRecord.installation_id == self.installation_id,
+                    GovernedComponentRecord.component_id == record.component_id,
+                    GovernedComponentRecord.version == record.component_version,
+                )
+            )
+        ).scalar_one_or_none()
+
+        now = _utc_now()
+        susp_rec.is_active = False
+        susp_rec.resumed_by = record.suspended_by
+        susp_rec.resumed_at = now
+        susp_rec.resume_reason = record.reason
+
+        if comp:
+            comp.status = GovernanceStatus.ACTIVE.value
+            comp.suspended_by = None
+            comp.suspended_at = None
+            comp.updated_at = now
+
+        append_audit(
+            self.session,
+            installation_id=self.installation_id,
+            actor_subject=record.suspended_by,
+            actor_role="authoriser",
+            action="kill_switch_resumed",
+            target_type="component",
+            target_id=record.component_id,
+            safe_metadata={
+                "component_id": record.component_id,
+                "component_version": record.component_version,
+                "suspension_id": susp_rec.suspension_id,
+                "reason": record.reason,
+                "status": GovernanceStatus.ACTIVE.value,
+            },
+        )
+        self.session.flush()
+        return susp_rec
 
 
 class ProductionGovernanceService:
@@ -356,6 +498,38 @@ class ProductionGovernanceService:
                 detail=f"Component '{component_id}' version '{version}' not found.",
             )
 
+        # Maker-checker separation: maker cannot approve their own component
+        if record.created_by == actor_subject:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Component maker cannot approve their own component",
+            )
+
+        # Database verification of validation run
+        run = self.session.execute(
+            select(ValidationRunRecord).where(
+                and_(
+                    ValidationRunRecord.installation_id == self.installation_id,
+                    ValidationRunRecord.run_id == request.validation_run_id,
+                )
+            )
+        ).scalar_one_or_none()
+
+        if run is None:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Validation run does not exist in this installation")
+        if run.result != ValidationResult.PASS.value:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Only a passing validation run can support approval")
+        if run.component_id != component_id or run.component_version != version:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Validation run does not match the component version")
+        if run.configuration_digest != record.configuration_digest:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Validation configuration differs from the registered component")
+        if run.evaluator in (record.created_by, actor_subject):
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Validation evaluator, component maker and approver must be independent")
+
+        expected_digest = compute_validation_run_digest(run)
+        if not hmac.compare_digest(request.validation_digest, expected_digest):
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Validation digest does not match the persisted run")
+
         # Domain component reconstruction
         domain_comp = GovernedComponent(
             component_id=record.component_id,
@@ -392,6 +566,10 @@ class ProductionGovernanceService:
         record.approved_by = actor_subject
         record.approved_at = now
         record.updated_at = now
+        record.approval_record_id = f"apr-{uuid.uuid4().hex[:16]}"
+        record.approved_validation_run_id = run.run_id
+        record.approved_validation_digest = expected_digest
+        record.approval_rationale = request.rationale.strip()
 
         append_audit(
             self.session,
@@ -406,7 +584,8 @@ class ProductionGovernanceService:
                 "component_version": version,
                 "risk_tier": record.risk_tier,
                 "status": record.status,
-                "run_id": request.validation_run_id,
+                "approval_record_id": record.approval_record_id,
+                "validation_run_id": request.validation_run_id,
             },
         )
         self.session.commit()
@@ -511,20 +690,19 @@ class ProductionGovernanceService:
         actor_subject: str,
         actor_role: str = "authoriser",
     ) -> ProductionReleaseResponse:
-        manifest_payload = {
-            "version": request.version,
-            "environment": request.environment,
-            "components": request.components,
-            "validation_runs": request.validation_runs,
-            "approval_records": request.approval_records,
-            "readiness_gates": request.readiness_gates,
-        }
-        manifest_digest = hashlib.sha256(
-            json.dumps(manifest_payload, sort_keys=True).encode("utf-8")
-        ).hexdigest()
-
         release_id = f"rel-{uuid.uuid4().hex[:12]}"
         now = _utc_now()
+        manifest_payload = release_manifest_payload(
+            release_id=release_id,
+            version=request.version,
+            components=request.components,
+            validation_runs=request.validation_runs,
+            approval_records=request.approval_records,
+            readiness_gates=request.readiness_gates,
+            created_by=actor_subject,
+            created_at=now,
+        )
+        manifest_digest = compute_release_manifest_digest(manifest_payload)
 
         record = ProductionReleaseRecord(
             release_id=release_id,
@@ -569,6 +747,132 @@ class ProductionGovernanceService:
         records = self.session.execute(query).scalars().all()
         return [self._to_release_response(r) for r in records]
 
+    def _verify_release_evidence(
+        self,
+        record: ProductionReleaseRecord,
+        actor_subject: str,
+        target_environment: str,
+    ) -> None:
+        if actor_subject == record.created_by:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Release maker cannot promote their own release to production",
+            )
+
+        # 1. Verify manifest digest integrity
+        manifest_payload = release_manifest_payload(
+            release_id=record.release_id,
+            version=record.version,
+            components=record.components_manifest or {},
+            validation_runs=record.validation_runs or [],
+            approval_records=record.approval_records or [],
+            readiness_gates=record.readiness_gates or [],
+            created_by=record.created_by,
+            created_at=record.created_at,
+        )
+        expected_digest = compute_release_manifest_digest(manifest_payload)
+        if not hmac.compare_digest(record.manifest_digest, expected_digest):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Release manifest digest verification failed; manifest has been tampered with or corrupted",
+            )
+
+        # 2. Verify all components are approved with passing validation runs
+        components_map = record.components_manifest or {}
+        if not components_map:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Release manifest contains no components",
+            )
+
+        for comp_id, comp_ver in components_map.items():
+            comp_rec = self.session.execute(
+                select(GovernedComponentRecord).where(
+                    and_(
+                        GovernedComponentRecord.installation_id == self.installation_id,
+                        GovernedComponentRecord.component_id == comp_id,
+                        GovernedComponentRecord.version == comp_ver,
+                    )
+                )
+            ).scalar_one_or_none()
+
+            if not comp_rec:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail=f"Component '{comp_id}' version '{comp_ver}' is not registered in this installation",
+                )
+
+            if comp_rec.status not in (GovernanceStatus.APPROVED.value, GovernanceStatus.ACTIVE.value):
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail=f"Component '{comp_id}' version '{comp_ver}' is in status '{comp_rec.status}', not APPROVED or ACTIVE",
+                )
+
+            if not comp_rec.approved_validation_run_id or not comp_rec.approved_validation_digest:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail=f"Component '{comp_id}' version '{comp_ver}' lacks verified validation run evidence",
+                )
+
+            run = self.session.execute(
+                select(ValidationRunRecord).where(
+                    and_(
+                        ValidationRunRecord.installation_id == self.installation_id,
+                        ValidationRunRecord.run_id == comp_rec.approved_validation_run_id,
+                    )
+                )
+            ).scalar_one_or_none()
+
+            if not run or run.result != ValidationResult.PASS.value:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail=f"Component '{comp_id}' validation run '{comp_rec.approved_validation_run_id}' did not pass",
+                )
+
+            run_digest = compute_validation_run_digest(run)
+            if not hmac.compare_digest(comp_rec.approved_validation_digest, run_digest):
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail=f"Component '{comp_id}' validation digest mismatch with persisted run",
+                )
+
+        # 3. For target_environment == "production", verify all 13 MANDATORY_GATES in ReadinessAttestationRecord table
+        if target_environment == "production":
+            attestation_records = list(self.session.execute(
+                select(ReadinessAttestationRecord).where(
+                    and_(
+                        ReadinessAttestationRecord.installation_id == self.installation_id,
+                        ReadinessAttestationRecord.release_version == record.version,
+                        ReadinessAttestationRecord.is_active == True,
+                    )
+                )
+            ).scalars().all())
+
+            attestations_by_gate: dict[str, list[ReadinessAttestationRecord]] = {}
+            for att in attestation_records:
+                attestations_by_gate.setdefault(att.gate_name, []).append(att)
+
+            unproven_gates: list[str] = []
+            for gate in MANDATORY_GATES:
+                gate_key = gate.value if hasattr(gate, "value") else str(gate)
+                atts = attestations_by_gate.get(gate_key, [])
+                passing = [
+                    a for a in atts
+                    if a.status == "PASS"
+                    and a.evidence_reference
+                    and a.evidence_digest
+                    and a.verified_by
+                ]
+                failing = [a for a in atts if a.status in ("FAIL", "BLOCKED")]
+                if not passing or failing:
+                    unproven_gates.append(gate_key)
+
+            if unproven_gates:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail=f"Production promotion blocked: {len(unproven_gates)} mandatory readiness gates lack evidence-backed pass attestations: {', '.join(unproven_gates)}",
+                )
+
     def promote_release(
         self,
         release_id: str,
@@ -591,6 +895,9 @@ class ProductionGovernanceService:
                 detail=f"Release '{release_id}' not found.",
             )
 
+        # Enforce independent evidence verification
+        self._verify_release_evidence(record, actor_subject, target_environment)
+
         # Check active suspensions for release components
         active_susp = self.session.execute(
             select(SuspensionAuditRecord).where(
@@ -604,11 +911,11 @@ class ProductionGovernanceService:
 
         # Check blocking incidents
         blocking_inc = self.session.execute(
-            select(IncidentRecord).where(
+            select(GovernanceIncidentRecord).where(
                 and_(
-                    IncidentRecord.installation_id == self.installation_id,
-                    IncidentRecord.severity.in_(["CRITICAL", "HIGH"]),
-                    IncidentRecord.status.in_(["OPEN", "TRIAGED", "INVESTIGATING"]),
+                    GovernanceIncidentRecord.installation_id == self.installation_id,
+                    GovernanceIncidentRecord.severity.in_(["CRITICAL", "HIGH"]),
+                    GovernanceIncidentRecord.status.in_(["OPEN", "TRIAGED", "INVESTIGATING"]),
                 )
             )
         ).scalars().all()
@@ -623,6 +930,8 @@ class ProductionGovernanceService:
             approval_records=tuple(record.approval_records or []),
             readiness_gates=tuple(record.readiness_gates or []),
             status=ReleaseStatus(record.status),
+            created_by=record.created_by,
+            created_at=record.created_at,
             manifest_digest=record.manifest_digest,
             has_blocking_incidents=has_inc,
             has_active_suspensions=has_susp,
@@ -743,61 +1052,26 @@ class ProductionGovernanceService:
         actor_subject: str,
         actor_role: str = "authoriser",
     ) -> SuspensionRecordResponse:
-        comp = self.session.execute(
-            select(GovernedComponentRecord).where(
-                and_(
-                    GovernedComponentRecord.installation_id == self.installation_id,
-                    GovernedComponentRecord.component_id == request.component_id,
-                    GovernedComponentRecord.version == request.version,
-                )
-            )
-        ).scalar_one_or_none()
-
-        if not comp:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Component '{request.component_id}' version '{request.version}' not found.",
-            )
-
-        suspension_id = f"susp-{uuid.uuid4().hex[:12]}"
+        store = DatabaseKillSwitchStore(self.session, self.installation_id)
         now = _utc_now()
-
-        suspension_rec = SuspensionAuditRecord(
-            suspension_id=suspension_id,
-            installation_id=self.installation_id,
+        record = SuspensionRecord(
             component_id=request.component_id,
             component_version=request.version,
             suspended_by=actor_subject,
+            suspended_at=now,
             reason=request.reason,
             incident_id=request.incident_id,
-            is_active=True,
-            suspended_at=now,
+            automatic=False,
         )
-        self.session.add(suspension_rec)
-
-        comp.status = GovernanceStatus.SUSPENDED.value
-        comp.suspended_by = actor_subject
-        comp.suspended_at = now
-        comp.updated_at = now
-
-        append_audit(
-            self.session,
-            installation_id=self.installation_id,
-            actor_subject=actor_subject,
-            actor_role=actor_role,
-            action="kill_switch_suspended",
-            target_type="component",
-            target_id=request.component_id,
-            safe_metadata={
-                "component_id": request.component_id,
-                "component_version": request.version,
-                "suspension_id": suspension_id,
-                "reason": request.reason,
-                "status": GovernanceStatus.SUSPENDED.value,
-            },
-        )
-        self.session.commit()
-        return self._to_suspension_response(suspension_rec)
+        try:
+            susp_rec = store.record_suspension(record)
+            self.session.commit()
+            return self._to_suspension_response(susp_rec)
+        except ValueError as exc:
+            msg = str(exc)
+            if "not found" in msg:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=msg)
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=msg)
 
     def resume_component(
         self,
@@ -805,63 +1079,101 @@ class ProductionGovernanceService:
         actor_subject: str,
         actor_role: str = "authoriser",
     ) -> SuspensionRecordResponse:
-        susp_rec = self.session.execute(
-            select(SuspensionAuditRecord).where(
+        store = DatabaseKillSwitchStore(self.session, self.installation_id)
+        record = SuspensionRecord(
+            component_id=request.component_id,
+            component_version=request.version,
+            suspended_by=actor_subject,
+            suspended_at=_utc_now(),
+            reason=request.reason,
+            incident_id=None,
+            automatic=False,
+        )
+        try:
+            susp_rec = store.record_resume(record)
+            self.session.commit()
+            return self._to_suspension_response(susp_rec)
+        except ValueError as exc:
+            msg = str(exc)
+            if "No active suspension" in msg:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=msg)
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=msg)
+
+    def record_readiness_attestation(
+        self,
+        request: RecordReadinessAttestationRequest,
+        actor_subject: str,
+        actor_role: str = "authoriser",
+    ) -> ReadinessAttestationResponse:
+        if request.status not in ("PASS", "FAIL", "BLOCKED"):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Status must be PASS, FAIL, or BLOCKED")
+        if not request.evidence_reference or not request.evidence_digest:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Attestation requires evidence_reference and evidence_digest")
+
+        prev_records = list(self.session.execute(
+            select(ReadinessAttestationRecord).where(
                 and_(
-                    SuspensionAuditRecord.installation_id == self.installation_id,
-                    SuspensionAuditRecord.component_id == request.component_id,
-                    SuspensionAuditRecord.component_version == request.version,
-                    SuspensionAuditRecord.is_active == True,  # noqa: E712
+                    ReadinessAttestationRecord.installation_id == self.installation_id,
+                    ReadinessAttestationRecord.release_version == request.release_version,
+                    ReadinessAttestationRecord.gate_name == request.gate_name,
+                    ReadinessAttestationRecord.is_active == True,
                 )
             )
-        ).scalar_one_or_none()
+        ).scalars().all())
+        for p in prev_records:
+            p.is_active = False
 
-        if not susp_rec:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"No active suspension found for component '{request.component_id}' version '{request.version}'.",
-            )
-
-        comp = self.session.execute(
-            select(GovernedComponentRecord).where(
-                and_(
-                    GovernedComponentRecord.installation_id == self.installation_id,
-                    GovernedComponentRecord.component_id == request.component_id,
-                    GovernedComponentRecord.version == request.version,
-                )
-            )
-        ).scalar_one_or_none()
-
+        att_id = f"att-{uuid.uuid4().hex[:12]}"
         now = _utc_now()
-        susp_rec.is_active = False
-        susp_rec.resumed_by = actor_subject
-        susp_rec.resumed_at = now
-        susp_rec.resume_reason = request.reason
-
-        if comp:
-            comp.status = GovernanceStatus.ACTIVE.value
-            comp.suspended_by = None
-            comp.suspended_at = None
-            comp.updated_at = now
+        rec = ReadinessAttestationRecord(
+            attestation_id=att_id,
+            installation_id=self.installation_id,
+            release_version=request.release_version,
+            gate_name=request.gate_name,
+            status=request.status,
+            verified_by=actor_subject,
+            verified_role=actor_role,
+            rationale=request.rationale,
+            evidence_reference=request.evidence_reference,
+            evidence_digest=request.evidence_digest,
+            is_active=True,
+            created_at=now,
+        )
+        self.session.add(rec)
 
         append_audit(
             self.session,
             installation_id=self.installation_id,
             actor_subject=actor_subject,
             actor_role=actor_role,
-            action="kill_switch_resumed",
-            target_type="component",
-            target_id=request.component_id,
+            action="readiness_attestation_recorded",
+            target_type="readiness_attestation",
+            target_id=att_id,
             safe_metadata={
-                "component_id": request.component_id,
-                "component_version": request.version,
-                "suspension_id": susp_rec.suspension_id,
-                "reason": request.reason,
-                "status": GovernanceStatus.ACTIVE.value,
+                "attestation_id": att_id,
+                "release_version": request.release_version,
+                "gate_name": request.gate_name,
+                "status": request.status,
             },
         )
         self.session.commit()
-        return self._to_suspension_response(susp_rec)
+        return self._to_attestation_response(rec)
+
+    def list_readiness_attestations(
+        self,
+        release_version: str | None = None,
+        gate_name: str | None = None,
+    ) -> list[ReadinessAttestationResponse]:
+        query = select(ReadinessAttestationRecord).where(
+            ReadinessAttestationRecord.installation_id == self.installation_id
+        )
+        if release_version:
+            query = query.where(ReadinessAttestationRecord.release_version == release_version)
+        if gate_name:
+            query = query.where(ReadinessAttestationRecord.gate_name == gate_name)
+        query = query.order_by(desc(ReadinessAttestationRecord.created_at))
+        records = self.session.execute(query).scalars().all()
+        return [self._to_attestation_response(r) for r in records]
 
     def list_suspensions(self, active_only: bool = False) -> list[SuspensionRecordResponse]:
         query = select(SuspensionAuditRecord).where(
@@ -1063,60 +1375,137 @@ class ProductionGovernanceService:
         return [self._to_drift_response(r) for r in records]
 
     def get_system_health(self) -> SystemHealthOverviewResponse:
-        # Check active drifts
-        drift_count = self.session.execute(
+        # 1. Audit integrity health
+        audit_verified = False
+        try:
+            audit_verified = verify_audit_chain(self.session, self.installation_id)
+            audit_health = HealthStatus.HEALTHY.value if audit_verified else HealthStatus.CRITICAL.value
+        except Exception:
+            audit_health = HealthStatus.UNKNOWN.value
+
+        # 2. Active drifts & open incidents & active suspensions
+        drift_records = list(self.session.execute(
             select(DriftRecordEntity).where(
                 DriftRecordEntity.installation_id == self.installation_id
             )
-        ).scalars().all()
+        ).scalars().all())
 
-        # Check open incidents
-        open_incidents = self.session.execute(
+        open_incidents = list(self.session.execute(
             select(GovernanceIncidentRecord).where(
                 and_(
                     GovernanceIncidentRecord.installation_id == self.installation_id,
                     GovernanceIncidentRecord.status.notin_([IncidentStatus.REMEDIATED.value, IncidentStatus.CLOSED.value]),
                 )
             )
-        ).scalars().all()
+        ).scalars().all())
 
-        # Check active suspensions
-        active_suspensions = self.session.execute(
+        active_suspensions = list(self.session.execute(
             select(SuspensionAuditRecord).where(
                 and_(
                     SuspensionAuditRecord.installation_id == self.installation_id,
-                    SuspensionAuditRecord.is_active == True,  # noqa: E712
+                    SuspensionAuditRecord.is_active == True,
                 )
             )
-        ).scalars().all()
+        ).scalars().all())
 
-        active_drifts_num = len(drift_count)
+        active_drifts_num = len(drift_records)
         open_incidents_num = len(open_incidents)
 
-        detection_health = HealthStatus.HEALTHY.value
-        copilot_health = HealthStatus.HEALTHY.value
-        overall_status = HealthStatus.HEALTHY.value
+        # 3. Detection health
+        components = list(self.session.execute(
+            select(GovernedComponentRecord).where(
+                GovernedComponentRecord.installation_id == self.installation_id
+            )
+        ).scalars().all())
 
-        if active_suspensions:
+        if not components:
+            detection_health = HealthStatus.UNKNOWN.value
+        elif active_suspensions:
             detection_health = HealthStatus.DEGRADED.value
-            overall_status = HealthStatus.DEGRADED.value
+        elif any(d.severity == "CRITICAL" for d in drift_records if d.drift_type == "detection"):
+            detection_health = HealthStatus.CRITICAL.value
+        elif any(d.severity in ("HIGH", "MEDIUM") for d in drift_records if d.drift_type == "detection"):
+            detection_health = HealthStatus.DEGRADED.value
+        else:
+            detection_health = HealthStatus.HEALTHY.value
 
+        # 4. Data quality health
+        has_events = self.session.execute(
+            select(IntelligenceEventRecord.event_id).where(
+                IntelligenceEventRecord.installation_id == self.installation_id
+            ).limit(1)
+        ).scalar_one_or_none() is not None
+
+        if not has_events:
+            data_quality_health = HealthStatus.UNKNOWN.value
+        elif any(d.drift_type == "data_drift" for d in drift_records):
+            data_quality_health = HealthStatus.DEGRADED.value
+        else:
+            data_quality_health = HealthStatus.HEALTHY.value
+
+        # 5. Network intelligence health
+        has_entities = self.session.execute(
+            select(EntityLinkCandidateRecord.candidate_id).where(
+                EntityLinkCandidateRecord.installation_id == self.installation_id
+            ).limit(1)
+        ).scalar_one_or_none() is not None
+
+        if not has_entities:
+            network_health = HealthStatus.UNKNOWN.value
+        elif any(d.drift_type == "network" for d in drift_records):
+            network_health = HealthStatus.DEGRADED.value
+        else:
+            network_health = HealthStatus.HEALTHY.value
+
+        # 6. Copilot health
+        providers = list(self.session.execute(
+            select(GovernedAIProviderRecord).where(
+                GovernedAIProviderRecord.installation_id == self.installation_id
+            )
+        ).scalars().all())
+
+        if not providers:
+            copilot_health = HealthStatus.UNKNOWN.value
+        elif any(not p.is_approved for p in providers):
+            copilot_health = HealthStatus.DEGRADED.value
+        else:
+            copilot_health = HealthStatus.HEALTHY.value
+
+        # Overall status: worst observed across pillars
+        severity_order = {
+            HealthStatus.CRITICAL.value: 5,
+            HealthStatus.DEGRADED.value: 4,
+            HealthStatus.WARNING.value: 3,
+            HealthStatus.UNKNOWN.value: 2,
+            HealthStatus.HEALTHY.value: 1,
+        }
+
+        pillar_statuses = [
+            audit_health,
+            detection_health,
+            data_quality_health,
+            network_health,
+            copilot_health,
+        ]
         if open_incidents_num > 0:
-            overall_status = HealthStatus.DEGRADED.value
+            pillar_statuses.append(HealthStatus.DEGRADED.value)
+
+        worst_val = max(pillar_statuses, key=lambda s: severity_order.get(s, 0))
+        overall_status = worst_val
 
         summary = (
-            f"System operates under governed bank controls. Active components: stable. "
-            f"Open incidents: {open_incidents_num}. Active suspensions: {len(active_suspensions)}. "
-            f"Monitored drift events: {active_drifts_num}."
+            f"System operates under governed bank controls. Overall health: {overall_status.upper()}. "
+            f"Audit integrity: {audit_health}. Open incidents: {open_incidents_num}. "
+            f"Active suspensions: {len(active_suspensions)}. Active drift records: {active_drifts_num}."
         )
 
         return SystemHealthOverviewResponse(
             overall_status=overall_status,
             detection_health=detection_health,
-            data_quality_health=HealthStatus.HEALTHY.value,
-            network_health=HealthStatus.HEALTHY.value,
+            data_quality_health=data_quality_health,
+            network_health=network_health,
             copilot_health=copilot_health,
-            audit_integrity_health=HealthStatus.HEALTHY.value,
+            audit_integrity_health=audit_health,
             active_drift_count=active_drifts_num,
             open_incidents_count=open_incidents_num,
             summary_message=summary,
@@ -1148,24 +1537,118 @@ class ProductionGovernanceService:
                 detail=f"Case '{case_id}' not found.",
             )
 
-        # Collect active component versions
-        comps = self.session.execute(
-            select(GovernedComponentRecord).where(
-                GovernedComponentRecord.installation_id == self.installation_id
+        # Resolve finding: check IntelligenceSignalRecord first, then NetworkFindingRecord
+        finding = self.session.execute(
+            select(IntelligenceSignalRecord).where(
+                and_(
+                    IntelligenceSignalRecord.installation_id == self.installation_id,
+                    IntelligenceSignalRecord.signal_id == finding_id,
+                    IntelligenceSignalRecord.case_id == case_id,
+                )
             )
-        ).scalars().all()
-        component_versions = {c.component_id: c.version for c in comps}
-        if not component_versions:
-            component_versions = {"core_detector": "v1.0.0", "copilot_eval": "v1.0.0"}
+        ).scalar_one_or_none()
 
-        config_digest = hashlib.sha256(
-            json.dumps(component_versions, sort_keys=True).encode("utf-8")
-        ).hexdigest()
+        if finding is None:
+            finding = self.session.execute(
+                select(NetworkFindingRecord).where(
+                    and_(
+                        NetworkFindingRecord.installation_id == self.installation_id,
+                        NetworkFindingRecord.finding_id == finding_id,
+                        NetworkFindingRecord.case_id == case_id,
+                    )
+                )
+            ).scalar_one_or_none()
 
-        snapshot = case.snapshot or {}
-        events = snapshot.get("events", [])
-        evidence_count = len(events)
-        source_systems = list({e.get("source_system", "CORE_BANKING") for e in events}) or ["CORE_BANKING"]
+        # Resolve component versions and configuration digest from registered components
+        active_comps = list(self.session.execute(
+            select(GovernedComponentRecord).where(
+                and_(
+                    GovernedComponentRecord.installation_id == self.installation_id,
+                    GovernedComponentRecord.status.in_([GovernanceStatus.ACTIVE.value, GovernanceStatus.APPROVED.value]),
+                )
+            )
+        ).scalars().all())
+        component_versions = {c.component_id: c.version for c in active_comps} or {"core_engine": "1.0.0"}
+        config_payload = {c.component_id: c.configuration_digest for c in active_comps}
+        config_digest = hashlib.sha256(canonical_json(config_payload).encode("utf-8")).hexdigest()
+
+        items: list[BoundEvidenceItem] = []
+        detection_time = case.created_at
+        earliest_event_time = case.created_at
+        source_systems: tuple[str, ...] = ("CORE_BANKING",)
+
+        if finding is not None:
+            # Query real persisted events for the case / finding
+            all_events = list(self.session.execute(
+                select(IntelligenceEventRecord).where(
+                    IntelligenceEventRecord.installation_id == self.installation_id
+                )
+            ).scalars().all())
+
+            allowed_event_ids = set(getattr(finding, "event_ids", []) or [])
+            events = [
+                e for e in all_events
+                if (e.event_id in allowed_event_ids or (e.attributes and e.attributes.get("case_id") == case_id))
+            ]
+
+            if not events:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail="No persisted event evidence is available for this finding",
+                )
+
+            for event in sorted(events, key=lambda e: (e.event_time, e.event_id)):
+                event_payload = {
+                    "event_id": event.event_id,
+                    "event_type": event.event_type,
+                    "event_time": event.event_time.isoformat() if event.event_time else "",
+                    "actor": event.actor,
+                    "subject": event.subject,
+                    "source_system": event.source_system,
+                    "source_record_id": event.source_record_id,
+                    "entities": list(event.entities or []),
+                    "attributes": dict(event.attributes or {}),
+                    "provenance_digest": event.provenance_digest,
+                }
+                items.append(
+                    BoundEvidenceItem(
+                        evidence_id=event.event_id,
+                        evidence_digest=compute_evidence_digest(event_payload),
+                        source_record_id=event.source_record_id or event.event_id,
+                        source_system=event.source_system or "UNKNOWN_SOURCE",
+                        observed_at=event.event_time.isoformat() if event.event_time else _utc_now().isoformat(),
+                    )
+                )
+
+            detection_time = getattr(finding, "created_at", case.created_at)
+            earliest_event_time = min((e.event_time for e in events if e.event_time), default=detection_time)
+            source_systems = tuple(sorted({e.source_system for e in events if e.source_system})) or ("CORE_BANKING",)
+        else:
+            # Check case snapshot events for backwards compatibility
+            snapshot_events = (case.snapshot or {}).get("events", [])
+            if not snapshot_events:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail="No persisted event evidence is available for this finding",
+                )
+            for idx, e in enumerate(snapshot_events):
+                ev_id = str(e.get("event_id", f"ev_{idx}"))
+                ev_payload = {
+                    "event_id": ev_id,
+                    "event_type": str(e.get("event_type", "EVENT")),
+                    "source_system": str(e.get("source_system", "CORE_BANKING")),
+                    "source_record_id": str(e.get("source_record_id", ev_id)),
+                }
+                items.append(
+                    BoundEvidenceItem(
+                        evidence_id=ev_id,
+                        evidence_digest=compute_evidence_digest(ev_payload),
+                        source_record_id=str(e.get("source_record_id", ev_id)),
+                        source_system=str(e.get("source_system", "CORE_BANKING")),
+                        observed_at=case.created_at.isoformat() if case.created_at else _utc_now().isoformat(),
+                    )
+                )
+            source_systems = tuple(sorted({e.get("source_system", "CORE_BANKING") for e in snapshot_events})) or ("CORE_BANKING",)
 
         passport_id = f"pass-{uuid.uuid4().hex[:12]}"
         now = _utc_now()
@@ -1175,22 +1658,25 @@ class ProductionGovernanceService:
             finding_id=finding_id,
             case_id=case_id,
             installation_id=self.installation_id,
-            finding_type="CORRELATED_FRAUD_PATTERN",
+            finding_type=getattr(finding, "signal_type", getattr(finding, "finding_type", "CORRELATED_FRAUD_PATTERN")),
             finding_status="GROUNDED",
             component_versions=component_versions,
             configuration_digest=config_digest,
-            evidence_count=evidence_count,
-            source_systems=tuple(source_systems),
-            detection_time=case.created_at,
-            earliest_event_time=case.created_at,
-            evidence_at_detection_count=evidence_count,
+            evidence_count=len(items),
+            source_systems=source_systems,
+            detection_time=detection_time,
+            earliest_event_time=earliest_event_time,
+            evidence_at_detection_count=len(items),
             delayed_evidence_count=0,
             contradictions_count=0,
             evidence_debt_level="LOW",
             alternative_explanations=("Legitimate batch operations", "Multi-party authorised activity"),
             validation_result="PASS",
             human_review_required=True,
+            evidence_records=tuple(items),
         )
+
+        canonical_payload = domain_passport.canonical_payload()
 
         record = EvidencePassportRecord(
             passport_id=domain_passport.passport_id,
@@ -1213,7 +1699,7 @@ class ProductionGovernanceService:
             validation_result=domain_passport.validation_result,
             human_review_required=domain_passport.human_review_required,
             passport_digest=domain_passport.passport_digest,
-            payload={},
+            payload=canonical_payload,
             created_at=now,
         )
         self.session.add(record)
@@ -1503,6 +1989,10 @@ class ProductionGovernanceService:
             created_by=r.created_by,
             approved_by=r.approved_by,
             approved_at=r.approved_at.isoformat() if r.approved_at else None,
+            approval_record_id=r.approval_record_id,
+            approved_validation_run_id=r.approved_validation_run_id,
+            approved_validation_digest=r.approved_validation_digest,
+            approval_rationale=r.approval_rationale,
             suspended_by=r.suspended_by,
             suspended_at=r.suspended_at.isoformat() if r.suspended_at else None,
             retired_by=r.retired_by,
@@ -1512,6 +2002,7 @@ class ProductionGovernanceService:
         )
 
     def _to_validation_run_response(self, r: ValidationRunRecord) -> ValidationRunResponse:
+        v_digest = compute_validation_run_digest(r)
         return ValidationRunResponse(
             run_id=r.run_id,
             installation_id=r.installation_id,
@@ -1535,6 +2026,7 @@ class ProductionGovernanceService:
             started_at=r.started_at.isoformat(),
             completed_at=r.completed_at.isoformat(),
             created_at=r.created_at.isoformat(),
+            validation_digest=v_digest,
         )
 
     def _to_release_response(self, r: ProductionReleaseRecord) -> ProductionReleaseResponse:
@@ -1609,28 +2101,55 @@ class ProductionGovernanceService:
         )
 
     def _to_passport_response(self, r: EvidencePassportRecord) -> EvidencePassportResponse:
-        domain_passport = TorokaEvidencePassport(
-            passport_id=r.passport_id,
-            finding_id=r.finding_id,
-            case_id=r.case_id,
-            installation_id=r.installation_id,
-            finding_type=r.finding_type,
-            finding_status=r.finding_status,
-            component_versions=r.component_versions or {},
-            configuration_digest=r.configuration_digest,
-            evidence_count=r.evidence_count,
-            source_systems=tuple(r.source_systems or []),
-            detection_time=r.detection_time,
-            earliest_event_time=r.earliest_event_time,
-            evidence_at_detection_count=r.evidence_at_detection_count,
-            delayed_evidence_count=r.delayed_evidence_count,
-            contradictions_count=r.contradictions_count,
-            evidence_debt_level=r.evidence_debt_level,
-            alternative_explanations=tuple(r.alternative_explanations or []),
-            validation_result=r.validation_result,
-            human_review_required=r.human_review_required,
-            passport_digest=r.passport_digest,
-        )
+        domain_passport = None
+        is_verified = False
+        evidence_records_list: list[dict[str, Any]] = []
+
+        if r.payload and isinstance(r.payload, dict) and r.payload.get("schema") == "toroka.evidence-passport.v1":
+            try:
+                domain_passport = TorokaEvidencePassport.from_payload(r.payload, passport_digest=r.passport_digest)
+                is_verified = domain_passport.verify_integrity()
+                evidence_records_list = [
+                    {
+                        "evidence_id": item.get("evidence_id") if isinstance(item, dict) else getattr(item, "evidence_id", ""),
+                        "evidence_digest": item.get("evidence_digest") if isinstance(item, dict) else getattr(item, "evidence_digest", ""),
+                        "source_record_id": item.get("source_record_id") if isinstance(item, dict) else getattr(item, "source_record_id", ""),
+                        "source_system": item.get("source_system") if isinstance(item, dict) else getattr(item, "source_system", ""),
+                        "observed_at": item.get("observed_at") if isinstance(item, dict) else getattr(item, "observed_at", None),
+                    }
+                    for item in domain_passport.evidence_records
+                ]
+            except Exception as e:
+                logger.warning("Failed to verify passport from payload: %s", e)
+                is_verified = False
+
+        if domain_passport is None:
+            try:
+                domain_passport = TorokaEvidencePassport(
+                    passport_id=r.passport_id,
+                    finding_id=r.finding_id,
+                    case_id=r.case_id,
+                    installation_id=r.installation_id,
+                    finding_type=r.finding_type,
+                    finding_status=r.finding_status,
+                    component_versions=r.component_versions or {},
+                    configuration_digest=r.configuration_digest,
+                    evidence_count=r.evidence_count,
+                    source_systems=tuple(r.source_systems or []),
+                    detection_time=r.detection_time,
+                    earliest_event_time=r.earliest_event_time,
+                    evidence_at_detection_count=r.evidence_at_detection_count,
+                    delayed_evidence_count=r.delayed_evidence_count,
+                    contradictions_count=r.contradictions_count,
+                    evidence_debt_level=r.evidence_debt_level,
+                    alternative_explanations=tuple(r.alternative_explanations or []),
+                    validation_result=r.validation_result,
+                    human_review_required=r.human_review_required,
+                    passport_digest=r.passport_digest,
+                )
+                is_verified = domain_passport.verify_integrity()
+            except Exception:
+                is_verified = False
 
         return EvidencePassportResponse(
             passport_id=r.passport_id,
@@ -1653,7 +2172,24 @@ class ProductionGovernanceService:
             validation_result=r.validation_result,
             human_review_required=r.human_review_required,
             passport_digest=r.passport_digest,
-            is_verified=domain_passport.verify_integrity(),
+            is_verified=is_verified,
+            evidence_records=evidence_records_list,
+            created_at=r.created_at.isoformat(),
+        )
+
+    def _to_attestation_response(self, r: ReadinessAttestationRecord) -> ReadinessAttestationResponse:
+        return ReadinessAttestationResponse(
+            attestation_id=r.attestation_id,
+            installation_id=r.installation_id,
+            release_version=r.release_version,
+            gate_name=r.gate_name,
+            status=r.status,
+            verified_by=r.verified_by,
+            verified_role=r.verified_role,
+            rationale=r.rationale,
+            evidence_reference=r.evidence_reference,
+            evidence_digest=r.evidence_digest,
+            is_active=r.is_active,
             created_at=r.created_at.isoformat(),
         )
 

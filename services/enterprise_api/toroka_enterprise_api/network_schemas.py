@@ -122,6 +122,14 @@ class EntityLinkCandidateResponse(BaseModel):
     reviewed_by: str | None = None
     reviewed_at: str | None = None
     review_rationale: str | None = None
+    proposed_by: str | None = None
+    first_reviewed_by: str | None = None
+    first_reviewed_at: str | None = None
+    first_review_rationale: str | None = None
+    second_reviewed_by: str | None = None
+    second_reviewed_at: str | None = None
+    second_review_rationale: str | None = None
+    evidence_digest: str | None = None
 
 
 class EntityLinkReviewRequest(BaseModel):

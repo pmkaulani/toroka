@@ -22,7 +22,9 @@ from ..governance_schemas import (
     ProductionReleaseResponse,
     PromoteReleaseRequest,
     ReadinessAssessmentResponse,
+    ReadinessAttestationResponse,
     RecordDriftRequest,
+    RecordReadinessAttestationRequest,
     RegisterAIProviderRequest,
     ResumeComponentRequest,
     RollbackReleaseRequest,
@@ -601,3 +603,43 @@ def get_validation_package(
     effective_inst = principal.installation_id or installation_id
     service = ProductionGovernanceService(db, effective_inst)
     return service.generate_validation_package(release_version=release_version)
+
+
+@router.post(
+    "/readiness/attestations",
+    response_model=ReadinessAttestationResponse,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_roles(ROLE_AUTHORISER, ROLE_AUDITOR, ROLE_SYSTEM_ADMINISTRATOR))],
+)
+def record_readiness_attestation(
+    request: RecordReadinessAttestationRequest,
+    principal: EnterprisePrincipal = Depends(get_current_principal),
+    installation_id: str = Depends(get_installation_id),
+    db: Session = Depends(get_db),
+) -> ReadinessAttestationResponse:
+    effective_inst = principal.installation_id or installation_id
+    service = ProductionGovernanceService(db, effective_inst)
+    return service.record_readiness_attestation(
+        request,
+        actor_subject=principal.subject,
+        actor_role=_primary_role(principal),
+    )
+
+
+@router.get(
+    "/readiness/attestations",
+    response_model=list[ReadinessAttestationResponse],
+    dependencies=[
+        Depends(require_roles(ROLE_AUTHORISER, ROLE_AUDITOR, ROLE_INVESTIGATOR, ROLE_SYSTEM_ADMINISTRATOR))
+    ],
+)
+def list_readiness_attestations(
+    release_version: str | None = Query(default=None),
+    gate_name: str | None = Query(default=None),
+    principal: EnterprisePrincipal = Depends(get_current_principal),
+    installation_id: str = Depends(get_installation_id),
+    db: Session = Depends(get_db),
+) -> list[ReadinessAttestationResponse]:
+    effective_inst = principal.installation_id or installation_id
+    service = ProductionGovernanceService(db, effective_inst)
+    return service.list_readiness_attestations(release_version=release_version, gate_name=gate_name)

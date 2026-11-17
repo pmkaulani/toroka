@@ -32,6 +32,10 @@ class GovernedComponentResponse(BaseModel):
     created_by: str
     approved_by: str | None = None
     approved_at: str | None = None
+    approval_record_id: str | None = None
+    approved_validation_run_id: str | None = None
+    approved_validation_digest: str | None = None
+    approval_rationale: str | None = None
     suspended_by: str | None = None
     suspended_at: str | None = None
     retired_by: str | None = None
@@ -78,6 +82,16 @@ class ValidationRunResponse(BaseModel):
     started_at: str
     completed_at: str
     created_at: str
+    validation_digest: str | None = None
+
+
+class RecordReadinessAttestationRequest(BaseModel):
+    release_version: str
+    gate_name: str
+    status: str = "PASS"  # PASS, FAIL, BLOCKED
+    rationale: str
+    evidence_reference: str
+    evidence_digest: str
 
 
 class CreateReleaseRequest(BaseModel):
@@ -244,6 +258,7 @@ class EvidencePassportResponse(BaseModel):
     human_review_required: bool
     passport_digest: str
     is_verified: bool
+    evidence_records: list[dict[str, Any]] = Field(default_factory=list)
     created_at: str
 
 
@@ -284,6 +299,30 @@ class ReadinessGateInputSchema(BaseModel):
 class EvaluateReadinessGatesRequest(BaseModel):
     release_version: str
     gates: list[ReadinessGateInputSchema]
+
+
+class RecordReadinessAttestationRequest(BaseModel):
+    release_version: str
+    gate_name: str
+    status: str = "pass"
+    rationale: str
+    evidence_reference: str
+    evidence_digest: str
+
+
+class ReadinessAttestationResponse(BaseModel):
+    attestation_id: str
+    installation_id: str
+    release_version: str
+    gate_name: str
+    status: str
+    verified_by: str
+    verified_role: str
+    rationale: str
+    evidence_reference: str
+    evidence_digest: str
+    is_active: bool
+    created_at: str
 
 
 class ReadinessAssessmentResponse(BaseModel):

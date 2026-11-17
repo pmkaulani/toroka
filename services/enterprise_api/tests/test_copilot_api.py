@@ -212,11 +212,11 @@ def test_copilot_report_drafting_and_human_review(oidc_client, token_factory, co
     assert "content_markdown" in draft
     draft_id = draft["draft_id"]
 
-    # 2. Investigator edits draft
+    # 2. Investigator edits draft with grounded citations
     edit_resp = oidc_client.put(
         f"/api/enterprise/v1/copilot/reports/{draft_id}",
         headers={"Authorization": f"Bearer {token}"},
-        json={"investigator_edits_markdown": "# Edited Report\n\nVerified with customer support."},
+        json={"investigator_edits_markdown": "# Edited Report\n\nVerified with customer support. [Cites: evt_iam_session]"},
     )
     assert edit_resp.status_code == 200
     edited = edit_resp.json()

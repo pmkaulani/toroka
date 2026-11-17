@@ -96,6 +96,18 @@ ALLOWED_METADATA_KEYS = frozenset({
     "gate_name",
     "gate_status",
     "is_production_ready",
+    # Phase 12.6 Production Integrity additions
+    "previous_content_digest",
+    "content_digest",
+    "edit_version",
+    "grounding_status",
+    "attestation_id",
+    "verified_role",
+    "evidence_digest",
+    "evidence_reference",
+    "proposed_by",
+    "first_reviewed_by",
+    "second_reviewed_by",
 })
 
 

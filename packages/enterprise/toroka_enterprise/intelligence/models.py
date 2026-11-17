@@ -672,6 +672,15 @@ class EntityLinkCandidateRecord(IntelligenceBase):
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     review_rationale: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    proposed_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    first_reviewed_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    first_reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    first_review_rationale: Mapped[str | None] = mapped_column(Text, nullable=True)
+    second_reviewed_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    second_reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    second_review_rationale: Mapped[str | None] = mapped_column(Text, nullable=True)
+    evidence_digest: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
 
 
@@ -840,6 +849,14 @@ class CopilotReportDraftRecord(IntelligenceBase):
     citations: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False, default=list)
     model_info: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
 
+    created_by: Mapped[str] = mapped_column(String(255), nullable=False, default="system")
+    edited_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    edit_version: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    content_digest: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    grounding_status: Mapped[str] = mapped_column(String(30), nullable=False, default="UNVERIFIED")
+    grounding_report: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    evidence_context_snapshot: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+
     review_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     reviewed_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -889,6 +906,10 @@ class GovernedComponentRecord(IntelligenceBase):
     created_by: Mapped[str] = mapped_column(String(255), nullable=False)
     approved_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
     approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    approval_record_id: Mapped[str | None] = mapped_column(String(100), nullable=True, unique=True)
+    approved_validation_run_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    approved_validation_digest: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    approval_rationale: Mapped[str | None] = mapped_column(Text, nullable=True)
     suspended_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
     suspended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     retired_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
@@ -943,6 +964,31 @@ class ProductionReleaseRecord(IntelligenceBase):
 
     created_by: Mapped[str] = mapped_column(String(255), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+
+
+class ReadinessAttestationRecord(IntelligenceBase):
+    """Evidence-backed readiness attestation for mandatory production gates."""
+    __tablename__ = "enterprise_readiness_attestations"
+
+    attestation_id: Mapped[str] = mapped_column(String(100), primary_key=True)
+    installation_id: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    release_version: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+    gate_name: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(30), nullable=False, index=True)
+    verified_by: Mapped[str] = mapped_column(String(255), nullable=False)
+    verified_role: Mapped[str] = mapped_column(String(100), nullable=False)
+    rationale: Mapped[str] = mapped_column(Text, nullable=False)
+    evidence_reference: Mapped[str] = mapped_column(String(255), nullable=False)
+    evidence_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "installation_id", "release_version", "gate_name",
+            name="uq_readiness_attestation",
+        ),
+    )
 
 
 class SuspensionAuditRecord(IntelligenceBase):

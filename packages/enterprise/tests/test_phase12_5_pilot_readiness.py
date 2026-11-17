@@ -463,17 +463,26 @@ def test_entity_resolution_governance_and_attribute_risk_classification():
         )
     assert "requires human maker-checker review" in str(exc_info.value)
 
-    # 4. Human review on commodity token satisfies is_confirmed_identity
+    # 4. Human review on commodity token: first review enters PENDING_SECOND_REVIEW, second review confirms
     reviewed = EntityResolutionEngine.apply_human_review(
         cand,
         reviewer_subject="investigator.alice",
         decision=EntityLinkStatus.SAME_ENTITY_CONFIRMED,
         rationale="Customer verified phone ownership during branch KYC refresh.",
     )
-    assert reviewed.is_confirmed_identity is True
-    assert can_collapse_entities(reviewed) is True
+    assert reviewed.status == EntityLinkStatus.PENDING_SECOND_REVIEW
+    assert reviewed.is_confirmed_identity is False
+    assert can_collapse_entities(reviewed) is False
 
-    # 5. Human review on ephemeral infrastructure alone CANNOT collapse identity without multi-source corroborate
+    confirmed = EntityResolutionEngine.approve_identity_link(
+        reviewed,
+        second_reviewer_subject="authoriser.bob",
+        rationale="Second independent authoriser verifies KYC refresh documentation.",
+    )
+    assert confirmed.is_confirmed_identity is True
+    assert can_collapse_entities(confirmed) is True
+
+    # 5. Human review on ephemeral infrastructure alone CANNOT collapse identity
     ip_cand = EntityResolutionEngine.propose_candidate(
         installation_id="bank-pilot-ke",
         source_key="account:ACC_001",
@@ -489,9 +498,14 @@ def test_entity_resolution_governance_and_attribute_risk_classification():
         decision=EntityLinkStatus.SAME_ENTITY_CONFIRMED,
         rationale="Shared IP noted during investigation.",
     )
-    assert reviewed_ip.is_confirmed_identity is True
-    # Still blocked from collapsing identities because IP is ephemeral and only has 1 source system
-    assert can_collapse_entities(reviewed_ip) is False
+    confirmed_ip = EntityResolutionEngine.approve_identity_link(
+        reviewed_ip,
+        second_reviewer_subject="authoriser.bob",
+        rationale="Second review confirms shared IP.",
+    )
+    assert confirmed_ip.is_confirmed_identity is True
+    # Ephemeral infrastructure alone can never collapse physical identities
+    assert can_collapse_entities(confirmed_ip) is False
 
 
 # =============================================================================

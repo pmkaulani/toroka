@@ -9,6 +9,7 @@ from typing import Any
 
 class EntityLinkStatus(StrEnum):
     SAME_ENTITY_CONFIRMED = "SAME_ENTITY_CONFIRMED"
+    PENDING_SECOND_REVIEW = "PENDING_SECOND_REVIEW"
     POSSIBLY_RELATED = "POSSIBLY_RELATED"
     SHARED_ATTRIBUTE_ONLY = "SHARED_ATTRIBUTE_ONLY"
     RELATIONSHIP_DISPROVEN = "RELATIONSHIP_DISPROVEN"
@@ -75,6 +76,14 @@ class EntityLinkCandidate:
     reviewed_by: str | None = None
     reviewed_at: datetime | None = None
     review_rationale: str | None = None
+    proposed_by: str | None = None
+    first_reviewed_by: str | None = None
+    first_reviewed_at: datetime | None = None
+    first_review_rationale: str | None = None
+    second_reviewed_by: str | None = None
+    second_reviewed_at: datetime | None = None
+    second_review_rationale: str | None = None
+    evidence_digest: str | None = None
 
     def __post_init__(self) -> None:
         if not self.candidate_id:
@@ -85,23 +94,61 @@ class EntityLinkCandidate:
             raise ValueError("Source and target entity keys are required")
         if not (0.0 <= self.confidence <= 1.0):
             raise ValueError(f"Confidence must be between 0.0 and 1.0, got {self.confidence}")
+
+        first_by = self.first_reviewed_by or self.reviewed_by
+        first_rat = self.first_review_rationale or self.review_rationale
+        if first_by and not self.first_reviewed_by:
+            object.__setattr__(self, "first_reviewed_by", first_by)
+        if first_rat and not self.first_review_rationale:
+            object.__setattr__(self, "first_review_rationale", first_rat)
+
         if self.status == EntityLinkStatus.SAME_ENTITY_CONFIRMED:
-            if not self.reviewed_by or not self.reviewed_by.strip():
+            if not self.first_reviewed_by or not self.first_reviewed_by.strip():
                 raise ValueError(
                     "SAME_ENTITY_CONFIRMED status requires human maker-checker review with reviewed_by"
                 )
-            if not self.review_rationale or len(self.review_rationale.strip()) < 5:
+            if not self.first_review_rationale or len(self.first_review_rationale.strip()) < 5:
                 raise ValueError(
                     "SAME_ENTITY_CONFIRMED status requires human maker-checker review with substantive review_rationale"
+                )
+            if not self.second_reviewed_by or not self.second_reviewed_by.strip():
+                raise ValueError(
+                    "SAME_ENTITY_CONFIRMED status requires dual-control second reviewer approval"
+                )
+            if not self.second_review_rationale or len(self.second_review_rationale.strip()) < 5:
+                raise ValueError(
+                    "SAME_ENTITY_CONFIRMED status requires substantive second review rationale"
+                )
+            if self.first_reviewed_by == self.second_reviewed_by:
+                raise ValueError(
+                    "Maker-checker violation: first and second reviewer must be distinct independent people"
+                )
+            if self.proposed_by and self.second_reviewed_by == self.proposed_by:
+                raise ValueError(
+                    "Maker-checker violation: second reviewer cannot be the proposer"
+                )
+        elif self.status == EntityLinkStatus.PENDING_SECOND_REVIEW:
+            if not self.first_reviewed_by or not self.first_reviewed_by.strip():
+                raise ValueError(
+                    "PENDING_SECOND_REVIEW requires first reviewer"
+                )
+            if not self.first_review_rationale or len(self.first_review_rationale.strip()) < 5:
+                raise ValueError(
+                    "PENDING_SECOND_REVIEW requires substantive first review rationale"
                 )
 
     @property
     def is_confirmed_identity(self) -> bool:
-        """Strict governance guard: identity confirmation is ONLY valid when explicitly reviewed."""
+        """Strict governance guard: identity confirmation is ONLY valid when dual-control reviewed."""
         return (
             self.status == EntityLinkStatus.SAME_ENTITY_CONFIRMED
-            and bool(self.reviewed_by and self.reviewed_by.strip())
-            and bool(self.review_rationale and len(self.review_rationale.strip()) >= 5)
+            and bool(self.first_reviewed_by and self.first_reviewed_by.strip())
+            and bool(self.second_reviewed_by and self.second_reviewed_by.strip())
+            and self.first_reviewed_by != self.second_reviewed_by
+            and (self.second_reviewed_by != self.proposed_by if self.proposed_by else True)
+            and bool(self.first_review_rationale and len(self.first_review_rationale.strip()) >= 5)
+            and bool(self.second_review_rationale and len(self.second_review_rationale.strip()) >= 5)
+            and len(self.contradicting_evidence) == 0
         )
 
     @property
@@ -129,6 +176,14 @@ class EntityLinkCandidate:
             "reviewed_by": self.reviewed_by,
             "reviewed_at": self.reviewed_at.isoformat() if self.reviewed_at else None,
             "review_rationale": self.review_rationale,
+            "proposed_by": self.proposed_by,
+            "first_reviewed_by": self.first_reviewed_by,
+            "first_reviewed_at": self.first_reviewed_at.isoformat() if self.first_reviewed_at else None,
+            "first_review_rationale": self.first_review_rationale,
+            "second_reviewed_by": self.second_reviewed_by,
+            "second_reviewed_at": self.second_reviewed_at.isoformat() if self.second_reviewed_at else None,
+            "second_review_rationale": self.second_review_rationale,
+            "evidence_digest": self.evidence_digest,
         }
 
 
@@ -237,10 +292,47 @@ class EntityResolutionEngine:
             raise ValueError("A clear, substantive review rationale is required")
 
         t = reviewed_at or datetime.now(timezone.utc)
-        new_conf = candidate.confidence
+
         if decision == EntityLinkStatus.SAME_ENTITY_CONFIRMED:
-            new_conf = 1.0
-        elif decision == EntityLinkStatus.RELATIONSHIP_DISPROVEN:
+            # If already in PENDING_SECOND_REVIEW and reviewer is different, this is the second review
+            if candidate.status == EntityLinkStatus.PENDING_SECOND_REVIEW:
+                return EntityResolutionEngine.approve_identity_link(
+                    candidate=candidate,
+                    second_reviewer_subject=reviewer_subject,
+                    rationale=rationale,
+                    reviewed_at=t,
+                )
+            # First review: transition to PENDING_SECOND_REVIEW
+            return EntityLinkCandidate(
+                candidate_id=candidate.candidate_id,
+                installation_id=candidate.installation_id,
+                source_entity_key=candidate.source_entity_key,
+                target_entity_key=candidate.target_entity_key,
+                attribute_type=candidate.attribute_type,
+                attribute_value=candidate.attribute_value,
+                match_type=candidate.match_type,
+                status=EntityLinkStatus.PENDING_SECOND_REVIEW,
+                confidence=min(0.85, max(candidate.confidence, 0.70)),
+                supporting_evidence=candidate.supporting_evidence,
+                contradicting_evidence=candidate.contradicting_evidence,
+                source_systems=candidate.source_systems,
+                first_observed=candidate.first_observed,
+                last_observed=candidate.last_observed,
+                reviewed_by=reviewer_subject,
+                reviewed_at=t,
+                review_rationale=rationale.strip(),
+                proposed_by=candidate.proposed_by,
+                first_reviewed_by=reviewer_subject,
+                first_reviewed_at=t,
+                first_review_rationale=rationale.strip(),
+                second_reviewed_by=None,
+                second_reviewed_at=None,
+                second_review_rationale=None,
+                evidence_digest=candidate.evidence_digest,
+            )
+
+        new_conf = candidate.confidence
+        if decision == EntityLinkStatus.RELATIONSHIP_DISPROVEN:
             new_conf = 0.0
         elif decision == EntityLinkStatus.SHARED_ATTRIBUTE_ONLY:
             new_conf = min(0.3, candidate.confidence)
@@ -263,23 +355,95 @@ class EntityResolutionEngine:
             reviewed_by=reviewer_subject,
             reviewed_at=t,
             review_rationale=rationale.strip(),
+            proposed_by=candidate.proposed_by,
+            first_reviewed_by=reviewer_subject,
+            first_reviewed_at=t,
+            first_review_rationale=rationale.strip(),
+            second_reviewed_by=None,
+            second_reviewed_at=None,
+            second_review_rationale=None,
+            evidence_digest=candidate.evidence_digest,
+        )
+
+    @staticmethod
+    def approve_identity_link(
+        candidate: EntityLinkCandidate,
+        second_reviewer_subject: str,
+        rationale: str,
+        reviewed_at: datetime | None = None,
+    ) -> EntityLinkCandidate:
+        """Second independent human authoriser confirms candidate identity."""
+        if not second_reviewer_subject or not second_reviewer_subject.strip():
+            raise ValueError("second_reviewer_subject is required")
+        if not rationale or len(rationale.strip()) < 5:
+            raise ValueError("A clear, substantive second review rationale is required")
+        if candidate.status != EntityLinkStatus.PENDING_SECOND_REVIEW:
+            raise ValueError("Candidate must be in PENDING_SECOND_REVIEW before final approval")
+        if candidate.first_reviewed_by and second_reviewer_subject == candidate.first_reviewed_by:
+            raise ValueError("Maker-checker violation: second reviewer must differ from first reviewer")
+        if candidate.proposed_by and second_reviewer_subject == candidate.proposed_by:
+            raise ValueError("Maker-checker violation: second reviewer cannot be the proposer")
+
+        t = reviewed_at or datetime.now(timezone.utc)
+        return EntityLinkCandidate(
+            candidate_id=candidate.candidate_id,
+            installation_id=candidate.installation_id,
+            source_entity_key=candidate.source_entity_key,
+            target_entity_key=candidate.target_entity_key,
+            attribute_type=candidate.attribute_type,
+            attribute_value=candidate.attribute_value,
+            match_type=candidate.match_type,
+            status=EntityLinkStatus.SAME_ENTITY_CONFIRMED,
+            confidence=1.0,
+            supporting_evidence=candidate.supporting_evidence,
+            contradicting_evidence=candidate.contradicting_evidence,
+            source_systems=candidate.source_systems,
+            first_observed=candidate.first_observed,
+            last_observed=candidate.last_observed,
+            reviewed_by=second_reviewer_subject,
+            reviewed_at=t,
+            review_rationale=rationale.strip(),
+            proposed_by=candidate.proposed_by,
+            first_reviewed_by=candidate.first_reviewed_by,
+            first_reviewed_at=candidate.first_reviewed_at,
+            first_review_rationale=candidate.first_review_rationale,
+            second_reviewed_by=second_reviewer_subject,
+            second_reviewed_at=t,
+            second_review_rationale=rationale.strip(),
+            evidence_digest=candidate.evidence_digest,
         )
 
 
 def can_collapse_entities(candidate: EntityLinkCandidate) -> bool:
     """Strict identity collapsing gate.
 
-    Prevents probabilistic identity collapse. Returns True ONLY when:
-    1. The candidate is explicitly confirmed via maker-checker human review (is_confirmed_identity is True).
-    2. Commodity identifiers (phone, email, device) alone without confirmed review never collapse identities.
-    3. Ephemeral infrastructure attributes (IP address, subnet, branch workstation) cannot collapse entities
-       into a single physical person unless corroborated across at least two distinct banking systems and multiple evidence items.
+    Prevents probabilistic or single-person identity collapse. Returns True ONLY when:
+    1. The candidate is explicitly confirmed via two-person maker-checker review (is_confirmed_identity is True).
+    2. Ephemeral infrastructure attributes (IP address, subnet, branch workstation) NEVER collapse entities
+       into a single physical person on their own, even after two reviewers.
+    3. Commodity identifiers (phone, email, device) require corroborated evidence and zero contradictions.
     """
     if not candidate.is_confirmed_identity:
         return False
     risk = classify_attribute_risk(candidate.attribute_type)
     if risk == AttributeRiskTier.EPHEMERAL_INFRASTRUCTURE:
-        if len(candidate.supporting_evidence) < 2 or len(candidate.source_systems) < 2:
+        return False
+    if risk == AttributeRiskTier.COMMODITY_IDENTIFIER:
+        if len(candidate.contradicting_evidence) > 0:
             return False
     return True
+
+
+def approve_identity_link(
+    candidate: EntityLinkCandidate,
+    second_reviewer_subject: str,
+    rationale: str,
+    reviewed_at: datetime | None = None,
+) -> EntityLinkCandidate:
+    return EntityResolutionEngine.approve_identity_link(
+        candidate=candidate,
+        second_reviewer_subject=second_reviewer_subject,
+        rationale=rationale,
+        reviewed_at=reviewed_at,
+    )
 

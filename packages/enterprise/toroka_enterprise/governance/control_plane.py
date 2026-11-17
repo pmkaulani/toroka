@@ -34,6 +34,7 @@ class PillarStatus(StrEnum):
     WARNING = "warning"
     DEGRADED = "degraded"
     CRITICAL = "critical"
+    UNKNOWN = "unknown"
 
 
 @dataclass(frozen=True)
@@ -365,12 +366,21 @@ class TorokaControlPlane:
             self.evaluate_release_eligibility(rel)[0]
             for rel in self._releases
         ) if self._releases else False
-        release_status = PillarStatus.HEALTHY if not self._releases or has_promotable else PillarStatus.WARNING
+        if not self._releases:
+            release_status = PillarStatus.UNKNOWN
+            release_details = "Zero production releases defined; readiness cannot be asserted."
+        elif has_promotable:
+            release_status = PillarStatus.HEALTHY
+            release_details = f"{len(self._releases)} releases evaluated against 13 mandatory readiness gates; valid promotable release available."
+        else:
+            release_status = PillarStatus.WARNING
+            release_details = f"{len(self._releases)} releases evaluated; no release is currently promotable to production."
+
         pillars["release_gates"] = PillarHealth(
             pillar_id="release_gates",
             name="Release Gates & Promotion Control",
             status=release_status,
-            details=f"{len(self._releases)} releases evaluated against 13 mandatory readiness gates.",
+            details=release_details,
             metrics={"release_count": len(self._releases), "has_promotable_release": has_promotable},
         )
 
@@ -416,18 +426,24 @@ class TorokaControlPlane:
             metrics={"non_repudiation_enforced": True},
         )
 
-        # Determine overall status and production readiness
+        # Determine overall status and production readiness (fail closed)
         pillar_statuses = [p.status for p in pillars.values()]
-        if PillarStatus.CRITICAL in pillar_statuses or len(blocking_incidents) > 0 or len(invalid_passports) > 0:
+        all_pillars_healthy = all(p.status == PillarStatus.HEALTHY for p in pillars.values())
+        is_ready = (
+            all_pillars_healthy
+            and not active_suspensions
+            and not blocking_incidents
+            and not invalid_passports
+        )
+
+        if PillarStatus.CRITICAL in pillar_statuses:
             overall = PillarStatus.CRITICAL
-            is_ready = False
-        elif PillarStatus.WARNING in pillar_statuses or len(active_suspensions) > 0:
+        elif PillarStatus.DEGRADED in pillar_statuses:
+            overall = PillarStatus.DEGRADED
+        elif PillarStatus.WARNING in pillar_statuses or PillarStatus.UNKNOWN in pillar_statuses:
             overall = PillarStatus.WARNING
-            # Can only be ready if no blocking incidents and no suspensions
-            is_ready = len(active_suspensions) == 0 and len(blocking_incidents) == 0
         else:
             overall = PillarStatus.HEALTHY
-            is_ready = True
 
         return SystemGovernanceHealth(
             installation_id=self.installation_id,

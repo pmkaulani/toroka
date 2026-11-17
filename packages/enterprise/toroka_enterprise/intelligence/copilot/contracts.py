@@ -99,11 +99,14 @@ class EvidenceContext:
     context_digest: str = ""
 
     def __post_init__(self) -> None:
-        if not self.context_digest and self.items:
-            combined = "|".join(
-                f"{item.evidence_id}:{item.content_sha256}"
-                for item in sorted(self.items, key=lambda x: x.evidence_id)
-            )
+        if not self.context_digest:
+            if self.items:
+                combined = "|".join(
+                    f"{item.evidence_id}:{item.content_sha256}"
+                    for item in sorted(self.items, key=lambda x: x.evidence_id)
+                )
+            else:
+                combined = f"{self.installation_id}:{self.case_id}:empty"
             digest = hashlib.sha256(combined.encode("utf-8")).hexdigest()
             object.__setattr__(self, "context_digest", digest)
 

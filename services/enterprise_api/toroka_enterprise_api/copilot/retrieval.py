@@ -158,7 +158,7 @@ class EvidenceRetriever:
                     f"(Record: {r.source_record_id or 'none'})."
                 )
                 ev_item = EvidenceItem.create(
-                    evidence_id=f"ev:event:{r.event_id[:12]}",
+                    evidence_id=r.event_id,
                     installation_id=self.installation_id,
                     case_id=ctx.case_id,
                     source_system=r.source_system or "canonical_intelligence",

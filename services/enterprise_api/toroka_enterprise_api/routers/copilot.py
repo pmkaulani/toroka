@@ -253,7 +253,7 @@ def update_report_draft(
 @router.post(
     "/reports/{draft_id}/review",
     response_model=CopilotReportDraftResponse,
-    dependencies=[Depends(require_roles(ROLE_AUTHORISER, ROLE_INVESTIGATOR, ROLE_SYSTEM_ADMINISTRATOR))],
+    dependencies=[Depends(require_roles(ROLE_AUTHORISER, ROLE_SYSTEM_ADMINISTRATOR))],
 )
 def review_report_draft(
     draft_id: str,
