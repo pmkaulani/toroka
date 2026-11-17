@@ -27,3 +27,20 @@ jobs:
         run: python -m compileall -q packages services
       - name: Run complete test suite
         run: pytest -q
+
+  frontend-workbench:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: apps/enterprise-workbench/package-lock.json
+      - name: Install dependencies
+        working-directory: apps/enterprise-workbench
+        run: npm ci
+      - name: Type-check and build Workbench
+        working-directory: apps/enterprise-workbench
+        run: npm run build
