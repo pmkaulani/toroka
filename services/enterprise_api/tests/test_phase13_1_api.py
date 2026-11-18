@@ -58,9 +58,7 @@ def test_forensic_dossier_lifecycle_api(oidc_client, token_factory, phase13_1_ca
             "fraud_loss_amount": 1250000.0,
             "currency": "KES",
             "case_summary": "4-hop rapid pass-through syndicate detected moving KES 1.25M into cash-out wallets.",
-            "certifier_name": "Inspector J. Kamau",
-            "certifier_designation": "Senior Forensic Examiner",
-            "declaration_text": "I solemnly declare that the electronic records are authentic under Section 106B.",
+            # Client-submitted certifier text is deliberately not accepted as certification.
             "identified_mule_nodes": [
                 {"account_number": "01199887766", "entity_name": "Kamau Enterprises", "risk_score": 0.95, "role": "Pass-Through Mule"},
             ],
@@ -76,9 +74,10 @@ def test_forensic_dossier_lifecycle_api(oidc_client, token_factory, phase13_1_ca
     assert dossier["title"] == "M-PESA Syndicate Rapid Pass-Through Investigation"
     assert dossier["fraud_loss_amount"] == 1250000.0
     assert dossier["is_digitally_signed"] is False
-    assert dossier["is_verified"] is True
-    assert dossier["section_106b_certificate"] is not None
-    assert dossier["section_106b_certificate"]["certifier_name"] == "Inspector J. Kamau"
+    assert dossier["is_verified"] is False
+    assert dossier["status"] == "DRAFT_UNVERIFIED"
+    assert dossier["section_106b_certificate"] is None
+    assert dossier["evidence_records"][0]["provenance_status"] == "UNVERIFIED_CLIENT_SUBMISSION"
     assert len(dossier["chain_of_custody"]) >= 1
 
     # 2. Retrieve Dossier
@@ -103,7 +102,7 @@ def test_forensic_dossier_lifecycle_api(oidc_client, token_factory, phase13_1_ca
     assert sign_resp.status_code == 200
     signed_data = sign_resp.json()
     assert signed_data["is_digitally_signed"] is True
-    assert signed_data["status"] == "SEALED_SIGNED"
+    assert signed_data["status"] == "DRAFT_SIGNED"
     assert signed_data["signature_bundle"] is not None
     assert signed_data["signature_bundle"]["algorithm"] == "Ed25519"
 
@@ -111,7 +110,7 @@ def test_forensic_dossier_lifecycle_api(oidc_client, token_factory, phase13_1_ca
     verify_resp = oidc_client.post(
         f"/api/enterprise/v1/governance/forensic-dossiers/{dossier_id}/verify",
         headers={"Authorization": f"Bearer {token_investigator}"},
-        json={},
+        json={"trusted_public_key_pem": signed_data["signature_bundle"]["public_key_pem"]},
     )
     assert verify_resp.status_code == 200
     v_data = verify_resp.json()
@@ -119,7 +118,7 @@ def test_forensic_dossier_lifecycle_api(oidc_client, token_factory, phase13_1_ca
     assert v_data["digest_verified"] is True
     assert v_data["signature_verified"] is True
 
-    # 5. Export HTML Court Package
+    # 5. Export draft for review; this is not a court filing or Section 106B certificate.
     html_resp = oidc_client.get(
         f"/api/enterprise/v1/governance/forensic-dossiers/{dossier_id}/export-html",
         headers={"Authorization": f"Bearer {token_investigator}"},
@@ -127,9 +126,9 @@ def test_forensic_dossier_lifecycle_api(oidc_client, token_factory, phase13_1_ca
     assert html_resp.status_code == 200
     assert "text/html" in html_resp.headers["content-type"]
     html_text = html_resp.text
-    assert "REPUBLIC OF KENYA" in html_text
-    assert "SECTION 106B" in html_text.upper()
-    assert "Inspector J. Kamau" in html_text
+    assert "DRAFT COMPILATION" in html_text
+    assert "NOT A SECTION 106B CERTIFICATE OR COURT FILING" in html_text
+    assert "REPUBLIC OF KENYA" not in html_text
     assert dossier["dossier_digest"] in html_text
 
 
@@ -178,9 +177,10 @@ def test_iso20022_inflight_payment_risk_evaluation_api(oidc_client, token_factor
     )
     assert scam_resp.status_code == 200
     scam_data = scam_resp.json()
-    assert scam_data["decision"] in ("QUARANTINE_HOLD", "BLOCK")
-    assert scam_data["risk_tier"] in ("HIGH", "CRITICAL")
+    assert scam_data["decision"] == "STEP_UP_AUTH"
+    assert scam_data["risk_tier"] == "MEDIUM"
     assert len(scam_data["triggered_rules"]) >= 1
+    assert "Toroka has not initiated" in scam_data["recommended_action"]
 
 
 def test_copilot_semantic_grounding_verification_api(oidc_client, token_factory):
