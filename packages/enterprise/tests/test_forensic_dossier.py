@@ -118,7 +118,7 @@ def test_forensic_dossier_digital_signing_ed25519_and_ecdsa():
 
     assert dossier.signature_bundle is not None
     assert dossier.signature_bundle.algorithm == "Ed25519"
-    assert dossier.verify_digital_signature() is True
+    assert dossier.verify_digital_signature() is False  # trust anchor required
     assert dossier.verify_digital_signature(trusted_public_key_pem=ed_signer.public_key_pem) is True
 
     # 2. Sign with ECDSA P-256
@@ -126,7 +126,7 @@ def test_forensic_dossier_digital_signing_ed25519_and_ecdsa():
     dossier.sign(ecdsa_signer)
 
     assert dossier.signature_bundle.algorithm == "ECDSA_P256"
-    assert dossier.verify_digital_signature() is True
+    assert dossier.verify_digital_signature() is False
     assert dossier.verify_digital_signature(trusted_public_key_pem=ecdsa_signer.public_key_pem) is True
 
 
@@ -181,9 +181,9 @@ def test_render_html_court_dossier():
 
     html_out = dossier.render_html_dossier()
 
-    assert "REPUBLIC OF KENYA" in html_out
-    assert "SECTION 106B" in html_out.upper()
-    assert "Inspector J. Kamau" in html_out
+    assert "DRAFT COMPILATION" in html_out
+    assert "NOT A SECTION 106B CERTIFICATE OR COURT FILING" in html_out
+    assert "REPUBLIC OF KENYA" not in html_out
     assert "KES 750,000.00" in html_out
     assert dossier.dossier_digest in html_out
     assert dossier.signature_bundle.signature_hex in html_out
