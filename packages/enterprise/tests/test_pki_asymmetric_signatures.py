@@ -41,7 +41,7 @@ def test_ed25519_signing_and_verification():
 
     # Tampered payload fails
     tampered_payload = {"message": "High-value suspicious wire transfer", "amount": 10.0}
-    assert verify_asymmetric_signature(tampered_payload, bundle) is False
+    assert verify_asymmetric_signature(tampered_payload, bundle, signer.get_public_key_pem()) is False
 
     # Tampered signature fails
     tampered_bundle = SignatureBundle(
@@ -53,7 +53,7 @@ def test_ed25519_signing_and_verification():
         digest_algorithm=bundle.digest_algorithm,
         content_digest=bundle.content_digest,
     )
-    assert verify_asymmetric_signature(payload, tampered_bundle) is False
+    assert verify_asymmetric_signature(payload, tampered_bundle, signer.get_public_key_pem()) is False
 
 
 def test_ecdsa_p256_signing_and_verification():
@@ -63,7 +63,8 @@ def test_ecdsa_p256_signing_and_verification():
     bundle = signer.sign(payload)
     assert bundle.algorithm == "ECDSA_P256"
     assert signer.verify(payload, bundle) is True
-    assert verify_asymmetric_signature(payload, bundle) is True
+    assert verify_asymmetric_signature(payload, bundle, signer.get_public_key_pem()) is True
+    assert verify_asymmetric_signature(payload, bundle) is False  # no trust anchor
 
     # Wrong public key fails
     other_signer = LocalHSMKeyProvider(algorithm=AsymmetricAlgorithm.ECDSA_P256)
@@ -86,7 +87,7 @@ def test_evidence_passport_digital_signing():
 
     assert signed_passport.signature_bundle is not None
     assert signed_passport.signing_key_id == "hsm-partition-1"
-    assert signed_passport.verify_digital_signature() is True
+    assert signed_passport.verify_digital_signature() is False  # trust anchor required
     assert signed_passport.verify_digital_signature(signer.get_public_key_pem()) is True
 
     # Verification against export dictionary
@@ -95,7 +96,7 @@ def test_evidence_passport_digital_signing():
         passport_dict, passport_digest=passport_dict["passport_digest"]
     )
     assert reconstructed.verify_integrity() is True
-    assert reconstructed.verify_digital_signature() is True
+    assert reconstructed.verify_digital_signature(signer.get_public_key_pem()) is True
 
 
 def test_production_release_manifest_digital_signing():
@@ -116,7 +117,8 @@ def test_production_release_manifest_digital_signing():
     signed_manifest = manifest.sign(signer)
 
     assert signed_manifest.signature_bundle is not None
-    assert signed_manifest.verify_digital_signature() is True
+    assert signed_manifest.verify_digital_signature() is False  # trust anchor required
+    assert signed_manifest.verify_digital_signature(signer.get_public_key_pem()) is True
 
     manifest_dict = signed_manifest.to_dict()
     assert manifest_dict["signature_bundle"] is not None
