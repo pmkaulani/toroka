@@ -3333,12 +3333,17 @@ class ProductionGovernanceService:
 
         report = verify_report_semantics(claims, ctx)
         return SemanticVerifyResponse(
-            is_valid=report.is_valid,
+            # Submitted excerpts are not loaded from an authorized case evidence store.
+            # Preserve the useful text-consistency result, but never mark it verified.
+            is_valid=False,
             total_claims=report.total_claims,
             entailed_claims=report.entailed_claims,
             contradicted_claims=report.contradicted_claims,
             numeric_mismatches=report.numeric_mismatches,
             ungrounded_claims=report.ungrounded_claims,
             evaluations=[e.to_dict() for e in report.evaluations],
+            content_consistent=report.is_valid,
+            evidence_provenance_verified=False,
+            verification_scope="CALLER_SUPPLIED_TEXT_ONLY",
         )
 
