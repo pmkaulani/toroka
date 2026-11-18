@@ -114,9 +114,10 @@ def test_forensic_dossier_lifecycle_api(oidc_client, token_factory, phase13_1_ca
     )
     assert verify_resp.status_code == 200
     v_data = verify_resp.json()
-    assert v_data["is_valid"] is True
+    assert v_data["is_valid"] is False
     assert v_data["digest_verified"] is True
     assert v_data["signature_verified"] is True
+    assert "draft" in v_data["error"].lower()
 
     # 5. Export draft for review; this is not a court filing or Section 106B certificate.
     html_resp = oidc_client.get(
