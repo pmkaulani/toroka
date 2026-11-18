@@ -707,7 +707,17 @@ class ProductionGovernanceService:
             for m in request.metrics
         ]
 
-        overall_result = calculate_validation_result(domain_metrics)
+        # Metrics arrive from this API request; no trusted execution worker or
+        # signed result attestation is connected yet. Retain the submitted values
+        # for review, but do not persist them as a passing validation outcome.
+        calculate_validation_result(domain_metrics)  # validates the metric result vocabulary
+        overall_result = ValidationResult.INCONCLUSIVE
+        persisted_metrics = [
+            {**metric.model_dump(), "result": ValidationResult.INCONCLUSIVE.value}
+            for metric in request.metrics
+        ]
+        limitations = list(dict.fromkeys(request.limitations or []))
+        limitations.append("UNVERIFIED_CALLER_SUBMITTED_METRICS: no trusted validation execution attestation is attached")
         run_id = f"val-{uuid.uuid4().hex[:12]}"
         now = _utc_now()
 
@@ -718,11 +728,11 @@ class ProductionGovernanceService:
             component_version=request.component_version,
             dataset_digest=request.dataset_digest,
             configuration_digest=request.configuration_digest,
-            metrics=[m.model_dump() for m in request.metrics],
+            metrics=persisted_metrics,
             result=overall_result.value,
             # Client-provided evaluator labels are not an identity assertion.
             evaluator=actor_subject,
-            limitations=list(dict.fromkeys(request.limitations or [])),
+            limitations=limitations,
             started_at=now,
             completed_at=now,
             created_at=now,
