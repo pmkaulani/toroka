@@ -175,60 +175,6 @@ def test_canonical_release_manifest_integrity_and_tamper_detection(
     )
     assert app_resp.status_code == 422
     assert "passing validation run" in app_resp.json()["detail"].lower()
-    return
-
-    # 4. Attest all 13 mandatory readiness gates
-    gates_summary = []
-    for gate in MANDATORY_GATES:
-        gate_name = gate.value if hasattr(gate, "value") else str(gate)
-        gates_summary.append({"gate_name": gate_name, "status": "PASS"})
-        att_resp = oidc_client.post(
-            "/api/enterprise/v1/governance/readiness/attestations",
-            headers={"Authorization": f"Bearer {token_auditor}"},
-            json={
-                "release_version": "2026.11.99",
-                "gate_name": gate_name,
-                "status": "PASS",
-                "evidence_reference": f"artifact-{gate_name.lower()}",
-                "evidence_digest": "f" * 64,
-                "rationale": f"Gate {gate_name} submitted by QA for independent evidence verification",
-            },
-        )
-        assert att_resp.status_code == 201
-
-    # 5. Alice creates staged release
-    rel_resp = oidc_client.post(
-        "/api/enterprise/v1/governance/releases",
-        headers={"Authorization": f"Bearer {token_alice}"},
-        json={
-            "version": "2026.11.99",
-            "environment": "validation",
-            "components": {"det_integrity_test": "1.0.0"},
-            "validation_runs": [val_data["run_id"]],
-            "approval_records": [app_resp.json()["approval_record_id"]],
-            "readiness_gates": gates_summary,
-        },
-    )
-    assert rel_resp.status_code == 201
-    rel = rel_resp.json()
-    release_id = rel["release_id"]
-
-    # 6. Maker-checker: Alice (creator) cannot promote her own release
-    self_promote_resp = oidc_client.post(
-        f"/api/enterprise/v1/governance/releases/{release_id}/promote",
-        headers={"Authorization": f"Bearer {token_alice}"},
-        json={"target_environment": "production"},
-    )
-    assert self_promote_resp.status_code in (403, 422)
-
-    # 7. Independent Bob promotes release to production
-    bob_promote_resp = oidc_client.post(
-        f"/api/enterprise/v1/governance/releases/{release_id}/promote",
-        headers={"Authorization": f"Bearer {token_bob}"},
-        json={"target_environment": "production"},
-    )
-    assert bob_promote_resp.status_code == 503
-    assert "bank-controlled readiness evidence verifier" in bob_promote_resp.json()["detail"].lower()
 
 
 def test_release_promotion_tamper_detection(oidc_client, token_factory, db_session):
