@@ -3047,6 +3047,7 @@ class ProductionGovernanceService:
         dossier_id: str,
         request: SignArtifactRequest,
         actor_subject: str,
+        actor_role: str = "authoriser",
     ) -> ForensicDossierResponse:
         record = self.session.execute(
             select(ForensicDossierRecord).where(
@@ -3089,8 +3090,8 @@ class ProductionGovernanceService:
             event_id=f"cust-{uuid.uuid4().hex[:8]}",
             timestamp=now,
             actor_subject=actor_subject,
-            actor_role="CERTIFYING_OFFICER",
-            action="EXAMINER_DIGITALLY_SIGNED",
+            actor_role=actor_role,
+            action="DRAFT_CONTENT_SIGNED",
             source_hash=record.dossier_digest,
             destination_hash=dossier.signature_bundle.signature_hex[:32],
             notes=f"Digitally signed with algorithm {algo.value} (Key: {request.key_id})",
@@ -3101,6 +3102,16 @@ class ProductionGovernanceService:
         record.signature_bundle = dossier.signature_bundle.to_dict()
         record.chain_of_custody = updated_custody
         record.status = "DRAFT_SIGNED"
+        append_audit(
+            self.session,
+            installation_id=self.installation_id,
+            actor_subject=actor_subject,
+            actor_role=actor_role,
+            action="forensic_dossier_draft_signed",
+            target_type="forensic_dossier",
+            target_id=dossier_id,
+            safe_metadata={"content_digest": record.dossier_digest, "lifecycle_status": "DRAFT_SIGNED"},
+        )
 
         self.session.commit()
         self.session.refresh(record)
