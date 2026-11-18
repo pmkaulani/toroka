@@ -130,7 +130,7 @@ def test_passport_digital_signing_and_verification_api(oidc_client, token_factor
     verify_resp = oidc_client.post(
         f"/api/enterprise/v1/governance/passports/{passport_id}/verify",
         headers={"Authorization": f"Bearer {token_investigator}"},
-        json={},
+        json={"trusted_public_key_pem": signed_data["signature_bundle"]["public_key_pem"]},
     )
     assert verify_resp.status_code == 200
     v_data = verify_resp.json()
@@ -186,7 +186,7 @@ def test_release_digital_signing_and_verification_api(oidc_client, token_factory
     v_resp = oidc_client.post(
         f"/api/enterprise/v1/governance/releases/{release_id}/verify",
         headers={"Authorization": f"Bearer {token_investigator}"},
-        json={},
+        json={"trusted_public_key_pem": signed_rel["signature_bundle"]["public_key_pem"]},
     )
     assert v_resp.status_code == 200
     v_res = v_resp.json()
