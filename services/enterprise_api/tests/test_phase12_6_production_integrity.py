@@ -126,6 +126,8 @@ def test_canonical_release_manifest_integrity_and_tamper_detection(
 ):
     token_alice = token_factory(sub="authoriser.alice", roles=["BANK_AUTHORISER"])
     token_bob = token_factory(sub="authoriser.bob", roles=["BANK_AUTHORISER"])
+    token_validator = token_factory(sub="validator.charlie", roles=["BANK_AUTHORISER"])
+    token_auditor = token_factory(sub="auditor.dana", roles=["BANK_AUDITOR"])
 
     # 1. Alice registers detector component
     reg_resp = oidc_client.post(
@@ -147,7 +149,7 @@ def test_canonical_release_manifest_integrity_and_tamper_detection(
     # 2. Independent evaluation run
     val_resp = oidc_client.post(
         "/api/enterprise/v1/governance/validation-runs",
-        headers={"Authorization": f"Bearer {token_alice}"},
+        headers={"Authorization": f"Bearer {token_validator}"},
         json={
             "component_id": "det_integrity_test",
             "component_version": "1.0.0",
@@ -179,15 +181,14 @@ def test_canonical_release_manifest_integrity_and_tamper_detection(
         gates_summary.append({"gate_name": gate_name, "status": "PASS"})
         att_resp = oidc_client.post(
             "/api/enterprise/v1/governance/readiness/attestations",
-            headers={"Authorization": f"Bearer {token_bob}"},
+            headers={"Authorization": f"Bearer {token_auditor}"},
             json={
                 "release_version": "2026.11.99",
                 "gate_name": gate_name,
                 "status": "PASS",
-                "verified_by": "qa_team",
-                "evidence_reference": f"https://audit.bank.internal/evidence/{gate_name}",
+                "evidence_reference": f"artifact-{gate_name.lower()}",
                 "evidence_digest": "f" * 64,
-                "rationale": f"Gate {gate_name} fully satisfied by QA test run",
+                "rationale": f"Gate {gate_name} submitted by QA for independent evidence verification",
             },
         )
         assert att_resp.status_code == 201
@@ -201,7 +202,7 @@ def test_canonical_release_manifest_integrity_and_tamper_detection(
             "environment": "validation",
             "components": {"det_integrity_test": "1.0.0"},
             "validation_runs": [val_data["run_id"]],
-            "approval_records": ["app_valid_01"],
+            "approval_records": [app_resp.json()["approval_record_id"]],
             "readiness_gates": gates_summary,
         },
     )
@@ -223,10 +224,8 @@ def test_canonical_release_manifest_integrity_and_tamper_detection(
         headers={"Authorization": f"Bearer {token_bob}"},
         json={"target_environment": "production"},
     )
-    assert bob_promote_resp.status_code == 200
-    promoted = bob_promote_resp.json()
-    assert promoted["environment"] == "production"
-    assert promoted["status"] == "active"
+    assert bob_promote_resp.status_code == 503
+    assert "bank-controlled readiness evidence verifier" in bob_promote_resp.json()["detail"].lower()
 
 
 def test_release_promotion_tamper_detection(oidc_client, token_factory, db_session):
