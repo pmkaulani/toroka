@@ -30,11 +30,23 @@ from .models import (
     IntegrationRecord,
     IntegrationRejectedRecord,
 )
+from .cop import (
+    ConfirmationOfPayeeEngine,
+    CopAccountType,
+    CopInquiryRequest,
+    CopStatus,
+    CopVerificationResult,
+)
 from .quality import QualityIssue, QualityReport, assess_canonical_batch
 from .registry import ConnectorRegistry, DEFAULT_CONNECTOR_REGISTRY
 
 __all__ = [
     "BankConnector",
+    "ConfirmationOfPayeeEngine",
+    "CopAccountType",
+    "CopInquiryRequest",
+    "CopStatus",
+    "CopVerificationResult",
     "ConnectorContext",
     "ConnectorBatch",
     "SourceSystem",

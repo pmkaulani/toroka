@@ -69,6 +69,10 @@ class PaymentDecision(StrEnum):
     STEP_UP_AUTH = "STEP_UP_AUTH"
     QUARANTINE_HOLD = "QUARANTINE_HOLD"
     BLOCK = "BLOCK"
+    # Phase 14.0 Graduated Interventions (China PBOC / PayPal / UK PSR style)
+    DELAY_SETTLEMENT_15M = "DELAY_SETTLEMENT_15M"
+    INFLOW_ONLY = "INFLOW_ONLY"
+    RESTRICT_NON_COUNTER = "RESTRICT_NON_COUNTER"
 
 
 class RiskTier(StrEnum):
@@ -194,6 +198,8 @@ class InflightRiskEvaluation:
     triggered_rules: tuple[str, ...]
     recommended_action: str
     latency_ms: float
+    cop_status: str | None = None
+    cop_match_score: float | None = None
     evaluated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
     def to_dict(self) -> dict[str, Any]:
@@ -205,6 +211,8 @@ class InflightRiskEvaluation:
             "triggered_rules": list(self.triggered_rules),
             "recommended_action": self.recommended_action,
             "latency_ms": round(self.latency_ms, 3),
+            "cop_status": self.cop_status,
+            "cop_match_score": round(self.cop_match_score, 4) if self.cop_match_score is not None else None,
             "evaluated_at": self.evaluated_at.isoformat(),
         }
 
@@ -372,6 +380,11 @@ class ISO20022Engine:
         transfer: Pacs008CreditTransfer,
         known_mule_accounts: set[str] | None = None,
         account_prior_transfers_count: int | None = None,
+        cop_status: str | None = None,
+        cop_match_score: float | None = None,
+        beneficiary_inflow_restriction: bool = False,
+        debtor_channel_anomaly: bool = False,
+        enable_graduated_controls: bool = True,
     ) -> InflightRiskEvaluation:
         """Evaluates an in-flight payment against instant risk rules in advisory mode."""
         t0 = time.perf_counter()
@@ -405,6 +418,28 @@ class ISO20022Engine:
             triggered_rules.append("RULE_NEW_FAST_BENEFICIARY: First-time counterparty on instant settlement rail")
             risk_score += 0.20
 
+        # Rule 5: Confirmation of Payee (CoP) Discrepancy (UK PSR & CBK Alignment)
+        if cop_status:
+            c_stat = str(cop_status).upper()
+            if c_stat == "NO_MATCH":
+                triggered_rules.append("RULE_COP_NO_MATCH: Creditor name does not match registered account holder (High Impersonation Risk)")
+                risk_score += 0.45
+            elif c_stat == "CLOSE_MATCH":
+                triggered_rules.append("RULE_COP_CLOSE_MATCH: Creditor name is a close variant; advise user confirmation")
+                risk_score += 0.10
+            elif c_stat == "MATCH":
+                risk_score = max(0.0, risk_score - 0.05)
+
+        # Rule 6: Beneficiary Inflow Restriction Flag (PBOC Article 18 Alignment)
+        if beneficiary_inflow_restriction:
+            triggered_rules.append("RULE_BENEFICIARY_INFLOW_RESTRICTION: Creditor account flagged for inbound-only hold (PBOC Art. 18)")
+            risk_score = max(risk_score, 0.75)
+
+        # Rule 7: Debtor Channel Anomaly / Non-Counter Restriction Flag (PBOC Article 18 Alignment)
+        if debtor_channel_anomaly:
+            triggered_rules.append("RULE_NON_COUNTER_RESTRICTION: Channel anomaly / ATO indicator; non-counter restriction (PBOC Art. 18)")
+            risk_score = max(risk_score, 0.70)
+
         # Cap risk score at 1.0
         risk_score = min(risk_score, 1.0)
 
@@ -413,6 +448,18 @@ class ISO20022Engine:
             decision = PaymentDecision.BLOCK
             tier = RiskTier.CRITICAL
             recommended_action = "RECOMMEND_BLOCK: Advisory risk result only; Toroka sends no clearing instruction"
+        elif beneficiary_inflow_restriction:
+            decision = PaymentDecision.INFLOW_ONLY
+            tier = RiskTier.HIGH
+            recommended_action = "RECOMMEND_INFLOW_ONLY: Beneficiary account marked for outbound hold; capture incoming deposit while blocking outbound cashout or mule dispersal."
+        elif debtor_channel_anomaly:
+            decision = PaymentDecision.RESTRICT_NON_COUNTER
+            tier = RiskTier.HIGH
+            recommended_action = "RECOMMEND_RESTRICT_NON_COUNTER: Advisory suspension of mobile/USSD channels; require physical branch verification with national biometric ID."
+        elif enable_graduated_controls and 0.50 <= risk_score < 0.80 and transfer.clearing_rail in (ClearingRail.PESALINK, ClearingRail.MPESA_B2C, ClearingRail.MPESA_B2B):
+            decision = PaymentDecision.DELAY_SETTLEMENT_15M
+            tier = RiskTier.HIGH
+            recommended_action = "RECOMMEND_DELAY_SETTLEMENT_15M: Advisory 15-minute escrow hold on instant settlement to provide an active victim revocation window."
         elif risk_score >= 0.50:
             decision = PaymentDecision.QUARANTINE_HOLD
             tier = RiskTier.HIGH
@@ -436,6 +483,8 @@ class ISO20022Engine:
             triggered_rules=tuple(triggered_rules),
             recommended_action=recommended_action,
             latency_ms=elapsed_ms,
+            cop_status=cop_status,
+            cop_match_score=cop_match_score,
         )
 
     @classmethod

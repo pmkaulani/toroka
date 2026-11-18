@@ -16,6 +16,7 @@ import {
   ChampionChallengerRun,
   ForensicDossier,
   InflightPaymentEvaluation,
+  CopVerifyResponse,
   Persona,
 } from "../types";
 
@@ -85,6 +86,21 @@ export const ProductionGovernanceView: React.FC<Props> = ({ currentPersona }) =>
   const [isoNarrative, setIsoNarrative] = useState("Urgent unlock fee for pending deposit");
   const [isoEvaluation, setIsoEvaluation] = useState<InflightPaymentEvaluation | null>(null);
   const [isoEvaluating, setIsoEvaluating] = useState(false);
+
+  // Phase 14.0 Confirmation of Payee (CoP) & Graduated Controls state
+  const [copIntendedName, setCopIntendedName] = useState("Patrick Mwangi");
+  const [copRegisteredName, setCopRegisteredName] = useState("Patrick Mwangi");
+  const [copAcctNumber, setCopAcctNumber] = useState("01100998877");
+  const [copAcctType, setCopAcctType] = useState<"PERSONAL" | "BUSINESS">("PERSONAL");
+  const [copRail, setCopRail] = useState("PESALINK");
+  const [copBic, setCopBic] = useState("KCBKKENA");
+  const [copVerifying, setCopVerifying] = useState(false);
+  const [copResult, setCopResult] = useState<CopVerifyResponse | null>(null);
+
+  const [enableGraduatedControls, setEnableGraduatedControls] = useState(true);
+  const [beneficiaryInflowRestriction, setBeneficiaryInflowRestriction] = useState(false);
+  const [debtorChannelAnomaly, setDebtorChannelAnomaly] = useState(false);
+  const [isoCopStatus, setIsoCopStatus] = useState<string>("NONE");
 
   const fetchData = async () => {
     setLoading(true);
@@ -257,6 +273,26 @@ export const ProductionGovernanceView: React.FC<Props> = ({ currentPersona }) =>
     }
   };
 
+  const handleVerifyCop = async () => {
+    setCopVerifying(true);
+    try {
+      const res = await api.verifyConfirmationOfPayee({
+        intended_name: copIntendedName,
+        registered_name: copRegisteredName,
+        account_number: copAcctNumber,
+        account_type: copAcctType,
+        clearing_rail: copRail,
+        bank_bic: copBic,
+      });
+      setCopResult(res);
+      setIsoCopStatus(res.status);
+    } catch (err: any) {
+      alert(`Confirmation of Payee failed: ${err.message}`);
+    } finally {
+      setCopVerifying(false);
+    }
+  };
+
   const handleEvaluateInflightPayment = async () => {
     setIsoEvaluating(true);
     try {
@@ -268,11 +304,16 @@ export const ProductionGovernanceView: React.FC<Props> = ({ currentPersona }) =>
         debtor_name: "James Kariuki (Payer)",
         debtor_account: isoDebtorAcct,
         debtor_bic: "KCBKKENA",
-        creditor_name: "Kamau Enterprises (Mule)",
+        creditor_name: copIntendedName || "Kamau Enterprises (Mule)",
         creditor_account: isoCreditorAcct,
         creditor_bic: "EQBLKENA",
         remittance_narrative: isoNarrative,
         account_prior_transfers_count: 0,
+        cop_status: isoCopStatus !== "NONE" ? isoCopStatus : undefined,
+        cop_match_score: copResult?.match_score,
+        beneficiary_inflow_restriction: beneficiaryInflowRestriction,
+        debtor_channel_anomaly: debtorChannelAnomaly,
+        enable_graduated_controls: enableGraduatedControls,
       });
       setIsoEvaluation(res);
     } catch (err: any) {
@@ -380,7 +421,7 @@ export const ProductionGovernanceView: React.FC<Props> = ({ currentPersona }) =>
             { id: "drift", label: `Drift Monitoring (${driftRecords.length})` },
             { id: "passports", label: `Evidence Passports (${passports.length})` },
             { id: "modelrisk", label: `Model Risk & PSI (${quantDrifts.length})` },
-            { id: "forensics_iso", label: "Evidence Dossiers & Shadow ISO 20022" },
+            { id: "forensics_iso", label: "CoP, ISO 20022 & Evidence Dossiers" },
             { id: "aiproviders", label: `AI Providers (${aiProviders.length})` },
             { id: "readiness", label: "Bank Validation Package" },
           ].map((tab) => (
@@ -1379,11 +1420,139 @@ export const ProductionGovernanceView: React.FC<Props> = ({ currentPersona }) =>
                 )}
               </div>
 
-              {/* Section 2: ISO 20022 In-Flight Real-Time Risk Simulator */}
+              {/* Section 2: Confirmation of Payee (CoP) Pre-Flight Verification */}
               <div className="p-5 rounded-lg bg-slate-900 border border-slate-800 space-y-4">
                 <div className="border-b border-slate-800 pb-3">
                   <h3 className="text-sm font-bold text-white flex items-center">
-                    <span className="mr-2">⚡</span> Shadow Advisory Payment Risk Evaluation (Non-Executing)
+                    <span className="mr-2">🔍</span> Confirmation of Payee (CoP) Pre-Flight Directory
+                  </h3>
+                  <p className="text-xs text-slate-400 mt-1">
+                    Pre-clearing beneficiary name verification under UK PSR & CBK rules. Checks intended name against legal account holder.
+                  </p>
+                </div>
+
+                <div className="space-y-3 text-xs">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-slate-400 block mb-1">Intended Payee Name (Payer Input)</label>
+                      <input
+                        value={copIntendedName}
+                        onChange={(e) => setCopIntendedName(e.target.value)}
+                        className="w-full bg-slate-950 border border-slate-800 rounded px-2.5 py-1.5 text-white"
+                        placeholder="e.g. Patrick Mwangi"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block mb-1">Registered Account Holder</label>
+                      <input
+                        value={copRegisteredName}
+                        onChange={(e) => setCopRegisteredName(e.target.value)}
+                        className="w-full bg-slate-950 border border-slate-800 rounded px-2.5 py-1.5 text-white"
+                        placeholder="e.g. Patrick Kariuki Mwangi"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-4 gap-3">
+                    <div>
+                      <label className="text-slate-400 block mb-1">Account Number / MSISDN</label>
+                      <input
+                        value={copAcctNumber}
+                        onChange={(e) => setCopAcctNumber(e.target.value)}
+                        className="w-full bg-slate-950 border border-slate-800 rounded px-2.5 py-1.5 text-white font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block mb-1">Account Type</label>
+                      <select
+                        value={copAcctType}
+                        onChange={(e) => setCopAcctType(e.target.value as "PERSONAL" | "BUSINESS")}
+                        className="w-full bg-slate-950 border border-slate-800 rounded px-2.5 py-1.5 text-white"
+                      >
+                        <option value="PERSONAL">PERSONAL</option>
+                        <option value="BUSINESS">BUSINESS</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block mb-1">Clearing Rail</label>
+                      <select
+                        value={copRail}
+                        onChange={(e) => setCopRail(e.target.value)}
+                        className="w-full bg-slate-950 border border-slate-800 rounded px-2.5 py-1.5 text-white"
+                      >
+                        <option value="PESALINK">PESALINK</option>
+                        <option value="MPESA_B2C">M-PESA (Daraja)</option>
+                        <option value="KEPSS_RTGS">KEPSS (RTGS)</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block mb-1">Bank BIC</label>
+                      <input
+                        value={copBic}
+                        onChange={(e) => setCopBic(e.target.value)}
+                        className="w-full bg-slate-950 border border-slate-800 rounded px-2.5 py-1.5 text-white font-mono"
+                        placeholder="e.g. KCBKKENA"
+                      />
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={handleVerifyCop}
+                    disabled={copVerifying}
+                    className="w-full py-2 bg-indigo-600 hover:bg-indigo-500 font-semibold text-white rounded transition shadow-sm flex items-center justify-center"
+                  >
+                    {copVerifying ? "Verifying Directory..." : "Verify Payee (Confirmation of Payee)"}
+                  </button>
+                </div>
+
+                {copResult && (
+                  <div className="mt-4 p-4 rounded bg-slate-950 border border-slate-800 text-xs space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-white text-sm">CoP Verification Outcome</span>
+                      <span
+                        className={`px-2.5 py-1 rounded font-bold text-xs ${
+                          copResult.status === "MATCH"
+                            ? "bg-emerald-950 text-emerald-300 border border-emerald-700"
+                            : copResult.status === "CLOSE_MATCH"
+                            ? "bg-amber-950 text-amber-300 border border-amber-700"
+                            : "bg-rose-950 text-rose-300 border border-rose-700"
+                        }`}
+                      >
+                        {copResult.status}
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 text-slate-400">
+                      <div>
+                        Match Score: <strong className="text-white">{(copResult.match_score * 100).toFixed(1)}%</strong>
+                      </div>
+                      <div>
+                        Reason: <strong className="text-white font-mono text-[11px]">{copResult.reason_code}</strong>
+                      </div>
+                    </div>
+
+                    {copResult.suggested_name && (
+                      <div className="p-2 rounded bg-amber-950/60 border border-amber-800/80 text-amber-200">
+                        Did you mean: <strong className="text-white">{copResult.suggested_name}</strong>?
+                      </div>
+                    )}
+
+                    <div className="p-2.5 rounded bg-slate-900 text-slate-200 border border-slate-800 leading-relaxed">
+                      {copResult.advisory_message}
+                    </div>
+
+                    <div className="pt-2 border-t border-slate-800 text-[10px] text-slate-500 font-mono break-all">
+                      Digest: {copResult.inquiry_digest}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Section 3: ISO 20022 In-Flight Real-Time Risk & Graduated Controls */}
+              <div className="p-5 rounded-lg bg-slate-900 border border-slate-800 space-y-4">
+                <div className="border-b border-slate-800 pb-3">
+                  <h3 className="text-sm font-bold text-white flex items-center">
+                    <span className="mr-2">⚡</span> Shadow Advisory Payment Risk & Graduated Controls (PBOC / Swiss SIC5)
                   </h3>
                   <p className="text-xs text-slate-400 mt-1">
                     Simulate shadow pacs.008 customer credit transfers across Kenya clearing rails. Toroka provides advisory risk scoring only and sends no clearing instructions.
@@ -1444,6 +1613,53 @@ export const ProductionGovernanceView: React.FC<Props> = ({ currentPersona }) =>
                     />
                   </div>
 
+                  {/* Graduated Controls & CoP Linking Options */}
+                  <div className="p-3 rounded bg-slate-950 border border-slate-800 space-y-2">
+                    <span className="font-semibold text-slate-300 block mb-1">Graduated Control Flags (PBOC Art. 18 / UK PSR)</span>
+                    <div className="grid grid-cols-2 gap-2 text-[11px]">
+                      <label className="flex items-center space-x-2 text-slate-300 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={enableGraduatedControls}
+                          onChange={(e) => setEnableGraduatedControls(e.target.checked)}
+                          className="rounded border-slate-800"
+                        />
+                        <span>Enable 15m Reversible Escrow Delay</span>
+                      </label>
+                      <label className="flex items-center space-x-2 text-slate-300 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={beneficiaryInflowRestriction}
+                          onChange={(e) => setBeneficiaryInflowRestriction(e.target.checked)}
+                          className="rounded border-slate-800"
+                        />
+                        <span>Beneficiary Inflow-Only Hold</span>
+                      </label>
+                      <label className="flex items-center space-x-2 text-slate-300 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={debtorChannelAnomaly}
+                          onChange={(e) => setDebtorChannelAnomaly(e.target.checked)}
+                          className="rounded border-slate-800"
+                        />
+                        <span>Debtor Non-Counter Restriction</span>
+                      </label>
+                      <div className="flex items-center space-x-2">
+                        <span className="text-slate-400">CoP Flag:</span>
+                        <select
+                          value={isoCopStatus}
+                          onChange={(e) => setIsoCopStatus(e.target.value)}
+                          className="bg-slate-900 border border-slate-800 rounded px-1.5 py-0.5 text-white text-[11px]"
+                        >
+                          <option value="NONE">NONE (Unchecked)</option>
+                          <option value="MATCH">MATCH (Verified)</option>
+                          <option value="CLOSE_MATCH">CLOSE_MATCH (Review)</option>
+                          <option value="NO_MATCH">NO_MATCH (Impersonation)</option>
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+
                   <button
                     onClick={handleEvaluateInflightPayment}
                     disabled={isoEvaluating}
@@ -1462,10 +1678,16 @@ export const ProductionGovernanceView: React.FC<Props> = ({ currentPersona }) =>
                           className={`px-2.5 py-1 rounded font-bold text-xs ${
                             isoEvaluation.decision === "ALLOW"
                               ? "bg-emerald-950 text-emerald-300 border border-emerald-700"
-                              : isoEvaluation.decision === "STEP_UP_AUTH"
-                              ? "bg-amber-950 text-amber-300 border border-amber-700"
-                              : isoEvaluation.decision === "QUARANTINE_HOLD"
+                              : isoEvaluation.decision === "DELAY_SETTLEMENT_15M"
+                              ? "bg-purple-950 text-purple-300 border border-purple-700"
+                              : isoEvaluation.decision === "INFLOW_ONLY"
                               ? "bg-orange-950 text-orange-300 border border-orange-700"
+                              : isoEvaluation.decision === "RESTRICT_NON_COUNTER"
+                              ? "bg-amber-950 text-amber-300 border border-amber-700"
+                              : isoEvaluation.decision === "STEP_UP_AUTH"
+                              ? "bg-blue-950 text-blue-300 border border-blue-700"
+                              : isoEvaluation.decision === "QUARANTINE_HOLD"
+                              ? "bg-yellow-950 text-yellow-300 border border-yellow-700"
                               : "bg-rose-950 text-rose-300 border border-rose-700"
                           }`}
                         >

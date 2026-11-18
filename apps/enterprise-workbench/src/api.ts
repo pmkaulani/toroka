@@ -68,6 +68,7 @@ import {
   ChampionChallengerRun,
   ForensicDossier,
   InflightPaymentEvaluation,
+  CopVerifyResponse,
 } from "./types";
 
 export const BANK_PERSONAS: Persona[] = [
@@ -1020,8 +1021,26 @@ export const api = {
     creditor_bic?: string;
     remittance_narrative?: string;
     account_prior_transfers_count?: number;
+    cop_status?: string | null;
+    cop_match_score?: number | null;
+    beneficiary_inflow_restriction?: boolean;
+    debtor_channel_anomaly?: boolean;
+    enable_graduated_controls?: boolean;
   }): Promise<InflightPaymentEvaluation> =>
     request<InflightPaymentEvaluation>("/api/enterprise/v1/governance/integrations/iso20022/evaluate-inflight", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  verifyConfirmationOfPayee: (payload: {
+    intended_name: string;
+    registered_name: string;
+    account_number: string;
+    account_type?: "PERSONAL" | "BUSINESS";
+    clearing_rail?: string;
+    bank_bic?: string;
+  }): Promise<CopVerifyResponse> =>
+    request<CopVerifyResponse>("/api/enterprise/v1/governance/integrations/cop/verify", {
       method: "POST",
       body: JSON.stringify(payload),
     }),

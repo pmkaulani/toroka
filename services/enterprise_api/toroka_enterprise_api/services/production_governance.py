@@ -124,6 +124,12 @@ from toroka_enterprise.integrations.iso20022 import (
     PartyIdentification,
     validate_payment_amount,
 )
+from toroka_enterprise.integrations.cop import (
+    ConfirmationOfPayeeEngine,
+    CopAccountType,
+    CopInquiryRequest,
+    CopStatus,
+)
 from toroka_enterprise.intelligence.copilot.contracts import (
     ClaimKind,
     EvidenceContext,
@@ -139,6 +145,7 @@ from toroka_enterprise.intelligence.copilot.semantic_grounding import (
 )
 from toroka_enterprise.intelligence.models import (
     ChampionChallengerRunRecord,
+    CopInquiryRecord,
     DriftRecordEntity,
     EntityLinkCandidateRecord,
     EvidencePassportRecord,
@@ -162,6 +169,8 @@ from ..governance_schemas import (
     ApproveAIProviderRequest,
     ApproveComponentRequest,
     ChampionChallengerRunResponse,
+    CopVerifyRequest,
+    CopVerifyResponse,
     CreateComponentRequest,
     CreateForensicDossierRequest,
     CreateIncidentRequest,
@@ -3470,6 +3479,11 @@ class ProductionGovernanceService:
             transfer=transfer,
             known_mule_accounts=mule_accounts,
             account_prior_transfers_count=request.account_prior_transfers_count,
+            cop_status=request.cop_status,
+            cop_match_score=request.cop_match_score,
+            beneficiary_inflow_restriction=request.beneficiary_inflow_restriction,
+            debtor_channel_anomaly=request.debtor_channel_anomaly,
+            enable_graduated_controls=request.enable_graduated_controls,
         )
 
         record = InflightPaymentRiskRecord(
@@ -3504,6 +3518,60 @@ class ProductionGovernanceService:
             integration_mode=record.integration_mode,
             latency_ms=record.latency_ms,
             evaluated_at=record.evaluated_at.isoformat(),
+            cop_status=eval_result.cop_status,
+            cop_match_score=eval_result.cop_match_score,
+        )
+
+    def verify_confirmation_of_payee(
+        self,
+        request: CopVerifyRequest,
+        actor_subject: str,
+    ) -> CopVerifyResponse:
+        """Evaluates intended payee name against registered account holder (UK CoP & CBK)."""
+        inq_req = CopInquiryRequest(
+            intended_name=request.intended_name,
+            registered_name=request.registered_name,
+            account_number=request.account_number,
+            account_type=CopAccountType(request.account_type),
+            clearing_rail=request.clearing_rail,
+            bank_bic=request.bank_bic,
+            inquiry_id=request.inquiry_id or f"cop-{uuid.uuid4().hex[:12]}",
+        )
+        result = ConfirmationOfPayeeEngine.verify(inq_req)
+
+        record = CopInquiryRecord(
+            inquiry_id=result.inquiry_id,
+            installation_id=self.installation_id,
+            intended_name=request.intended_name,
+            registered_name=request.registered_name,
+            account_number=request.account_number,
+            account_type=request.account_type,
+            clearing_rail=request.clearing_rail,
+            bank_bic=request.bank_bic,
+            status=result.status.value,
+            match_score=result.match_score,
+            suggested_name=result.suggested_name,
+            reason_code=result.reason_code,
+            advisory_message=result.advisory_message,
+            inquiry_digest=result.inquiry_digest,
+            actor_subject=actor_subject,
+            verified_at=result.verified_at,
+        )
+        self.session.add(record)
+        self.session.commit()
+        self.session.refresh(record)
+
+        return CopVerifyResponse(
+            inquiry_id=result.inquiry_id,
+            status=result.status.value,
+            match_score=result.match_score,
+            intended_name_normalized=result.intended_name_normalized,
+            registered_name_normalized=result.registered_name_normalized,
+            suggested_name=result.suggested_name,
+            reason_code=result.reason_code,
+            advisory_message=result.advisory_message,
+            inquiry_digest=result.inquiry_digest,
+            verified_at=result.verified_at.isoformat(),
         )
 
     def verify_copilot_semantics(

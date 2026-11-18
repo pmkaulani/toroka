@@ -1292,7 +1292,7 @@ export interface ForensicDossier {
 
 export interface InflightPaymentEvaluation {
   end_to_end_id: string;
-  decision: "ALLOW" | "STEP_UP_AUTH" | "QUARANTINE_HOLD" | "BLOCK";
+  decision: "ALLOW" | "STEP_UP_AUTH" | "QUARANTINE_HOLD" | "BLOCK" | "DELAY_SETTLEMENT_15M" | "INFLOW_ONLY" | "RESTRICT_NON_COUNTER";
   risk_score: number;
   risk_tier: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
   triggered_rules: string[];
@@ -1300,6 +1300,31 @@ export interface InflightPaymentEvaluation {
   integration_mode?: string;
   latency_ms: number;
   evaluated_at: string;
+  cop_status?: string | null;
+  cop_match_score?: number | null;
+}
+
+export interface CopVerifyRequest {
+  intended_name: string;
+  registered_name: string;
+  account_number: string;
+  account_type?: "PERSONAL" | "BUSINESS";
+  clearing_rail?: string;
+  bank_bic?: string;
+  inquiry_id?: string;
+}
+
+export interface CopVerifyResponse {
+  inquiry_id: string;
+  status: "MATCH" | "CLOSE_MATCH" | "NO_MATCH";
+  match_score: number;
+  intended_name_normalized: string;
+  registered_name_normalized: string;
+  suggested_name?: string | null;
+  reason_code: string;
+  advisory_message: string;
+  inquiry_digest: string;
+  verified_at: string;
 }
 
 export interface SemanticVerifyResponse {

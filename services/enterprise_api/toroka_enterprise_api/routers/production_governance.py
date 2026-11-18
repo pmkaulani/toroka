@@ -11,6 +11,8 @@ from ..governance_schemas import (
     ApproveAIProviderRequest,
     ApproveComponentRequest,
     ChampionChallengerRunResponse,
+    CopVerifyRequest,
+    CopVerifyResponse,
     CreateComponentRequest,
     CreateForensicDossierRequest,
     CreateIncidentRequest,
@@ -1083,5 +1085,28 @@ def revoke_trusted_signer(
         actor_subject=principal.subject,
         actor_role=_primary_role(principal),
     )
+
+
+# =============================================================================
+# 16. Confirmation of Payee (CoP) Pre-Flight Name Verification
+# =============================================================================
+
+@router.post(
+    "/integrations/cop/verify",
+    response_model=CopVerifyResponse,
+    dependencies=[
+        Depends(require_roles(ROLE_INVESTIGATOR, ROLE_AUTHORISER, ROLE_SYSTEM_ADMINISTRATOR))
+    ],
+)
+def verify_confirmation_of_payee(
+    request: CopVerifyRequest,
+    principal: EnterprisePrincipal = Depends(get_current_principal),
+    installation_id: str = Depends(get_installation_id),
+    db: Session = Depends(get_db),
+) -> CopVerifyResponse:
+    effective_inst = principal.installation_id or installation_id
+    service = ProductionGovernanceService(db, effective_inst)
+    return service.verify_confirmation_of_payee(request=request, actor_subject=principal.subject)
+
 
 

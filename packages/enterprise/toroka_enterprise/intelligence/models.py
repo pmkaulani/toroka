@@ -1278,6 +1278,36 @@ class SignerTrustRecord(IntelligenceBase):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
 
 
+# ==============================================================================
+# Phase 14.0 Models: Confirmation of Payee (CoP) Inquiries
+# ==============================================================================
+
+class CopInquiryRecord(IntelligenceBase):
+    """Historical record of Confirmation of Payee (CoP) inquiries and outcomes."""
+    __tablename__ = "enterprise_cop_inquiries"
+
+    inquiry_id: Mapped[str] = mapped_column(String(100), primary_key=True)
+    installation_id: Mapped[str] = mapped_column(String(100), primary_key=True, index=True)
+
+    intended_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    registered_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    account_number: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    account_type: Mapped[str] = mapped_column(String(50), nullable=False, default="PERSONAL")
+    clearing_rail: Mapped[str] = mapped_column(String(50), nullable=False, default="PESALINK")
+    bank_bic: Mapped[str] = mapped_column(String(50), nullable=False, default="")
+
+    status: Mapped[str] = mapped_column(String(50), nullable=False, index=True)  # MATCH, CLOSE_MATCH, NO_MATCH
+    match_score: Mapped[float] = mapped_column(Float, nullable=False)
+    suggested_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    reason_code: Mapped[str] = mapped_column(String(100), nullable=False)
+    advisory_message: Mapped[str] = mapped_column(Text, nullable=False)
+    inquiry_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+
+    actor_subject: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    verified_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+
+
+
 
 
 

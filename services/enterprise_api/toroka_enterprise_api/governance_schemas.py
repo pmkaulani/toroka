@@ -545,6 +545,12 @@ class InflightPaymentEvaluationRequest(BaseModel):
     creditor_national_id: str | None = None
     remittance_narrative: str = ""
     account_prior_transfers_count: int | None = None
+    # Phase 14.0 Extensions: Confirmation of Payee & Graduated Controls
+    cop_status: Literal["MATCH", "CLOSE_MATCH", "NO_MATCH"] | None = None
+    cop_match_score: float | None = None
+    beneficiary_inflow_restriction: bool = False
+    debtor_channel_anomaly: bool = False
+    enable_graduated_controls: bool = True
 
 
 class InflightPaymentEvaluationResponse(BaseModel):
@@ -557,6 +563,35 @@ class InflightPaymentEvaluationResponse(BaseModel):
     latency_ms: float
     evaluated_at: str
     integration_mode: str = "SHADOW"
+    cop_status: str | None = None
+    cop_match_score: float | None = None
+
+
+# ==============================================================================
+# Phase 14.0: Confirmation of Payee (CoP) Schemas
+# ==============================================================================
+
+class CopVerifyRequest(BaseModel):
+    intended_name: str
+    registered_name: str
+    account_number: str
+    account_type: Literal["PERSONAL", "BUSINESS"] = "PERSONAL"
+    clearing_rail: str = "PESALINK"
+    bank_bic: str = ""
+    inquiry_id: str | None = None
+
+
+class CopVerifyResponse(BaseModel):
+    inquiry_id: str
+    status: Literal["MATCH", "CLOSE_MATCH", "NO_MATCH"]
+    match_score: float
+    intended_name_normalized: str
+    registered_name_normalized: str
+    suggested_name: str | None = None
+    reason_code: str
+    advisory_message: str
+    inquiry_digest: str
+    verified_at: str
 
 
 class SemanticVerifyRequest(BaseModel):
