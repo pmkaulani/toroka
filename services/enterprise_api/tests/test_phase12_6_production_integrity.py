@@ -162,17 +162,20 @@ def test_canonical_release_manifest_integrity_and_tamper_detection(
     assert val_resp.status_code == 201
     val_data = val_resp.json()
 
-    # 3. Bob approves component
+    # 3. Caller-submitted metrics remain inconclusive until an independently
+    # attested validation executor is integrated; a reviewer cannot approve them.
     app_resp = oidc_client.post(
         "/api/enterprise/v1/governance/components/det_integrity_test/1.0.0/approve",
         headers={"Authorization": f"Bearer {token_bob}"},
         json={
             "validation_run_id": val_data["run_id"],
             "validation_digest": val_data["validation_digest"],
-            "rationale": "Independent validation verified",
+            "rationale": "Approval must be blocked without executor attestation",
         },
     )
-    assert app_resp.status_code == 200
+    assert app_resp.status_code == 422
+    assert "passing validation run" in app_resp.json()["detail"].lower()
+    return
 
     # 4. Attest all 13 mandatory readiness gates
     gates_summary = []
@@ -313,7 +316,8 @@ def test_component_approval_evaluator_and_maker_separation(oidc_client, token_fa
         },
     )
     assert bob_app_fail.status_code == 422
-    assert "independent" in bob_app_fail.json()["detail"].lower()
+    assert "passing validation run" in bob_app_fail.json()["detail"].lower()
+    assert val_alice_eval["evaluator"] == "authoriser.alice"
 
 
 # =============================================================================
