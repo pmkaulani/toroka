@@ -69,6 +69,7 @@ import {
   ForensicDossier,
   InflightPaymentEvaluation,
   CopVerifyResponse,
+  TelecomSignalResponse,
 } from "./types";
 
 export const BANK_PERSONAS: Persona[] = [
@@ -1026,6 +1027,8 @@ export const api = {
     beneficiary_inflow_restriction?: boolean;
     debtor_channel_anomaly?: boolean;
     enable_graduated_controls?: boolean;
+    telecom_call_status?: string | null;
+    telecom_coercion_score?: number | null;
   }): Promise<InflightPaymentEvaluation> =>
     request<InflightPaymentEvaluation>("/api/enterprise/v1/governance/integrations/iso20022/evaluate-inflight", {
       method: "POST",
@@ -1041,6 +1044,19 @@ export const api = {
     bank_bic?: string;
   }): Promise<CopVerifyResponse> =>
     request<CopVerifyResponse>("/api/enterprise/v1/governance/integrations/cop/verify", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  evaluateTelecomSignal: (payload: {
+    msisdn: string;
+    carrier?: "SAFARICOM" | "AIRTEL" | "TELKOM" | "UNKNOWN";
+    query_id?: string;
+    simulated_call_status?: "IDLE" | "CALL_IN_PROGRESS" | "RECENT_CALL" | "UNKNOWN";
+    simulated_call_duration_seconds?: number;
+    simulated_sim_swap_age_hours?: number;
+  }): Promise<TelecomSignalResponse> =>
+    request<TelecomSignalResponse>("/api/enterprise/v1/governance/integrations/telecom/scam-signal", {
       method: "POST",
       body: JSON.stringify(payload),
     }),

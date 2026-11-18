@@ -200,6 +200,9 @@ class InflightRiskEvaluation:
     latency_ms: float
     cop_status: str | None = None
     cop_match_score: float | None = None
+    telecom_call_status: str | None = None
+    telecom_coercion_score: float | None = None
+    is_telecom_coerced: bool = False
     evaluated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
     def to_dict(self) -> dict[str, Any]:
@@ -213,6 +216,9 @@ class InflightRiskEvaluation:
             "latency_ms": round(self.latency_ms, 3),
             "cop_status": self.cop_status,
             "cop_match_score": round(self.cop_match_score, 4) if self.cop_match_score is not None else None,
+            "telecom_call_status": self.telecom_call_status,
+            "telecom_coercion_score": round(self.telecom_coercion_score, 4) if self.telecom_coercion_score is not None else None,
+            "is_telecom_coerced": self.is_telecom_coerced,
             "evaluated_at": self.evaluated_at.isoformat(),
         }
 
@@ -385,6 +391,8 @@ class ISO20022Engine:
         beneficiary_inflow_restriction: bool = False,
         debtor_channel_anomaly: bool = False,
         enable_graduated_controls: bool = True,
+        telecom_call_status: str | None = None,
+        telecom_coercion_score: float | None = None,
     ) -> InflightRiskEvaluation:
         """Evaluates an in-flight payment against instant risk rules in advisory mode."""
         t0 = time.perf_counter()
@@ -440,6 +448,27 @@ class ISO20022Engine:
             triggered_rules.append("RULE_NON_COUNTER_RESTRICTION: Channel anomaly / ATO indicator; non-counter restriction (PBOC Art. 18)")
             risk_score = max(risk_score, 0.70)
 
+        # Rule 8: Telecom Live Call / Coercion Telemetry (GSMA Scam Signal & Safaricom/Airtel Open Gateway)
+        is_telecom_coerced = False
+        if telecom_call_status:
+            t_stat = str(telecom_call_status).strip().upper()
+            if t_stat == "CALL_IN_PROGRESS":
+                c_score_str = f"{telecom_coercion_score:.2f}" if telecom_coercion_score is not None else "0.55"
+                triggered_rules.append(f"RULE_TELECOM_ACTIVE_CALL: Debtor is currently on an active voice call (coaching indicator; score={c_score_str})")
+                risk_score += 0.45
+                is_telecom_coerced = True
+            elif t_stat == "RECENT_CALL":
+                triggered_rules.append("RULE_TELECOM_RECENT_CALL: Recent call termination within 10 minutes (potential coaching window)")
+                risk_score += 0.15
+
+        if telecom_coercion_score is not None and telecom_coercion_score >= 0.50:
+            if not is_telecom_coerced:
+                triggered_rules.append(f"RULE_TELECOM_COERCION_RISK: High carrier-telemetry coercion risk score ({telecom_coercion_score:.2f})")
+                risk_score = max(risk_score, 0.65)
+                is_telecom_coerced = True
+            else:
+                risk_score = max(risk_score, 0.65)
+
         # Cap risk score at 1.0
         risk_score = min(risk_score, 1.0)
 
@@ -485,6 +514,9 @@ class ISO20022Engine:
             latency_ms=elapsed_ms,
             cop_status=cop_status,
             cop_match_score=cop_match_score,
+            telecom_call_status=telecom_call_status,
+            telecom_coercion_score=telecom_coercion_score,
+            is_telecom_coerced=is_telecom_coerced,
         )
 
     @classmethod

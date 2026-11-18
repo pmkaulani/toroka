@@ -1307,6 +1307,39 @@ class CopInquiryRecord(IntelligenceBase):
     verified_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
 
 
+# ==============================================================================
+# Phase 14.1 Models: Telecom "Scam Signal" Live Telemetry & Coercion Intelligence
+# ==============================================================================
+
+class TelecomScamSignalRecord(IntelligenceBase):
+    """Historical record of carrier telemetry inquiries (live call status, SIM swap, coercion score)."""
+    __tablename__ = "enterprise_telecom_scam_signals"
+
+    query_id: Mapped[str] = mapped_column(String(100), primary_key=True)
+    installation_id: Mapped[str] = mapped_column(String(100), primary_key=True, index=True)
+
+    msisdn: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+    carrier: Mapped[str] = mapped_column(String(50), nullable=False, default="SAFARICOM")
+
+    call_status: Mapped[str] = mapped_column(String(50), nullable=False, default="IDLE")
+    call_duration_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+    sim_swap_status: Mapped[str] = mapped_column(String(50), nullable=False, default="NO_SWAP")
+    sim_swap_age_hours: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    scam_signal_score: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    is_high_coercion_risk: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, index=True)
+    coercion_indicators: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+
+    advisory_action: Mapped[str] = mapped_column(String(100), nullable=False)
+    statutory_warning: Mapped[str | None] = mapped_column(Text, nullable=True)
+    query_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+
+    actor_subject: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    queried_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+
+
+
 
 
 

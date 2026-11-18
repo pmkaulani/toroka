@@ -103,3 +103,39 @@ def test_cop_match_reduces_risk():
     assert eval_res.decision == PaymentDecision.ALLOW
     assert eval_res.risk_tier == RiskTier.LOW
     assert eval_res.risk_score == 0.0
+
+
+def test_telecom_active_call_triggers_delay_settlement_15m(base_transfer):
+    # Base (0.05) + Active Call (+0.45) = 0.50 -> DELAY_SETTLEMENT_15M on PesaLink instant rail
+    eval_res = ISO20022Engine.evaluate_inflight_payment(
+        base_transfer,
+        account_prior_transfers_count=10,
+        enable_graduated_controls=True,
+        telecom_call_status="CALL_IN_PROGRESS",
+        telecom_coercion_score=0.75,
+    )
+    assert eval_res.decision == PaymentDecision.DELAY_SETTLEMENT_15M
+    assert eval_res.risk_tier == RiskTier.HIGH
+    assert eval_res.is_telecom_coerced is True
+    assert eval_res.telecom_call_status == "CALL_IN_PROGRESS"
+    assert eval_res.telecom_coercion_score == 0.75
+    assert any("RULE_TELECOM_ACTIVE_CALL" in r for r in eval_res.triggered_rules)
+    assert "RECOMMEND_DELAY_SETTLEMENT_15M" in eval_res.recommended_action
+
+
+def test_telecom_active_call_plus_cop_no_match_escalates_to_block(base_transfer):
+    # Base (0.05) + CoP No Match (+0.45) + Active Call (+0.45) = 0.95 -> BLOCK
+    eval_res = ISO20022Engine.evaluate_inflight_payment(
+        base_transfer,
+        account_prior_transfers_count=10,
+        cop_status=CopStatus.NO_MATCH,
+        cop_match_score=0.10,
+        telecom_call_status="CALL_IN_PROGRESS",
+        telecom_coercion_score=0.85,
+    )
+    assert eval_res.decision == PaymentDecision.BLOCK
+    assert eval_res.risk_tier == RiskTier.CRITICAL
+    assert eval_res.is_telecom_coerced is True
+    assert any("RULE_TELECOM_ACTIVE_CALL" in r for r in eval_res.triggered_rules)
+    assert any("RULE_COP_NO_MATCH" in r for r in eval_res.triggered_rules)
+

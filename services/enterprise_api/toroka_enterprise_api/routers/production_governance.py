@@ -48,6 +48,8 @@ from ..governance_schemas import (
     SuspendComponentRequest,
     SuspensionRecordResponse,
     SystemHealthOverviewResponse,
+    TelecomSignalRequest,
+    TelecomSignalResponse,
     TrustedSignerResponse,
     UpdateIncidentStatusRequest,
     ValidationPackageResponse,
@@ -1107,6 +1109,29 @@ def verify_confirmation_of_payee(
     effective_inst = principal.installation_id or installation_id
     service = ProductionGovernanceService(db, effective_inst)
     return service.verify_confirmation_of_payee(request=request, actor_subject=principal.subject)
+
+
+# =============================================================================
+# 17. Telecom Scam Signal Live Carrier Telemetry
+# =============================================================================
+
+@router.post(
+    "/integrations/telecom/scam-signal",
+    response_model=TelecomSignalResponse,
+    dependencies=[
+        Depends(require_roles(ROLE_INVESTIGATOR, ROLE_AUTHORISER, ROLE_SYSTEM_ADMINISTRATOR))
+    ],
+)
+def evaluate_telecom_scam_signal(
+    request: TelecomSignalRequest,
+    principal: EnterprisePrincipal = Depends(get_current_principal),
+    installation_id: str = Depends(get_installation_id),
+    db: Session = Depends(get_db),
+) -> TelecomSignalResponse:
+    effective_inst = principal.installation_id or installation_id
+    service = ProductionGovernanceService(db, effective_inst)
+    return service.evaluate_telecom_signal(request=request, actor_subject=principal.subject)
+
 
 
 

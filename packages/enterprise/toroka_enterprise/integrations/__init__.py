@@ -37,16 +37,30 @@ from .cop import (
     CopStatus,
     CopVerificationResult,
 )
+from .telecom_signal import (
+    CallStatus,
+    SimSwapStatus,
+    TelecomCarrier,
+    TelecomScamSignalGateway,
+    TelecomSignalQuery,
+    TelecomSignalResponse,
+)
 from .quality import QualityIssue, QualityReport, assess_canonical_batch
 from .registry import ConnectorRegistry, DEFAULT_CONNECTOR_REGISTRY
 
 __all__ = [
     "BankConnector",
+    "CallStatus",
     "ConfirmationOfPayeeEngine",
     "CopAccountType",
     "CopInquiryRequest",
     "CopStatus",
     "CopVerificationResult",
+    "SimSwapStatus",
+    "TelecomCarrier",
+    "TelecomScamSignalGateway",
+    "TelecomSignalQuery",
+    "TelecomSignalResponse",
     "ConnectorContext",
     "ConnectorBatch",
     "SourceSystem",

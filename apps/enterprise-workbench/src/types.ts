@@ -1302,6 +1302,9 @@ export interface InflightPaymentEvaluation {
   evaluated_at: string;
   cop_status?: string | null;
   cop_match_score?: number | null;
+  telecom_call_status?: string | null;
+  telecom_coercion_score?: number | null;
+  is_telecom_coerced?: boolean;
 }
 
 export interface CopVerifyRequest {
@@ -1356,6 +1359,33 @@ export interface TrustedSignerRecord {
   is_revoked?: boolean;
   revocation_reason?: string | null;
 }
+
+export interface TelecomSignalRequest {
+  msisdn: string;
+  carrier?: "SAFARICOM" | "AIRTEL" | "TELKOM" | "UNKNOWN";
+  query_id?: string;
+  simulated_call_status?: "IDLE" | "CALL_IN_PROGRESS" | "RECENT_CALL" | "UNKNOWN";
+  simulated_call_duration_seconds?: number;
+  simulated_sim_swap_age_hours?: number;
+}
+
+export interface TelecomSignalResponse {
+  query_id: string;
+  msisdn: string;
+  carrier: string;
+  call_status: "IDLE" | "CALL_IN_PROGRESS" | "RECENT_CALL" | "UNKNOWN" | string;
+  call_duration_seconds: number;
+  sim_swap_status: string;
+  sim_swap_age_hours?: number | null;
+  scam_signal_score: number;
+  is_high_coercion_risk: boolean;
+  coercion_indicators: string[];
+  advisory_action: string;
+  statutory_warning: string;
+  query_digest: string;
+  queried_at: string;
+}
+
 
 
 

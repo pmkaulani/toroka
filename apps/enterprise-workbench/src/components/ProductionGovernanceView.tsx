@@ -17,6 +17,7 @@ import {
   ForensicDossier,
   InflightPaymentEvaluation,
   CopVerifyResponse,
+  TelecomSignalResponse,
   Persona,
 } from "../types";
 
@@ -101,6 +102,16 @@ export const ProductionGovernanceView: React.FC<Props> = ({ currentPersona }) =>
   const [beneficiaryInflowRestriction, setBeneficiaryInflowRestriction] = useState(false);
   const [debtorChannelAnomaly, setDebtorChannelAnomaly] = useState(false);
   const [isoCopStatus, setIsoCopStatus] = useState<string>("NONE");
+
+  // Phase 14.1 Telecom Scam Signal state
+  const [telecomMsisdn, setTelecomMsisdn] = useState("+254712345678");
+  const [telecomCarrier, setTelecomCarrier] = useState<"SAFARICOM" | "AIRTEL" | "TELKOM">("SAFARICOM");
+  const [telecomSimulatedCall, setTelecomSimulatedCall] = useState<"IDLE" | "CALL_IN_PROGRESS" | "RECENT_CALL">("CALL_IN_PROGRESS");
+  const [telecomCallDuration, setTelecomCallDuration] = useState(320);
+  const [telecomSimSwapAge, setTelecomSimSwapAge] = useState<number | undefined>(undefined);
+  const [telecomQuerying, setTelecomQuerying] = useState(false);
+  const [telecomResult, setTelecomResult] = useState<TelecomSignalResponse | null>(null);
+  const [isoTelecomCallStatus, setIsoTelecomCallStatus] = useState<string>("NONE");
 
   const fetchData = async () => {
     setLoading(true);
@@ -293,6 +304,27 @@ export const ProductionGovernanceView: React.FC<Props> = ({ currentPersona }) =>
     }
   };
 
+  const handleQueryTelecom = async () => {
+    setTelecomQuerying(true);
+    try {
+      const res = await api.evaluateTelecomSignal({
+        msisdn: telecomMsisdn,
+        carrier: telecomCarrier,
+        simulated_call_status: telecomSimulatedCall !== "IDLE" ? telecomSimulatedCall : undefined,
+        simulated_call_duration_seconds: telecomCallDuration,
+        simulated_sim_swap_age_hours: telecomSimSwapAge,
+      });
+      setTelecomResult(res);
+      if (res.call_status === "CALL_IN_PROGRESS") {
+        setIsoTelecomCallStatus("CALL_IN_PROGRESS");
+      }
+    } catch (err: any) {
+      alert(`Telecom Query failed: ${err.message}`);
+    } finally {
+      setTelecomQuerying(false);
+    }
+  };
+
   const handleEvaluateInflightPayment = async () => {
     setIsoEvaluating(true);
     try {
@@ -314,6 +346,8 @@ export const ProductionGovernanceView: React.FC<Props> = ({ currentPersona }) =>
         beneficiary_inflow_restriction: beneficiaryInflowRestriction,
         debtor_channel_anomaly: debtorChannelAnomaly,
         enable_graduated_controls: enableGraduatedControls,
+        telecom_call_status: isoTelecomCallStatus !== "NONE" ? isoTelecomCallStatus : undefined,
+        telecom_coercion_score: telecomResult?.scam_signal_score,
       });
       setIsoEvaluation(res);
     } catch (err: any) {
@@ -1548,7 +1582,148 @@ export const ProductionGovernanceView: React.FC<Props> = ({ currentPersona }) =>
                 )}
               </div>
 
-              {/* Section 3: ISO 20022 In-Flight Real-Time Risk & Graduated Controls */}
+              {/* Section 3: Telecom "Scam Signal" Live Carrier Telemetry (GSMA / Safaricom / Airtel) */}
+              <div className="p-5 rounded-lg bg-slate-900 border border-slate-800 space-y-4">
+                <div className="border-b border-slate-800 pb-3">
+                  <h3 className="text-sm font-bold text-white flex items-center">
+                    <span className="mr-2">📡</span> Telecom "Scam Signal" Carrier Gateway (GSMA Open Gateway)
+                  </h3>
+                  <p className="text-xs text-slate-400 mt-1">
+                    Direct telco network telemetry from Safaricom / Airtel to detect real-time telephone coaching, imposter calls, and SIM swaps prior to instant clearing.
+                  </p>
+                </div>
+
+                <div className="space-y-3 text-xs">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-slate-400 block mb-1">Carrier Network</label>
+                      <select
+                        value={telecomCarrier}
+                        onChange={(e) => setTelecomCarrier(e.target.value as any)}
+                        className="w-full bg-slate-950 border border-slate-800 rounded px-2.5 py-1.5 text-white"
+                      >
+                        <option value="SAFARICOM">Safaricom PLC (Kenya)</option>
+                        <option value="AIRTEL">Airtel Kenya</option>
+                        <option value="TELKOM">Telkom Kenya</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block mb-1">Target MSISDN (Mobile Number)</label>
+                      <input
+                        value={telecomMsisdn}
+                        onChange={(e) => setTelecomMsisdn(e.target.value)}
+                        className="w-full bg-slate-950 border border-slate-800 rounded px-2.5 py-1.5 text-white font-mono"
+                        placeholder="+254712345678"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-3">
+                    <div>
+                      <label className="text-slate-400 block mb-1">Simulated Call State</label>
+                      <select
+                        value={telecomSimulatedCall}
+                        onChange={(e) => setTelecomSimulatedCall(e.target.value as any)}
+                        className="w-full bg-slate-950 border border-slate-800 rounded px-2.5 py-1.5 text-white"
+                      >
+                        <option value="CALL_IN_PROGRESS">Active Voice Call In Progress</option>
+                        <option value="RECENT_CALL">Call Terminated &lt;5m Ago</option>
+                        <option value="IDLE">Idle (No Call)</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block mb-1">Call Duration (Seconds)</label>
+                      <input
+                        type="number"
+                        value={telecomCallDuration}
+                        onChange={(e) => setTelecomCallDuration(parseInt(e.target.value) || 0)}
+                        className="w-full bg-slate-950 border border-slate-800 rounded px-2.5 py-1.5 text-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block mb-1">SIM Swap Age (Hours, Opt)</label>
+                      <input
+                        type="number"
+                        value={telecomSimSwapAge ?? ""}
+                        onChange={(e) => setTelecomSimSwapAge(e.target.value ? parseFloat(e.target.value) : undefined)}
+                        placeholder="e.g. 12 (within 24h)"
+                        className="w-full bg-slate-950 border border-slate-800 rounded px-2.5 py-1.5 text-white"
+                      />
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={handleQueryTelecom}
+                    disabled={telecomQuerying}
+                    className="w-full py-2 bg-purple-600 hover:bg-purple-500 font-semibold text-white rounded transition shadow-sm flex items-center justify-center"
+                  >
+                    {telecomQuerying ? "Querying Carrier Gateway..." : "Query Telecom Scam Signal Telemetry"}
+                  </button>
+                </div>
+
+                {telecomResult && (
+                  <div className="mt-4 p-4 rounded bg-slate-950 border border-slate-800 text-xs space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center space-x-2">
+                        <span className="font-bold text-white text-sm">Carrier Telemetry</span>
+                        {telecomResult.call_status === "CALL_IN_PROGRESS" && (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-rose-600 text-white animate-pulse">
+                            🔴 LIVE CALL IN PROGRESS ({telecomResult.call_duration_seconds}s)
+                          </span>
+                        )}
+                      </div>
+                      <span
+                        className={`px-2.5 py-1 rounded font-bold text-xs ${
+                          telecomResult.is_high_coercion_risk
+                            ? "bg-rose-950 text-rose-300 border border-rose-700"
+                            : "bg-emerald-950 text-emerald-300 border border-emerald-700"
+                        }`}
+                      >
+                        {telecomResult.is_high_coercion_risk ? "HIGH COERCION RISK" : "NORMAL TELECOM PROFILE"}
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-2 text-slate-400">
+                      <div>
+                        Coercion Score: <strong className="text-white">{(telecomResult.scam_signal_score * 100).toFixed(1)}%</strong>
+                      </div>
+                      <div>
+                        SIM Status: <strong className="text-white">{telecomResult.sim_swap_status}</strong>
+                      </div>
+                      <div>
+                        Carrier: <strong className="text-white">{telecomResult.carrier}</strong>
+                      </div>
+                    </div>
+
+                    {telecomResult.coercion_indicators.length > 0 && (
+                      <div>
+                        <span className="text-slate-400 block mb-1">Carrier Telemetry Indicators:</span>
+                        <ul className="list-disc list-inside space-y-0.5 text-amber-300">
+                          {telecomResult.coercion_indicators.map((ind, idx) => (
+                            <li key={idx}>{ind}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+
+                    {telecomResult.statutory_warning && (
+                      <div className="p-2.5 rounded bg-rose-950/60 border border-rose-800/80 text-rose-200 leading-relaxed">
+                        {telecomResult.statutory_warning}
+                      </div>
+                    )}
+
+                    <div className="p-2.5 rounded bg-slate-900 text-slate-200 border border-slate-800">
+                      <strong>Advisory Action:</strong> {telecomResult.advisory_action}
+                    </div>
+
+                    <div className="pt-2 border-t border-slate-800 text-[10px] text-slate-500 font-mono break-all">
+                      Digest: {telecomResult.query_digest}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Section 4: ISO 20022 In-Flight Real-Time Risk & Graduated Controls */}
               <div className="p-5 rounded-lg bg-slate-900 border border-slate-800 space-y-4">
                 <div className="border-b border-slate-800 pb-3">
                   <h3 className="text-sm font-bold text-white flex items-center">
@@ -1657,6 +1832,18 @@ export const ProductionGovernanceView: React.FC<Props> = ({ currentPersona }) =>
                           <option value="NO_MATCH">NO_MATCH (Impersonation)</option>
                         </select>
                       </div>
+                      <div className="flex items-center space-x-2">
+                        <span className="text-slate-400">Live Call:</span>
+                        <select
+                          value={isoTelecomCallStatus}
+                          onChange={(e) => setIsoTelecomCallStatus(e.target.value)}
+                          className="bg-slate-900 border border-slate-800 rounded px-1.5 py-0.5 text-white text-[11px]"
+                        >
+                          <option value="NONE">NONE (Unchecked)</option>
+                          <option value="CALL_IN_PROGRESS">Active Call (Coaching)</option>
+                          <option value="RECENT_CALL">Recent Call (&lt;5m)</option>
+                        </select>
+                      </div>
                     </div>
                   </div>
 
@@ -1714,6 +1901,18 @@ export const ProductionGovernanceView: React.FC<Props> = ({ currentPersona }) =>
                         {isoEvaluation.recommended_action}
                       </div>
                     </div>
+
+                    {isoEvaluation.is_telecom_coerced && (
+                      <div className="p-2.5 rounded bg-rose-950/80 border border-rose-700 text-rose-200 flex items-center space-x-2">
+                        <span className="text-base animate-pulse">📞</span>
+                        <div>
+                          <strong className="text-white block font-semibold">Active Telephone Coaching / ATO In Progress</strong>
+                          <span className="text-[11px] text-rose-300">
+                            Debtor is engaged on an active voice call during payment authorization. Reversible 15-minute escrow hold enforced.
+                          </span>
+                        </div>
+                      </div>
+                    )}
 
                     {isoEvaluation.triggered_rules.length > 0 && (
                       <div>

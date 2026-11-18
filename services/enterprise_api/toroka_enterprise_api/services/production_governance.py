@@ -130,6 +130,13 @@ from toroka_enterprise.integrations.cop import (
     CopInquiryRequest,
     CopStatus,
 )
+from toroka_enterprise.integrations.telecom_signal import (
+    CallStatus,
+    SimSwapStatus,
+    TelecomCarrier,
+    TelecomScamSignalGateway,
+    TelecomSignalQuery,
+)
 from toroka_enterprise.intelligence.copilot.contracts import (
     ClaimKind,
     EvidenceContext,
@@ -162,6 +169,7 @@ from toroka_enterprise.intelligence.models import (
     ReadinessAttestationRecord,
     SignerTrustRecord,
     SuspensionAuditRecord,
+    TelecomScamSignalRecord,
     ValidationRunRecord,
 )
 
@@ -203,6 +211,8 @@ from ..governance_schemas import (
     SuspendComponentRequest,
     SuspensionRecordResponse,
     SystemHealthOverviewResponse,
+    TelecomSignalRequest,
+    TelecomSignalResponse,
     TrustedSignerResponse,
     UpdateIncidentStatusRequest,
     ValidationMetricSchema,
@@ -3484,6 +3494,8 @@ class ProductionGovernanceService:
             beneficiary_inflow_restriction=request.beneficiary_inflow_restriction,
             debtor_channel_anomaly=request.debtor_channel_anomaly,
             enable_graduated_controls=request.enable_graduated_controls,
+            telecom_call_status=request.telecom_call_status,
+            telecom_coercion_score=request.telecom_coercion_score,
         )
 
         record = InflightPaymentRiskRecord(
@@ -3520,6 +3532,9 @@ class ProductionGovernanceService:
             evaluated_at=record.evaluated_at.isoformat(),
             cop_status=eval_result.cop_status,
             cop_match_score=eval_result.cop_match_score,
+            telecom_call_status=eval_result.telecom_call_status,
+            telecom_coercion_score=eval_result.telecom_coercion_score,
+            is_telecom_coerced=eval_result.is_telecom_coerced,
         )
 
     def verify_confirmation_of_payee(
@@ -3572,6 +3587,68 @@ class ProductionGovernanceService:
             advisory_message=result.advisory_message,
             inquiry_digest=result.inquiry_digest,
             verified_at=result.verified_at.isoformat(),
+        )
+
+    def evaluate_telecom_signal(
+        self,
+        request: TelecomSignalRequest,
+        actor_subject: str,
+    ) -> TelecomSignalResponse:
+        """Evaluates live carrier telecom telemetry (voice call in progress, SIM swap age, coercion score)."""
+        carrier_str = request.carrier.upper()
+        carrier_enum = TelecomCarrier.SAFARICOM
+        try:
+            carrier_enum = TelecomCarrier(carrier_str)
+        except ValueError:
+            carrier_enum = TelecomCarrier.SAFARICOM
+
+        query = TelecomSignalQuery(
+            msisdn=request.msisdn,
+            carrier=carrier_enum,
+            query_id=request.query_id or f"tscm-{uuid.uuid4().hex[:12]}",
+            simulated_call_status=request.simulated_call_status,
+            simulated_call_duration_seconds=request.simulated_call_duration_seconds,
+            simulated_sim_swap_age_hours=request.simulated_sim_swap_age_hours,
+        )
+        result = TelecomScamSignalGateway.query_signal(query)
+
+        record = TelecomScamSignalRecord(
+            query_id=result.query_id,
+            installation_id=self.installation_id,
+            msisdn=result.msisdn,
+            carrier=result.carrier.value,
+            call_status=result.call_status.value,
+            call_duration_seconds=result.call_duration_seconds,
+            sim_swap_status=result.sim_swap_status.value,
+            sim_swap_age_hours=result.sim_swap_age_hours,
+            scam_signal_score=result.scam_signal_score,
+            is_high_coercion_risk=result.is_high_coercion_risk,
+            coercion_indicators=result.coercion_indicators,
+            advisory_action=result.advisory_action,
+            statutory_warning=result.statutory_warning,
+            query_digest=result.query_digest,
+            actor_subject=actor_subject,
+            queried_at=result.queried_at,
+        )
+        self.session.add(record)
+        self.session.commit()
+        self.session.refresh(record)
+
+        return TelecomSignalResponse(
+            query_id=record.query_id,
+            msisdn=record.msisdn,
+            carrier=record.carrier,
+            call_status=record.call_status,
+            call_duration_seconds=record.call_duration_seconds,
+            sim_swap_status=record.sim_swap_status,
+            sim_swap_age_hours=record.sim_swap_age_hours,
+            scam_signal_score=record.scam_signal_score,
+            is_high_coercion_risk=record.is_high_coercion_risk,
+            coercion_indicators=record.coercion_indicators,
+            advisory_action=record.advisory_action,
+            statutory_warning=record.statutory_warning,
+            query_digest=record.query_digest,
+            queried_at=record.queried_at.isoformat(),
         )
 
     def verify_copilot_semantics(

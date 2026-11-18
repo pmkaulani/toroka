@@ -551,6 +551,9 @@ class InflightPaymentEvaluationRequest(BaseModel):
     beneficiary_inflow_restriction: bool = False
     debtor_channel_anomaly: bool = False
     enable_graduated_controls: bool = True
+    # Phase 14.1 Extensions: Telecom Scam Signal Live Telemetry
+    telecom_call_status: Literal["IDLE", "CALL_IN_PROGRESS", "RECENT_CALL", "UNKNOWN"] | None = None
+    telecom_coercion_score: float | None = None
 
 
 class InflightPaymentEvaluationResponse(BaseModel):
@@ -565,6 +568,9 @@ class InflightPaymentEvaluationResponse(BaseModel):
     integration_mode: str = "SHADOW"
     cop_status: str | None = None
     cop_match_score: float | None = None
+    telecom_call_status: str | None = None
+    telecom_coercion_score: float | None = None
+    is_telecom_coerced: bool = False
 
 
 # ==============================================================================
@@ -636,6 +642,36 @@ class TrustedSignerResponse(BaseModel):
     is_active: bool
     is_revoked: bool = False
     revocation_reason: str | None = None
-    is_revoked: bool
     created_at: str
+
+
+# ==============================================================================
+# Phase 14.1: Telecom Scam Signal Schemas
+# ==============================================================================
+
+class TelecomSignalRequest(BaseModel):
+    msisdn: str
+    carrier: Literal["SAFARICOM", "AIRTEL", "TELKOM", "UNKNOWN"] = "SAFARICOM"
+    query_id: str | None = None
+    simulated_call_status: Literal["IDLE", "CALL_IN_PROGRESS", "RECENT_CALL", "UNKNOWN"] | None = None
+    simulated_call_duration_seconds: int = 0
+    simulated_sim_swap_age_hours: float | None = None
+
+
+class TelecomSignalResponse(BaseModel):
+    query_id: str
+    msisdn: str
+    carrier: str
+    call_status: str
+    call_duration_seconds: int
+    sim_swap_status: str
+    sim_swap_age_hours: float | None = None
+    scam_signal_score: float
+    is_high_coercion_risk: bool
+    coercion_indicators: list[str]
+    advisory_action: str
+    statutory_warning: str | None = None
+    query_digest: str
+    queried_at: str
+
 
