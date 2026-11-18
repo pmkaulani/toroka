@@ -192,11 +192,10 @@ class ISO20022Engine:
         creditor_d = data.get("creditor", {})
 
         clearing_str = data.get("clearing_rail", ClearingRail.PESALINK.value)
-        clearing_rail = (
-            ClearingRail(clearing_str)
-            if clearing_str in ClearingRail.__members__.values()
-            else ClearingRail.PESALINK
-        )
+        try:
+            clearing_rail = ClearingRail(clearing_str)
+        except ValueError as exc:
+            raise ValueError(f"Unsupported ISO 20022 clearing rail: {clearing_str}") from exc
 
         debtor = PartyIdentification(
             name=str(debtor_d.get("name", "Unknown Debtor")),
@@ -318,7 +317,7 @@ class ISO20022Engine:
         cls,
         transfer: Pacs008CreditTransfer,
         known_mule_accounts: set[str] | None = None,
-        account_prior_transfers_count: int = 10,
+        account_prior_transfers_count: int | None = None,
     ) -> InflightRiskEvaluation:
         """Evaluates an in-flight payment against instant risk rules in <100ms."""
         t0 = time.perf_counter()
@@ -358,19 +357,19 @@ class ISO20022Engine:
         if risk_score >= 0.80:
             decision = PaymentDecision.BLOCK
             tier = RiskTier.CRITICAL
-            recommended_action = "IMMEDIATE_BLOCK: Terminate clearing, notify AML officer, return pacs.002 with reason FRAD"
+            recommended_action = "RECOMMEND_BLOCK: Critical risk score; notify the bank's authorized payment-control team. Toroka has not blocked or altered the transaction."
         elif risk_score >= 0.50:
             decision = PaymentDecision.QUARANTINE_HOLD
             tier = RiskTier.HIGH
-            recommended_action = "QUARANTINE_30M: Suspend clearing settlement for 30 minutes to enable automated fraud triage"
+            recommended_action = "RECOMMEND_REVIEW_HOLD: High risk score; authorized bank personnel should assess any hold under bank policy. Toroka has not held the transaction."
         elif risk_score >= 0.30:
             decision = PaymentDecision.STEP_UP_AUTH
             tier = RiskTier.MEDIUM
-            recommended_action = "STEP_UP_AUTH: Prompt sender for hardware token / biometric confirmation before clearing"
+            recommended_action = "RECOMMEND_STEP_UP: Consider additional authentication under bank policy. Toroka has not initiated an authentication challenge."
         else:
             decision = PaymentDecision.ALLOW
             tier = RiskTier.LOW
-            recommended_action = "ALLOW: Release to clearing rail immediately"
+            recommended_action = "LOW_RISK_ADVISORY: No blocking action was taken; the bank's payment system retains the settlement decision."
 
         elapsed_ms = (time.perf_counter() - t0) * 1000.0
 
