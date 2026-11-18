@@ -185,7 +185,8 @@ class LocalHSMKeyProvider:
         )
 
     def verify(self, payload: bytes | str | dict[str, Any], bundle: SignatureBundle) -> bool:
-        return verify_asymmetric_signature(payload, bundle)
+        # Explicitly pin the public key held by this provider instance.
+        return verify_asymmetric_signature(payload, bundle, trusted_public_key_pem=self.get_public_key_pem())
 
 
 def verify_asymmetric_signature(
@@ -200,8 +201,12 @@ def verify_asymmetric_signature(
     # 1. Content digest verification
     if computed_digest.lower() != bundle.content_digest.lower():
         return False
+    # An embedded public key proves only self-consistency. A verifier must supply
+    # a separately trusted key (normally resolved by key_id from a bank trust store).
+    if not trusted_public_key_pem:
+        return False
 
-    pem_to_use = (trusted_public_key_pem or bundle.public_key_pem).encode("utf-8")
+    pem_to_use = trusted_public_key_pem.encode("utf-8")
     try:
         sig_bytes = base64.b64decode(bundle.signature)
         public_key = serialization.load_pem_public_key(pem_to_use)
