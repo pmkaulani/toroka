@@ -3144,6 +3144,7 @@ class ProductionGovernanceService:
         })
 
         is_digest_valid = dossier.verify_dossier_integrity()
+        is_draft = record.status in {"DRAFT_UNVERIFIED", "DRAFT_SIGNED"}
         sig_verified = False
         sig_err = None
 
@@ -3155,15 +3156,17 @@ class ProductionGovernanceService:
                 sig_err = "Signature could not be validated against a trusted signing key"
         else:
             sig_err = "Dossier has no digital signature attached"
+        if is_draft and sig_verified:
+            sig_err = "Content signature is valid, but this dossier remains a draft and is not a Section 106B certificate or court filing."
 
         return VerifyArtifactResponse(
             artifact_id=record.dossier_id,
             artifact_type="forensic_dossier",
-            is_valid=is_digest_valid and dossier.signature_bundle is not None and sig_verified,
+            is_valid=is_digest_valid and dossier.signature_bundle is not None and sig_verified and not is_draft,
             digest_verified=is_digest_valid,
             signature_verified=sig_verified,
             is_digitally_signed=dossier.signature_bundle is not None,
-            signature_error=sig_err,
+            error=sig_err,
         )
 
     def export_forensic_dossier_html(self, dossier_id: str) -> str:
