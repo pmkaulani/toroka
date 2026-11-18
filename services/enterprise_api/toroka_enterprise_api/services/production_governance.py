@@ -2885,39 +2885,51 @@ class ProductionGovernanceService:
         self,
         request: CreateForensicDossierRequest,
         actor_subject: str,
+        actor_role: str = "investigator",
     ) -> ForensicDossierResponse:
+        """Create a draft dossier from a real case; submitted evidence is not certified."""
+        case_record = self.session.execute(
+            select(EnterpriseCase).where(
+                and_(
+                    EnterpriseCase.installation_id == self.installation_id,
+                    EnterpriseCase.id == request.case_id,
+                )
+            )
+        ).scalar_one_or_none()
+        if case_record is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="The referenced case does not exist in this installation.",
+            )
+
         dossier_id = f"dos-{uuid.uuid4().hex[:12]}"
         now = _utc_now()
+        normalized_role = (actor_role or "investigator").upper()
+
+        # These request fields are merely user-submitted material. Preserve them
+        # for review, but label them so no downstream consumer treats them as
+        # verified source records or proven mule identifications.
+        submitted_evidence = [
+            {**dict(item), "provenance_status": "UNVERIFIED_CLIENT_SUBMISSION"}
+            for item in request.evidence_records
+        ]
+        submitted_nodes = [
+            {**dict(item), "assessment_status": "UNVERIFIED_CLIENT_SUBMISSION"}
+            for item in request.identified_mule_nodes
+        ]
 
         custody_event = CustodyEvent(
             event_id=f"cust-{uuid.uuid4().hex[:8]}",
             timestamp=now,
             actor_subject=actor_subject,
-            actor_role="LEAD_EXAMINER",
-            action="DOSSIER_COMPILED",
-            source_hash="0000000000000000000000000000000000000000000000000000000000000000",
+            actor_role=normalized_role,
+            action="DRAFT_DOSSIER_COMPILED",
+            source_hash=case_record.snapshot_sha256,
             destination_hash="",
-            notes="Initial compilation of court-ready forensic evidence dossier",
+            notes="Draft compilation only; case evidence and submitted exhibits require independent verification",
         )
 
-        cert = None
-        if request.certifier_name:
-            cert = Section106BCertificate(
-                certificate_id=f"cert-106b-{uuid.uuid4().hex[:8]}",
-                statutory_framework="Kenya Evidence Act (Cap 80) Section 106B",
-                certifier_name=request.certifier_name,
-                certifier_designation=request.certifier_designation or "Lead Financial Crime Investigator",
-                certifier_organization="Toroka Financial Crime Compliance",
-                device_identification=f"TOROKA-NODE-{self.installation_id[:8]}",
-                operating_condition_statement="At all material times, the computer system was operating properly and there was no malfunction affecting the production of the electronic record or accuracy of its contents.",
-                hash_algorithm="SHA-256",
-                merkle_root_hash="PENDING_ROOT",
-                certified_at=now,
-                declaration_text=request.declaration_text or "I certify under penalty of perjury that this electronic evidence record was generated in the ordinary course of financial crime detection.",
-            )
-
-        # Build initial domain dossier
-        dossier = ForensicDossier(
+        draft = ForensicDossier(
             dossier_id=dossier_id,
             case_id=request.case_id,
             installation_id=self.installation_id,
@@ -2926,46 +2938,27 @@ class ProductionGovernanceService:
             fraud_loss_amount=request.fraud_loss_amount,
             currency=request.currency,
             examiner_subject=actor_subject,
-            examiner_role="LEAD_EXAMINER",
+            examiner_role=normalized_role,
             created_at=now,
             case_summary=request.case_summary,
             attack_path_summary=request.attack_path_summary,
-            identified_mule_nodes=tuple(request.identified_mule_nodes),
-            evidence_records=tuple(request.evidence_records),
+            identified_mule_nodes=tuple(submitted_nodes),
+            evidence_records=tuple(submitted_evidence),
             chain_of_custody=(custody_event,),
-            section_106b_certificate=cert,
+            # A request field cannot create or authenticate a Section 106B certificate.
+            section_106b_certificate=None,
         )
 
-        # Update custody destination hash to computed digest
-        updated_custody = (
-            CustodyEvent(
-                event_id=custody_event.event_id,
-                timestamp=custody_event.timestamp,
-                actor_subject=custody_event.actor_subject,
-                actor_role=custody_event.actor_role,
-                action=custody_event.action,
-                source_hash=custody_event.source_hash,
-                destination_hash=dossier.dossier_digest,
-                notes=custody_event.notes,
-            ),
+        custody_event = CustodyEvent(
+            event_id=custody_event.event_id,
+            timestamp=custody_event.timestamp,
+            actor_subject=custody_event.actor_subject,
+            actor_role=custody_event.actor_role,
+            action=custody_event.action,
+            source_hash=custody_event.source_hash,
+            destination_hash=draft.dossier_digest,
+            notes=custody_event.notes,
         )
-
-        updated_cert = cert
-        if cert:
-            updated_cert = Section106BCertificate(
-                certificate_id=cert.certificate_id,
-                statutory_framework=cert.statutory_framework,
-                certifier_name=cert.certifier_name,
-                certifier_designation=cert.certifier_designation,
-                certifier_organization=cert.certifier_organization,
-                device_identification=cert.device_identification,
-                operating_condition_statement=cert.operating_condition_statement,
-                hash_algorithm=cert.hash_algorithm,
-                merkle_root_hash=dossier.dossier_digest,
-                certified_at=cert.certified_at,
-                declaration_text=cert.declaration_text,
-            )
-
         final_dossier = ForensicDossier(
             dossier_id=dossier_id,
             case_id=request.case_id,
@@ -2975,14 +2968,15 @@ class ProductionGovernanceService:
             fraud_loss_amount=request.fraud_loss_amount,
             currency=request.currency,
             examiner_subject=actor_subject,
-            examiner_role="LEAD_EXAMINER",
+            examiner_role=normalized_role,
             created_at=now,
             case_summary=request.case_summary,
             attack_path_summary=request.attack_path_summary,
-            identified_mule_nodes=tuple(request.identified_mule_nodes),
-            evidence_records=tuple(request.evidence_records),
-            chain_of_custody=updated_custody,
-            section_106b_certificate=updated_cert,
+            identified_mule_nodes=tuple(submitted_nodes),
+            evidence_records=tuple(submitted_evidence),
+            chain_of_custody=(custody_event,),
+            section_106b_certificate=None,
+            dossier_digest=draft.dossier_digest,
         )
 
         record = ForensicDossierRecord(
@@ -2999,17 +2993,30 @@ class ProductionGovernanceService:
             attack_path_summary=final_dossier.attack_path_summary,
             identified_mule_nodes=list(final_dossier.identified_mule_nodes),
             evidence_records=list(final_dossier.evidence_records),
-            chain_of_custody=[c.to_dict() for c in final_dossier.chain_of_custody],
-            section_106b_certificate=final_dossier.section_106b_certificate.to_dict() if final_dossier.section_106b_certificate else None,
+            chain_of_custody=[event.to_dict() for event in final_dossier.chain_of_custody],
+            section_106b_certificate=None,
             dossier_digest=final_dossier.dossier_digest,
             signature_bundle=None,
-            status="SEALED",
+            status="DRAFT_UNVERIFIED",
             created_at=final_dossier.created_at,
         )
         self.session.add(record)
+        append_audit(
+            self.session,
+            installation_id=self.installation_id,
+            actor_subject=actor_subject,
+            actor_role=actor_role,
+            action="forensic_dossier_draft_created",
+            target_type="forensic_dossier",
+            target_id=dossier_id,
+            safe_metadata={
+                "case_id": request.case_id,
+                "content_digest": final_dossier.dossier_digest,
+                "lifecycle_status": "DRAFT_UNVERIFIED",
+            },
+        )
         self.session.commit()
         self.session.refresh(record)
-
         return self._to_forensic_dossier_response(record)
 
     def get_forensic_dossier(self, dossier_id: str) -> ForensicDossierResponse:
