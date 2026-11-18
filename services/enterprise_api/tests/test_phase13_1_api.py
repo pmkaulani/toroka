@@ -216,7 +216,10 @@ def test_copilot_semantic_grounding_verification_api(oidc_client, token_factory)
     )
     assert v_resp.status_code == 200
     v_data = v_resp.json()
-    assert v_data["is_valid"] is True
+    assert v_data["is_valid"] is False
+    assert v_data["content_consistent"] is True
+    assert v_data["evidence_provenance_verified"] is False
+    assert v_data["verification_scope"] == "CALLER_SUPPLIED_TEXT_ONLY"
     assert v_data["entailed_claims"] == 1
 
     # Contradicted claim (polarity inversion)
@@ -239,4 +242,6 @@ def test_copilot_semantic_grounding_verification_api(oidc_client, token_factory)
     assert c_resp.status_code == 200
     c_data = c_resp.json()
     assert c_data["is_valid"] is False
+    assert c_data["content_consistent"] is False
+    assert c_data["evidence_provenance_verified"] is False
     assert c_data["contradicted_claims"] == 1
