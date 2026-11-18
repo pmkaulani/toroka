@@ -845,7 +845,11 @@ def create_forensic_dossier(
 ) -> ForensicDossierResponse:
     effective_inst = principal.installation_id or installation_id
     service = ProductionGovernanceService(db, effective_inst)
-    return service.create_forensic_dossier(request=request, actor_subject=principal.subject)
+    return service.create_forensic_dossier(
+        request=request,
+        actor_subject=principal.subject,
+        actor_role=_primary_role(principal),
+    )
 
 
 @router.get(
