@@ -15,11 +15,8 @@ depends_on = None
 def upgrade() -> None:
     # The former unconditional unique constraint prevented a new attestation
     # from being inserted after an older row had been marked inactive.
-    op.drop_constraint(
-        "uq_readiness_attestation",
-        "enterprise_readiness_attestations",
-        type_="unique",
-    )
+    with op.batch_alter_table("enterprise_readiness_attestations") as batch_op:
+        batch_op.drop_constraint("uq_readiness_attestation", type_="unique")
     # Keep the history append-only, but prevent concurrent writers from
     # creating two active attestations for the same release and gate.
     op.create_index(
@@ -38,8 +35,8 @@ def downgrade() -> None:
         table_name="enterprise_readiness_attestations",
     )
     # Downgrade may fail if history contains multiple rows for a release/gate.
-    op.create_unique_constraint(
-        "uq_readiness_attestation",
-        "enterprise_readiness_attestations",
-        ["installation_id", "release_version", "gate_name"],
-    )
+    with op.batch_alter_table("enterprise_readiness_attestations") as batch_op:
+        batch_op.create_unique_constraint(
+            "uq_readiness_attestation",
+            ["installation_id", "release_version", "gate_name"],
+        )
