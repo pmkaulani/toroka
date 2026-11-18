@@ -3090,7 +3090,7 @@ class ProductionGovernanceService:
 
         record.signature_bundle = dossier.signature_bundle.to_dict()
         record.chain_of_custody = updated_custody
-        record.status = "SEALED_SIGNED"
+        record.status = "DRAFT_SIGNED"
 
         self.session.commit()
         self.session.refresh(record)
