@@ -544,6 +544,7 @@ class SemanticVerifyRequest(BaseModel):
 
 
 class SemanticVerifyResponse(BaseModel):
+    # is_valid is true only when both evidence provenance and claim consistency are verified.
     is_valid: bool
     total_claims: int
     entailed_claims: int
@@ -551,4 +552,7 @@ class SemanticVerifyResponse(BaseModel):
     numeric_mismatches: int
     ungrounded_claims: int
     evaluations: list[dict[str, Any]]
+    content_consistent: bool = False
+    evidence_provenance_verified: bool = False
+    verification_scope: str = "CALLER_SUPPLIED_TEXT_ONLY"
 
