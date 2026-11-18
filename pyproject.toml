@@ -1,3 +1,7 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "smart-scam-identifier"
 version = "0.1.0"
@@ -20,6 +24,34 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["pytest>=8", "hypothesis>=6"]
 postgres = ["psycopg[binary]>=3.1"]
+
+[tool.setuptools.packages.find]
+where = [
+    "packages/core",
+    "packages/enterprise",
+    "packages/rules",
+    "packages/connectors",
+    "services/api",
+    "services/enterprise_api",
+    "services/identity_vault",
+]
+include = [
+    "toroka_core*",
+    "toroka_enterprise*",
+    "ssi_rules*",
+    "ssi_connectors*",
+    "toroka_build3*",
+    "toroka_build4*",
+    "toroka_email_forensics*",
+    "toroka_evidence*",
+    "toroka_phase3*",
+    "toroka_phase4*",
+    "toroka_phase5*",
+    "toroka_phase6*",
+    "toroka_phase7*",
+    "toroka_identity_vault*",
+    "app*",
+]
 
 [tool.pytest.ini_options]
 pythonpath = [".", "packages/core", "packages/enterprise", "packages/rules", "packages/connectors", "services/api", "services/enterprise_api", "services/identity_vault"]
