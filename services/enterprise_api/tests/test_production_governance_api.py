@@ -35,6 +35,7 @@ def governance_test_case(db_session):
 def test_component_registry_and_maker_checker_approval(oidc_client, token_factory):
     token_author_a = token_factory(sub="authoriser.alice", roles=["BANK_AUTHORISER"])
     token_author_b = token_factory(sub="authoriser.bob", roles=["BANK_AUTHORISER"])
+    token_validator = token_factory(sub="validator.charlie", roles=["BANK_AUTHORISER"])
     token_steward = token_factory(sub="steward.charlie", roles=["BANK_DATA_STEWARD"])
 
     # 1. Non-privileged data steward cannot register component
@@ -79,7 +80,7 @@ def test_component_registry_and_maker_checker_approval(oidc_client, token_factor
     # Move component to validation via validation run
     val_resp = oidc_client.post(
         "/api/enterprise/v1/governance/validation-runs",
-        headers={"Authorization": f"Bearer {token_author_a}"},
+        headers={"Authorization": f"Bearer {token_validator}"},
         json={
             "component_id": "det_rapid_flow",
             "component_version": "1.0.0",
@@ -392,7 +393,8 @@ def test_ai_provider_governance_policy(oidc_client, token_factory):
         },
     )
     assert compliant_resp.status_code == 201
-    assert compliant_resp.json()["is_approved"] is True
+    assert compliant_resp.json()["is_approved"] is False
+    assert compliant_resp.json()["evaluation_summary"]["review_status"] == "PENDING_INDEPENDENT_BANK_REVIEW"
 
     # 2. Non-compliant provider (training_on_customer_data_permitted = True) -> Must be rejected
     rejected_resp = oidc_client.post(
