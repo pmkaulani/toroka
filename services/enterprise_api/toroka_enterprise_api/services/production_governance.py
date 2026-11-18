@@ -4,6 +4,7 @@ import hashlib
 import hmac
 import json
 import logging
+import os
 import uuid
 from datetime import datetime, timezone
 from typing import Any
@@ -398,6 +399,42 @@ class ProductionGovernanceService:
     def __init__(self, session: Session, installation_id: str) -> None:
         self.session = session
         self.installation_id = installation_id
+        self.environment = os.getenv("TOROKA_ENT_ENV", "development").strip().lower()
+        # A bank deployment must inject a real bank-controlled evidence resolver.
+        # Until one is configured, production promotion fails closed.
+        self.readiness_evidence_verifier = None
+
+    def _create_artifact_signer(self, request: SignArtifactRequest) -> LocalHSMKeyProvider:
+        """Create a local signer only outside production; production requires a bank HSM/KMS adapter."""
+        if self.environment == "production":
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Local ephemeral signing is forbidden in production. Configure the bank HSM/KMS signing adapter.",
+            )
+        algorithm_name = request.algorithm.strip().upper().replace("-", "_")
+        if algorithm_name in {"ED25519", "ED_25519"}:
+            algorithm = AsymmetricAlgorithm.ED25519
+        elif algorithm_name in {"ECDSA_P256", "ECDSA256"}:
+            algorithm = AsymmetricAlgorithm.ECDSA_P256
+        else:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Unsupported signing algorithm")
+        return LocalHSMKeyProvider(key_id=request.key_id, algorithm=algorithm)
+
+    def _trusted_signing_key(self, bundle: SignatureBundle, request: VerifyArtifactRequest | None = None) -> str | None:
+        """Resolve a signer key from the bank trust registry; never trust an embedded key in production."""
+        try:
+            configured = json.loads(os.getenv("TOROKA_ENT_TRUSTED_SIGNING_KEYS_JSON", "{}"))
+        except json.JSONDecodeError as exc:
+            raise HTTPException(status_code=503, detail="Trusted signing-key registry configuration is invalid") from exc
+        if not isinstance(configured, dict):
+            raise HTTPException(status_code=503, detail="Trusted signing-key registry must be a JSON object")
+        registered_key = configured.get(bundle.key_id)
+        if self.environment == "production":
+            return registered_key if isinstance(registered_key, str) and registered_key.strip() else None
+        if isinstance(registered_key, str) and registered_key.strip():
+            return registered_key
+        candidate = request.trusted_public_key_pem if request else None
+        return candidate.strip() if isinstance(candidate, str) and candidate.strip() else None
 
     def get_kill_switch(self) -> KillSwitch:
         """Returns a domain KillSwitch backed by the persistent database store."""
@@ -683,8 +720,9 @@ class ProductionGovernanceService:
             configuration_digest=request.configuration_digest,
             metrics=[m.model_dump() for m in request.metrics],
             result=overall_result.value,
-            evaluator=request.evaluator,
-            limitations=request.limitations,
+            # Client-provided evaluator labels are not an identity assertion.
+            evaluator=actor_subject,
+            limitations=list(dict.fromkeys(request.limitations or [])),
             started_at=now,
             completed_at=now,
             created_at=now,
@@ -811,6 +849,8 @@ class ProductionGovernanceService:
         actor_subject: str,
         target_environment: str,
     ) -> None:
+        if target_environment not in {DeploymentEnvironment.PILOT.value, DeploymentEnvironment.PRODUCTION.value}:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Unsupported release target environment")
         if actor_subject == record.created_by:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -843,6 +883,8 @@ class ProductionGovernanceService:
                 detail="Release manifest contains no components",
             )
 
+        expected_approval_ids: set[str] = set()
+        expected_validation_ids: set[str] = set()
         for comp_id, comp_ver in components_map.items():
             comp_rec = self.session.execute(
                 select(GovernedComponentRecord).where(
@@ -866,11 +908,13 @@ class ProductionGovernanceService:
                     detail=f"Component '{comp_id}' version '{comp_ver}' is in status '{comp_rec.status}', not APPROVED or ACTIVE",
                 )
 
-            if not comp_rec.approved_validation_run_id or not comp_rec.approved_validation_digest:
+            if not comp_rec.approval_record_id or not comp_rec.approved_validation_run_id or not comp_rec.approved_validation_digest:
                 raise HTTPException(
                     status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                    detail=f"Component '{comp_id}' version '{comp_ver}' lacks verified validation run evidence",
+                    detail=f"Component '{comp_id}' version '{comp_ver}' lacks persisted approval or validation evidence",
                 )
+            expected_approval_ids.add(comp_rec.approval_record_id)
+            expected_validation_ids.add(comp_rec.approved_validation_run_id)
 
             run = self.session.execute(
                 select(ValidationRunRecord).where(
@@ -886,6 +930,11 @@ class ProductionGovernanceService:
                     status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                     detail=f"Component '{comp_id}' validation run '{comp_rec.approved_validation_run_id}' did not pass",
                 )
+            if run.evaluator in (comp_rec.created_by, actor_subject):
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail=f"Component '{comp_id}' validation evaluator, maker and release promoter must be independent",
+                )
 
             run_digest = compute_validation_run_digest(run)
             if not hmac.compare_digest(comp_rec.approved_validation_digest, run_digest):
@@ -894,8 +943,20 @@ class ProductionGovernanceService:
                     detail=f"Component '{comp_id}' validation digest mismatch with persisted run",
                 )
 
-        # 3. For target_environment == "production", verify all 13 MANDATORY_GATES in ReadinessAttestationRecord table
+        supplied_approval_ids = record.approval_records or []
+        supplied_validation_ids = record.validation_runs or []
+        if len(supplied_approval_ids) != len(set(supplied_approval_ids)) or set(supplied_approval_ids) != expected_approval_ids:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Release approval references do not exactly match persisted component approval records")
+        if len(supplied_validation_ids) != len(set(supplied_validation_ids)) or set(supplied_validation_ids) != expected_validation_ids:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Release validation references do not exactly match persisted approved validation runs")
+
+        # 3. Readiness proofs must be checked by an institution-owned evidence store.
         if target_environment == "production":
+            if self.readiness_evidence_verifier is None:
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail="Production promotion is disabled until a bank-controlled readiness evidence verifier is configured.",
+                )
             attestation_records = list(self.session.execute(
                 select(ReadinessAttestationRecord).where(
                     and_(
@@ -920,6 +981,7 @@ class ProductionGovernanceService:
                     and a.evidence_reference
                     and a.evidence_digest
                     and a.verified_by
+                    and a.verified_by != actor_subject
                 ]
                 failing = [a for a in atts if a.status in ("FAIL", "BLOCKED")]
                 if not passing or failing:
@@ -928,8 +990,22 @@ class ProductionGovernanceService:
             if unproven_gates:
                 raise HTTPException(
                     status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                    detail=f"Production promotion blocked: {len(unproven_gates)} mandatory readiness gates lack evidence-backed pass attestations: {', '.join(unproven_gates)}",
+                    detail=f"Production promotion blocked: {len(unproven_gates)} mandatory readiness gates lack independent evidence-backed pass attestations: {', '.join(unproven_gates)}",
                 )
+
+            for att in attestation_records:
+                try:
+                    verified = self.readiness_evidence_verifier.verify(
+                        installation_id=self.installation_id,
+                        release_version=record.version,
+                        gate_name=att.gate_name,
+                        evidence_reference=att.evidence_reference,
+                        expected_digest=att.evidence_digest,
+                    )
+                except Exception as exc:
+                    raise HTTPException(status_code=503, detail="Bank evidence verifier failed during readiness validation") from exc
+                if att.status == "PASS" and not verified:
+                    raise HTTPException(status_code=422, detail=f"Readiness evidence for gate '{att.gate_name}' could not be independently verified")
 
     def promote_release(
         self,
@@ -952,6 +1028,8 @@ class ProductionGovernanceService:
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Release '{release_id}' not found.",
             )
+        if target_environment not in {DeploymentEnvironment.PILOT.value, DeploymentEnvironment.PRODUCTION.value}:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Unsupported release target environment")
 
         # Enforce independent evidence verification
         self._verify_release_evidence(record, actor_subject, target_environment)
@@ -1167,6 +1245,10 @@ class ProductionGovernanceService:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Status must be PASS, FAIL, or BLOCKED")
         if not request.evidence_reference or not request.evidence_digest:
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Attestation requires evidence_reference and evidence_digest")
+        if "://" in request.evidence_reference:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Use a bank-controlled evidence artifact ID, not a caller-supplied URL")
+        if len(request.evidence_digest) != 64 or any(ch not in "0123456789abcdefABCDEF" for ch in request.evidence_digest):
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Evidence digest must be a 64-character SHA-256 hex digest")
 
         prev_records = list(self.session.execute(
             select(ReadinessAttestationRecord).where(
@@ -1436,7 +1518,8 @@ class ProductionGovernanceService:
         # 1. Audit integrity health
         audit_verified = False
         try:
-            audit_verified = verify_audit_chain(self.session, self.installation_id)
+            audit_valid, _audit_head_hash, _verified_record_count = verify_audit_chain(self.session, self.installation_id)
+            audit_verified = bool(audit_valid)
             audit_health = HealthStatus.HEALTHY.value if audit_verified else HealthStatus.CRITICAL.value
         except Exception:
             audit_health = HealthStatus.UNKNOWN.value
@@ -1839,8 +1922,8 @@ class ProductionGovernanceService:
         if record.signature_bundle is not None:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Passport has already been digitally signed.")
 
-        algo = AsymmetricAlgorithm.ED25519 if request.algorithm.upper() in ("ED25519", "ED_25519") else AsymmetricAlgorithm.ECDSA_P256
-        signer = LocalHSMKeyProvider(key_id=request.key_id, algorithm=algo)
+        signer = self._create_artifact_signer(request)
+        algo = signer.algorithm
 
         domain_passport = TorokaEvidencePassport.from_payload(record.payload, passport_digest=record.passport_digest)
         signed_passport = domain_passport.sign(signer)
@@ -1901,10 +1984,11 @@ class ProductionGovernanceService:
                 bundle = SignatureBundle.from_dict(record.signature_bundle)
                 key_id = bundle.key_id
                 algo = bundle.algorithm
-                sig_ok = verify_asymmetric_signature(
+                trusted_key = self._trusted_signing_key(bundle, request)
+                sig_ok = bool(trusted_key) and verify_asymmetric_signature(
                     payload=domain_passport.canonical_payload(),
                     bundle=bundle,
-                    trusted_public_key_pem=request.trusted_public_key_pem,
+                    trusted_public_key_pem=trusted_key,
                 )
                 if not sig_ok:
                     sig_err = "Asymmetric digital signature verification failed against passport payload."
@@ -1913,7 +1997,7 @@ class ProductionGovernanceService:
         else:
             sig_err = "Artifact is not digitally signed (tamper-evident SHA-256 digest only)."
 
-        is_valid = digest_ok and (sig_ok if is_signed else True)
+        is_valid = digest_ok and is_signed and sig_ok
 
         return VerifyArtifactResponse(
             is_valid=is_valid,
@@ -1947,8 +2031,8 @@ class ProductionGovernanceService:
         if record.signature_bundle is not None:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Release has already been digitally signed.")
 
-        algo = AsymmetricAlgorithm.ED25519 if request.algorithm.upper() in ("ED25519", "ED_25519") else AsymmetricAlgorithm.ECDSA_P256
-        signer = LocalHSMKeyProvider(key_id=request.key_id, algorithm=algo)
+        signer = self._create_artifact_signer(request)
+        algo = signer.algorithm
 
         manifest = ProductionReleaseManifest(
             release_id=record.release_id,
@@ -2026,10 +2110,11 @@ class ProductionGovernanceService:
                 bundle = SignatureBundle.from_dict(record.signature_bundle)
                 key_id = bundle.key_id
                 algo = bundle.algorithm
-                sig_ok = verify_asymmetric_signature(
+                trusted_key = self._trusted_signing_key(bundle, request)
+                sig_ok = bool(trusted_key) and verify_asymmetric_signature(
                     payload=manifest._compute_digest_payload(),
                     bundle=bundle,
-                    trusted_public_key_pem=request.trusted_public_key_pem,
+                    trusted_public_key_pem=trusted_key,
                 )
                 if not sig_ok:
                     sig_err = "Asymmetric digital signature verification failed against release manifest payload."
@@ -2038,7 +2123,7 @@ class ProductionGovernanceService:
         else:
             sig_err = "Artifact is not digitally signed."
 
-        is_valid = digest_ok and (sig_ok if is_signed else True)
+        is_valid = digest_ok and is_signed and sig_ok
 
         return VerifyArtifactResponse(
             is_valid=is_valid,
@@ -2246,7 +2331,8 @@ class ProductionGovernanceService:
             data_retention_policy=request.data_retention_policy,
             training_on_customer_data_permitted=request.training_on_customer_data_permitted,
             risk_tier=RiskTier(request.risk_tier),
-            is_approved=True,
+            # Self-reported provider metadata is insufficient for bank approval.
+            is_approved=False,
         )
 
         is_compliant, reason = verify_provider_compliance(provider)
@@ -2266,9 +2352,14 @@ class ProductionGovernanceService:
             hosting_location=provider.hosting_location,
             data_retention_policy=provider.data_retention_policy,
             training_on_customer_data_permitted=provider.training_on_customer_data_permitted,
-            is_approved=True,
+            is_approved=False,
             risk_tier=provider.risk_tier.value,
-            evaluation_summary={"compliance_reason": reason, "verified_at": now.isoformat()},
+            evaluation_summary={
+                "compliance_reason": reason,
+                "review_status": "PENDING_INDEPENDENT_BANK_REVIEW",
+                "review_note": "Automated policy screening is not an approval decision.",
+                "screened_at": now.isoformat(),
+            },
             last_evaluated_at=now,
             created_at=now,
         )
@@ -2758,9 +2849,11 @@ class ProductionGovernanceService:
                 "dossier_digest": r.dossier_digest,
                 "signature_bundle": r.signature_bundle,
             })
-            is_verified = dossier.verify_dossier_integrity()
+            is_verified = dossier.verify_dossier_integrity() and r.status not in {"DRAFT_UNVERIFIED", "DRAFT_SIGNED"}
             if is_signed:
-                is_verified = is_verified and dossier.verify_digital_signature()
+                bundle = SignatureBundle.from_dict(r.signature_bundle)
+                trusted_key = self._trusted_signing_key(bundle)
+                is_verified = is_verified and bool(trusted_key) and dossier.verify_digital_signature(trusted_key)
         except Exception:
             is_verified = False
 
@@ -2970,8 +3063,8 @@ class ProductionGovernanceService:
             "signature_bundle": record.signature_bundle,
         })
 
-        algo = AsymmetricAlgorithm.ED25519 if request.algorithm.upper() in ("ED25519", "ED_25519") else AsymmetricAlgorithm.ECDSA_P256
-        signer = LocalHSMKeyProvider(key_id=request.key_id, algorithm=algo)
+        signer = self._create_artifact_signer(request)
+        algo = signer.algorithm
         dossier.sign(signer)
 
         now = _utc_now()
@@ -3038,16 +3131,18 @@ class ProductionGovernanceService:
         sig_err = None
 
         if dossier.signature_bundle:
-            sig_verified = dossier.verify_digital_signature(request.trusted_public_key_pem)
+            bundle = dossier.signature_bundle
+            trusted_key = self._trusted_signing_key(bundle, request)
+            sig_verified = bool(trusted_key) and dossier.verify_digital_signature(trusted_key)
             if not sig_verified:
-                sig_err = "Cryptographic signature does not match canonical dossier digest"
+                sig_err = "Signature could not be validated against a trusted signing key"
         else:
             sig_err = "Dossier has no digital signature attached"
 
         return VerifyArtifactResponse(
             artifact_id=record.dossier_id,
             artifact_type="forensic_dossier",
-            is_valid=is_digest_valid and (sig_verified if dossier.signature_bundle else True),
+            is_valid=is_digest_valid and dossier.signature_bundle is not None and sig_verified,
             digest_verified=is_digest_valid,
             signature_verified=sig_verified,
             is_digitally_signed=dossier.signature_bundle is not None,
@@ -3107,11 +3202,10 @@ class ProductionGovernanceService:
             national_id=request.creditor_national_id,
             msisdn=request.creditor_msisdn,
         )
-        clearing_rail = (
-            ClearingRail(request.clearing_rail)
-            if request.clearing_rail in ClearingRail.__members__.values()
-            else ClearingRail.PESALINK
-        )
+        try:
+            clearing_rail = ClearingRail(request.clearing_rail)
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Unsupported ISO 20022 clearing rail") from exc
         transfer = Pacs008CreditTransfer(
             msg_id=request.msg_id or f"MSG-{uuid.uuid4().hex[:12]}",
             end_to_end_id=request.end_to_end_id,
@@ -3137,7 +3231,8 @@ class ProductionGovernanceService:
         eval_result = ISO20022Engine.evaluate_inflight_payment(
             transfer=transfer,
             known_mule_accounts=mule_accounts,
-            account_prior_transfers_count=request.account_prior_transfers_count,
+            # No trusted bank-history adapter is available here; unknown is not zero.
+            account_prior_transfers_count=None,
         )
 
         record = InflightPaymentRiskRecord(
