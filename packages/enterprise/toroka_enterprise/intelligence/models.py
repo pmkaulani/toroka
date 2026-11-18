@@ -984,12 +984,8 @@ class ReadinessAttestationRecord(IntelligenceBase):
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
 
-    __table_args__ = (
-        UniqueConstraint(
-            "installation_id", "release_version", "gate_name",
-            name="uq_readiness_attestation",
-        ),
-    )
+    # History is append-only. A partial unique index permits one active attestation
+    # per release/gate while retaining any number of superseded records.
 
 
 class SuspensionAuditRecord(IntelligenceBase):
@@ -1109,7 +1105,8 @@ class GovernedAIProviderRecord(IntelligenceBase):
     hosting_location: Mapped[str] = mapped_column(String(100), nullable=False)
     data_retention_policy: Mapped[str] = mapped_column(String(100), nullable=False)
     training_on_customer_data_permitted: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    is_approved: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    # Providers remain unapproved until a separate institution-authorized review.
+    is_approved: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     risk_tier: Mapped[str] = mapped_column(String(30), nullable=False)
 
     evaluation_summary: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
