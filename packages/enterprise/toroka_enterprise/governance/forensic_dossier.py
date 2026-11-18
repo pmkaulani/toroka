@@ -1,8 +1,9 @@
-"""Court-Ready Forensic Evidence Dossier & Section 106B Electronic Records Admissibility.
+"""Tamper-evident forensic evidence dossier primitives.
 
-Provides legally binding evidentiary dossier packages for law enforcement (DCI / BFIU),
-judicial presentation, and regulatory discovery under the Kenya Evidence Act (Cap 80, Sec 106B),
-UK PACE Section 69, and US Federal Rule of Evidence 902(13)/(14).
+These data structures support draft evidence compilation, integrity hashing, and
+signature attachment. They do not themselves establish legal admissibility or
+create a statutory certificate; authorized officers and legal counsel must
+validate records and applicable certification requirements independently.
 """
 from __future__ import annotations
 
@@ -317,7 +318,7 @@ class ForensicDossier:
         )
 
     def render_html_dossier(self) -> str:
-        """Renders publication-grade, court-admissible HTML dossier with legal styling."""
+        """Render a review-oriented draft; this output is not a court filing or statutory certificate."""
         cert_html = ""
         if self.section_106b_certificate:
             c = self.section_106b_certificate
@@ -359,7 +360,7 @@ class ForensicDossier:
             sig_html = """
             <div class="legal-box signature-block warning">
                 <h3>DIGITAL SIGNATURE STATUS</h3>
-                <p><em>UNASSIGNED / PENDING HSM SIGNATURE (TAMPER-EVIDENT DIGEST ONLY)</em></p>
+                <p><em>UNSIGNED — digest alone does not establish signer identity or legal admissibility</em></p>
             </div>
             """
 
@@ -384,7 +385,7 @@ class ForensicDossier:
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Forensic Evidence Dossier - {html.escape(self.dossier_id)}</title>
+<title>Draft Forensic Evidence Dossier - {html.escape(self.dossier_id)}</title>
 <style>
     body {{ font-family: 'Times New Roman', serif; font-size: 13pt; line-height: 1.5; color: #111; margin: 40px; }}
     .header {{ text-align: center; border-bottom: 2px solid #000; padding-bottom: 12px; margin-bottom: 24px; }}
@@ -410,10 +411,10 @@ class ForensicDossier:
 </head>
 <body>
 <div class="header">
-    <h1>REPUBLIC OF KENYA</h1>
-    <h2>BANKING FRAUD INVESTIGATIONS UNIT & FINANCIAL CRIME COMPLIANCE</h2>
-    <h3>IN THE HIGH COURT OF KENYA (ANTI-CORRUPTION & ECONOMIC CRIMES DIVISION)</h3>
-    <div class="court-badge">EXHIBIT DOSSIER NO: {html.escape(self.dossier_id)} | CASE FILE REF: {html.escape(self.case_id)}</div>
+    <h1>TOROKA FORENSIC EVIDENCE DOSSIER</h1>
+    <h2>DRAFT COMPILATION — SOURCE RECORDS REQUIRE INDEPENDENT VERIFICATION</h2>
+    <h3>NOT A SECTION 106B CERTIFICATE OR COURT FILING</h3>
+    <div class="court-badge">DRAFT DOSSIER: {html.escape(self.dossier_id)} | CASE FILE REF: {html.escape(self.case_id)}</div>
 </div>
 
 <div class="digest-banner">
