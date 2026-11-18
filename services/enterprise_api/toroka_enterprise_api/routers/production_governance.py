@@ -888,6 +888,7 @@ def sign_forensic_dossier(
         dossier_id=dossier_id,
         request=request,
         actor_subject=principal.subject,
+        actor_role=_primary_role(principal),
     )
 
 
