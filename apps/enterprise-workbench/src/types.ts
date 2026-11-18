@@ -1155,6 +1155,11 @@ export interface GovernedAIProvider {
   evaluation_summary: Record<string, unknown>;
   last_evaluated_at?: string | null;
   created_at: string;
+  review_status?: string | null;
+  registered_by?: string | null;
+  approved_by?: string | null;
+  approved_at?: string | null;
+  review_notes?: string | null;
 }
 
 export interface ReadinessAssessment {
@@ -1292,8 +1297,39 @@ export interface InflightPaymentEvaluation {
   risk_tier: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
   triggered_rules: string[];
   recommended_action: string;
+  integration_mode?: string;
   latency_ms: number;
   evaluated_at: string;
+}
+
+export interface SemanticVerifyResponse {
+  is_valid: boolean;
+  verification_scope: string;
+  methodology: string;
+  total_claims: number;
+  entailed_claims: number;
+  contradicted_claims: number;
+  numeric_mismatches: number;
+  ungrounded_claims: number;
+  evaluations: Array<{
+    claim_id: string;
+    statement: string;
+    kind: string;
+    status: string;
+    reasons: string[];
+    confidence: number;
+  }>;
+}
+
+export interface TrustedSignerRecord {
+  key_id: string;
+  installation_id: string;
+  algorithm: string;
+  purpose: string;
+  security_level: string;
+  is_active: boolean;
+  is_revoked?: boolean;
+  revocation_reason?: string | null;
 }
 
 

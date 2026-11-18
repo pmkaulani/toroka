@@ -4,15 +4,19 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 from typing import Any
+from decimal import Decimal
 from sqlalchemy import (
     Boolean,
     DateTime,
     Float,
+    Index,
     Integer,
     JSON,
+    Numeric,
     String,
     Text,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -936,6 +940,10 @@ class ValidationRunRecord(IntelligenceBase):
     evaluator: Mapped[str] = mapped_column(String(255), nullable=False)
     limitations: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
 
+    execution_provenance_digest: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    executor_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    is_trusted_execution: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     completed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
@@ -985,9 +993,12 @@ class ReadinessAttestationRecord(IntelligenceBase):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
 
     __table_args__ = (
-        UniqueConstraint(
+        Index(
+            "uq_readiness_attestation_active",
             "installation_id", "release_version", "gate_name",
-            name="uq_readiness_attestation",
+            unique=True,
+            sqlite_where=text("is_active = 1"),
+            postgresql_where=text("is_active IS TRUE"),
         ),
     )
 
@@ -1109,8 +1120,14 @@ class GovernedAIProviderRecord(IntelligenceBase):
     hosting_location: Mapped[str] = mapped_column(String(100), nullable=False)
     data_retention_policy: Mapped[str] = mapped_column(String(100), nullable=False)
     training_on_customer_data_permitted: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    is_approved: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    is_approved: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     risk_tier: Mapped[str] = mapped_column(String(30), nullable=False)
+
+    registered_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    approved_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    review_status: Mapped[str] = mapped_column(String(50), nullable=False, default="PENDING_INDEPENDENT_REVIEW")
+    review_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     evaluation_summary: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
     last_evaluated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -1190,7 +1207,7 @@ class ForensicDossierRecord(IntelligenceBase):
     case_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     incident_type: Mapped[str] = mapped_column(String(100), nullable=False)
-    fraud_loss_amount: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    fraud_loss_amount: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False, default=Decimal("0.0"))
     currency: Mapped[str] = mapped_column(String(10), nullable=False, default="KES")
 
     examiner_subject: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -1206,7 +1223,7 @@ class ForensicDossierRecord(IntelligenceBase):
     dossier_digest: Mapped[str] = mapped_column(String(64), nullable=False)
     signature_bundle: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
 
-    status: Mapped[str] = mapped_column(String(50), nullable=False, default="SEALED")
+    status: Mapped[str] = mapped_column(String(50), nullable=False, default="DRAFT_UNVERIFIED")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
 
 
@@ -1219,7 +1236,7 @@ class InflightPaymentRiskRecord(IntelligenceBase):
 
     end_to_end_id: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
     clearing_rail: Mapped[str] = mapped_column(String(50), nullable=False)
-    amount: Mapped[float] = mapped_column(Float, nullable=False)
+    amount: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False)
     currency: Mapped[str] = mapped_column(String(10), nullable=False, default="KES")
 
     debtor_account: Mapped[str] = mapped_column(String(100), nullable=False)
@@ -1232,8 +1249,34 @@ class InflightPaymentRiskRecord(IntelligenceBase):
     triggered_rules: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
     recommended_action: Mapped[str] = mapped_column(Text, nullable=False)
     latency_ms: Mapped[float] = mapped_column(Float, nullable=False)
+    integration_mode: Mapped[str] = mapped_column(String(32), nullable=False, default="SHADOW")
 
     evaluated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+
+
+# ==============================================================================
+# Phase 13.2 Models: Institutional Signer Trust Registry
+# ==============================================================================
+
+class SignerTrustRecord(IntelligenceBase):
+    """Server-side institutional trust anchors for production and supervisory signing keys."""
+    __tablename__ = "enterprise_signer_trust_registry"
+
+    key_id: Mapped[str] = mapped_column(String(100), primary_key=True)
+    installation_id: Mapped[str] = mapped_column(String(100), primary_key=True, index=True)
+
+    public_key_pem: Mapped[str] = mapped_column(Text, nullable=False)
+    algorithm: Mapped[str] = mapped_column(String(50), nullable=False)
+    purpose: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+    security_level: Mapped[str] = mapped_column(String(50), nullable=False, default="BANK_MANAGED_HSM")
+
+    activated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    is_revoked: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, index=True)
+    revocation_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    registered_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+
 
 
 

@@ -76,9 +76,9 @@ def test_forensic_dossier_lifecycle_api(oidc_client, token_factory, phase13_1_ca
     assert dossier["title"] == "M-PESA Syndicate Rapid Pass-Through Investigation"
     assert dossier["fraud_loss_amount"] == 1250000.0
     assert dossier["is_digitally_signed"] is False
-    assert dossier["is_verified"] is True
-    assert dossier["section_106b_certificate"] is not None
-    assert dossier["section_106b_certificate"]["certifier_name"] == "Inspector J. Kamau"
+    assert dossier["is_verified"] is False
+    assert dossier["status"] == "DRAFT_UNVERIFIED"
+    assert dossier["section_106b_certificate"] is None
     assert len(dossier["chain_of_custody"]) >= 1
 
     # 2. Retrieve Dossier
@@ -129,7 +129,7 @@ def test_forensic_dossier_lifecycle_api(oidc_client, token_factory, phase13_1_ca
     html_text = html_resp.text
     assert "REPUBLIC OF KENYA" in html_text
     assert "SECTION 106B" in html_text.upper()
-    assert "Inspector J. Kamau" in html_text
+    assert "DRAFT UNVERIFIED" in html_text.upper()
     assert dossier["dossier_digest"] in html_text
 
 

@@ -380,7 +380,7 @@ export const ProductionGovernanceView: React.FC<Props> = ({ currentPersona }) =>
             { id: "drift", label: `Drift Monitoring (${driftRecords.length})` },
             { id: "passports", label: `Evidence Passports (${passports.length})` },
             { id: "modelrisk", label: `Model Risk & PSI (${quantDrifts.length})` },
-            { id: "forensics_iso", label: "Court Dossiers & ISO 20022" },
+            { id: "forensics_iso", label: "Evidence Dossiers & Shadow ISO 20022" },
             { id: "aiproviders", label: `AI Providers (${aiProviders.length})` },
             { id: "readiness", label: "Bank Validation Package" },
           ].map((tab) => (
@@ -1204,7 +1204,7 @@ export const ProductionGovernanceView: React.FC<Props> = ({ currentPersona }) =>
                 <div key={prov.provider_id} className="p-4 rounded-lg bg-slate-900 border border-slate-800 space-y-2">
                   <div className="flex items-center justify-between">
                     <span className="text-base font-bold text-white">{prov.provider_name}</span>
-                    {getStatusBadge(prov.is_approved ? "APPROVED" : "REJECTED")}
+                    {getStatusBadge(prov.review_status === "PENDING_INDEPENDENT_REVIEW" ? "PENDING REVIEW" : (prov.is_approved ? "APPROVED" : "REJECTED"))}
                   </div>
                   <div className="text-xs font-mono text-indigo-300">
                     {prov.model_identifier} (v{prov.model_version})
@@ -1230,9 +1230,9 @@ export const ProductionGovernanceView: React.FC<Props> = ({ currentPersona }) =>
           <div className="space-y-8">
             {/* Header */}
             <div>
-              <h2 className="text-lg font-semibold text-white">Court-Ready Forensic Evidence Dossiers & ISO 20022 Core Banking Clearing</h2>
+              <h2 className="text-lg font-semibold text-white">Forensic Evidence Dossiers & Shadow ISO 20022 Clearing Risk</h2>
               <p className="text-xs text-slate-400">
-                Judicial admissibility packages under Section 106B of the Kenya Evidence Act and sub-100ms in-flight payment risk scoring.
+                Admissibility packages under Section 106B of the Kenya Evidence Act and shadow in-flight payment advisory risk scoring.
               </p>
             </div>
 
@@ -1242,10 +1242,10 @@ export const ProductionGovernanceView: React.FC<Props> = ({ currentPersona }) =>
               <div className="p-5 rounded-lg bg-slate-900 border border-slate-800 space-y-4">
                 <div className="border-b border-slate-800 pb-3">
                   <h3 className="text-sm font-bold text-white flex items-center">
-                    <span className="mr-2">⚖️</span> Section 106B Court Dossier Compiler
+                    <span className="mr-2">⚖️</span> Forensic Evidence Dossier Compiler
                   </h3>
                   <p className="text-xs text-slate-400 mt-1">
-                    Compile an immutable, tamper-evident judicial evidence package with chain of custody and sworn statutory declaration.
+                    Compile an immutable, tamper-evident judicial evidence package with chain of custody and provenance verification.
                   </p>
                 </div>
 
@@ -1302,7 +1302,7 @@ export const ProductionGovernanceView: React.FC<Props> = ({ currentPersona }) =>
                     onClick={handleCreateDossier}
                     className="w-full py-2 bg-indigo-600 hover:bg-indigo-500 font-semibold text-white rounded transition shadow-sm"
                   >
-                    Compile Court-Ready Forensic Dossier
+                    Compile Draft Evidence Dossier (Uncertified)
                   </button>
                 </div>
 
@@ -1320,8 +1320,12 @@ export const ProductionGovernanceView: React.FC<Props> = ({ currentPersona }) =>
                             TAMPER-EVIDENT HASH
                           </span>
                         )}
-                        <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-300 font-mono">
-                          {activeDossier.status}
+                        <span className={`px-2 py-0.5 rounded font-mono ${
+                          activeDossier.status === "DRAFT_UNVERIFIED"
+                            ? "bg-amber-950 text-amber-300 border border-amber-700 font-bold"
+                            : "bg-slate-800 text-slate-300"
+                        }`}>
+                          {activeDossier.status === "DRAFT_UNVERIFIED" ? "DRAFT UNVERIFIED FORENSIC DOSSIER" : activeDossier.status}
                         </span>
                       </div>
                     </div>
@@ -1368,7 +1372,7 @@ export const ProductionGovernanceView: React.FC<Props> = ({ currentPersona }) =>
                         rel="noreferrer"
                         className="px-3 py-1 bg-indigo-700 hover:bg-indigo-600 text-white rounded font-medium transition text-center"
                       >
-                        Export Court Dossier (HTML)
+                        Export Draft Dossier (HTML)
                       </a>
                     </div>
                   </div>
@@ -1379,10 +1383,10 @@ export const ProductionGovernanceView: React.FC<Props> = ({ currentPersona }) =>
               <div className="p-5 rounded-lg bg-slate-900 border border-slate-800 space-y-4">
                 <div className="border-b border-slate-800 pb-3">
                   <h3 className="text-sm font-bold text-white flex items-center">
-                    <span className="mr-2">⚡</span> ISO 20022 In-Flight Risk Scoring (&lt;100ms)
+                    <span className="mr-2">⚡</span> Shadow Advisory Payment Risk Evaluation (Non-Executing)
                   </h3>
                   <p className="text-xs text-slate-400 mt-1">
-                    Simulate real-time pacs.008 customer credit transfers across Kenya clearing rails before clearing window confirmation.
+                    Simulate shadow pacs.008 customer credit transfers across Kenya clearing rails. Toroka provides advisory risk scoring only and sends no clearing instructions.
                   </p>
                 </div>
 

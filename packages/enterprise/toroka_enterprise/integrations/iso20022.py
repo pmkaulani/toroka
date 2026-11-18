@@ -1,15 +1,16 @@
 """ISO 20022 Financial Messaging Engine & Real-Time Kenya Payment Clearing.
 
-Provides parsing, serialization, canonical event mapping, and sub-100ms in-flight
-risk evaluation for ISO 20022 financial messages:
+Provides parsing, serialization, canonical event mapping, and in-flight
+advisory risk evaluation for ISO 20022 financial messages:
   - pacs.008.001.10: Financial Institution Customer Credit Transfer
   - pacs.002.001.12: Payment Status Report (Fraud / Reversal / Rejection)
   - camt.053.001.10: Bank-to-Customer End-of-Day Statement
 Supported Clearing Rails:
   - PESALINK (IPSL Kenya Real-Time P2P/P2B)
-  - KEPSS (Central Bank of Kenya RTGS)
+  - KEPSS_RTGS (Central Bank of Kenya RTGS)
   - MPESA_B2C / MPESA_B2B / MPESA_C2B (Safaricom Daraja Settlement)
   - SWIFT (Cross-Border Wire)
+  - INTERNAL_BOOK (Internal Bank Transfer)
 """
 from __future__ import annotations
 
@@ -19,8 +20,38 @@ import uuid
 import xml.etree.ElementTree as ET
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
+from decimal import Decimal
 from enum import StrEnum
 from typing import Any
+
+
+class ClearingIntegrationMode(StrEnum):
+    SIMULATION = "SIMULATION"
+    SHADOW = "SHADOW"
+    CONNECTED_READ_ONLY = "CONNECTED_READ_ONLY"
+    CONTROL_ENABLED = "CONTROL_ENABLED"
+
+
+SUPPORTED_PAYMENT_CURRENCIES = {"KES", "USD", "EUR", "GBP", "TZS", "UGX"}
+
+
+def validate_payment_amount(amount: Decimal | float | str | int, currency: str) -> Decimal:
+    """Validates payment amount and currency strictly."""
+    try:
+        dec = Decimal(str(amount)) if not isinstance(amount, Decimal) else amount
+    except Exception as exc:
+        raise ValueError(f"Invalid decimal amount: {amount}") from exc
+
+    if dec.is_nan() or dec.is_infinite():
+        raise ValueError(f"Invalid non-finite payment amount: {dec}")
+    if dec <= Decimal("0.0"):
+        raise ValueError(f"Payment amount must be strictly positive: {dec}")
+    if currency.upper() not in SUPPORTED_PAYMENT_CURRENCIES:
+        raise ValueError(f"Unsupported payment currency '{currency}'; supported: {sorted(SUPPORTED_PAYMENT_CURRENCIES)}")
+    if dec.as_tuple().exponent < -4:
+        raise ValueError(f"Excess precision: payment amount cannot exceed 4 decimal places ({dec})")
+    return dec
+
 
 
 class ClearingRail(StrEnum):
@@ -71,7 +102,7 @@ class Pacs008CreditTransfer:
     msg_id: str
     end_to_end_id: str
     tx_id: str
-    amount: float
+    amount: Decimal | float
     currency: str
     debtor: PartyIdentification
     creditor: PartyIdentification
@@ -80,12 +111,17 @@ class Pacs008CreditTransfer:
     remittance_narrative: str = ""
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
+    def __post_init__(self) -> None:
+        if not isinstance(self.amount, Decimal):
+            object.__setattr__(self, "amount", Decimal(str(self.amount)))
+        validate_payment_amount(self.amount, self.currency)
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "msg_id": self.msg_id,
             "end_to_end_id": self.end_to_end_id,
             "tx_id": self.tx_id,
-            "amount": self.amount,
+            "amount": str(self.amount),
             "currency": self.currency,
             "debtor": self.debtor.to_dict(),
             "creditor": self.creditor.to_dict(),
@@ -107,7 +143,7 @@ class Pacs008CreditTransfer:
             "payload": {
                 "msg_id": self.msg_id,
                 "end_to_end_id": self.end_to_end_id,
-                "amount": self.amount,
+                "amount": float(self.amount),
                 "currency": self.currency,
                 "clearing_rail": self.clearing_rail.value,
                 "debtor_name": self.debtor.name,
@@ -192,11 +228,16 @@ class ISO20022Engine:
         creditor_d = data.get("creditor", {})
 
         clearing_str = data.get("clearing_rail", ClearingRail.PESALINK.value)
-        clearing_rail = (
-            ClearingRail(clearing_str)
-            if clearing_str in ClearingRail.__members__.values()
-            else ClearingRail.PESALINK
-        )
+        # Never reinterpret an invalid clearing rail as PesaLink: it changes
+        # routing context and can conceal incompatible/malformed payloads.
+        clearing_rail = ClearingRail(clearing_str)
+
+        raw_amount = data.get("amount")
+        if raw_amount is None:
+            raise ValueError("Payment amount is required")
+        amount = Decimal(str(raw_amount))
+        currency = str(data.get("currency", "KES"))
+        validate_payment_amount(amount, currency)
 
         debtor = PartyIdentification(
             name=str(debtor_d.get("name", "Unknown Debtor")),
@@ -224,8 +265,8 @@ class ISO20022Engine:
             msg_id=str(data.get("msg_id", f"MSG-{uuid.uuid4().hex[:12]}")),
             end_to_end_id=str(data.get("end_to_end_id", f"E2E-{uuid.uuid4().hex[:12]}")),
             tx_id=str(data.get("tx_id", f"TX-{uuid.uuid4().hex[:12]}")),
-            amount=float(data.get("amount", 0.0)),
-            currency=str(data.get("currency", "KES")),
+            amount=amount,
+            currency=currency,
             debtor=debtor,
             creditor=creditor,
             clearing_rail=clearing_rail,
@@ -237,6 +278,15 @@ class ISO20022Engine:
     @classmethod
     def parse_pacs008_xml(cls, xml_text: str) -> Pacs008CreditTransfer:
         """Parses standard ISO 20022 pacs.008 XML format."""
+        try:
+            raw_root = ET.fromstring(xml_text)
+        except ET.ParseError as exc:
+            raise ValueError(f"Malformed pacs.008 XML payload: {exc}") from exc
+
+        tag_name = raw_root.tag.split("}")[-1] if "}" in raw_root.tag else raw_root.tag
+        if tag_name not in ("Document", "pacs.008.001.10", "FIToFICstmrCdtTrf"):
+            raise ValueError(f"Unsupported XML root element '{raw_root.tag}': expected ISO 20022 Document")
+
         # Strip default XML namespace for clean XPath
         xml_clean = re.sub(r'\sxmlns="[^"]+"', "", xml_text, count=1)
         root = ET.fromstring(xml_clean)
@@ -255,8 +305,11 @@ class ISO20022Engine:
         tx_id = tx_elem.text if tx_elem is not None and tx_elem.text else end_to_end_id
 
         amt_elem = tx_info.find(".//IntrBkSttlmAmt")
-        amount = float(amt_elem.text) if amt_elem is not None and amt_elem.text else 0.0
+        if amt_elem is None or not amt_elem.text:
+            raise ValueError("Invalid pacs.008 XML: missing IntrBkSttlmAmt element")
+        amount = Decimal(str(amt_elem.text.strip()))
         currency = amt_elem.get("Ccy", "KES") if amt_elem is not None else "KES"
+        validate_payment_amount(amount, currency)
 
         # Debtor
         dbtr_name = tx_info.findtext(".//Dbtr/Nm") or "Unknown Debtor"
@@ -318,9 +371,9 @@ class ISO20022Engine:
         cls,
         transfer: Pacs008CreditTransfer,
         known_mule_accounts: set[str] | None = None,
-        account_prior_transfers_count: int = 10,
+        account_prior_transfers_count: int | None = None,
     ) -> InflightRiskEvaluation:
-        """Evaluates an in-flight payment against instant risk rules in <100ms."""
+        """Evaluates an in-flight payment against instant risk rules in advisory mode."""
         t0 = time.perf_counter()
         triggered_rules: list[str] = []
         risk_score = 0.05  # Base background baseline risk
@@ -333,8 +386,9 @@ class ISO20022Engine:
             risk_score += 0.85
 
         # Rule 2: Large Round Amount Layering
-        is_round = transfer.amount > 50_000 and (transfer.amount % 10_000 == 0 or transfer.amount % 5_000 == 0)
-        if is_round and transfer.amount >= 250_000:
+        dec_amount = Decimal(str(transfer.amount))
+        is_round = dec_amount > Decimal("50000") and (dec_amount % Decimal("10000") == Decimal("0") or dec_amount % Decimal("5000") == Decimal("0"))
+        if is_round and dec_amount >= Decimal("250000"):
             triggered_rules.append("RULE_LARGE_ROUND_SUM: High-value round-denomination transfer")
             risk_score += 0.25
 
@@ -347,7 +401,7 @@ class ISO20022Engine:
                 break
 
         # Rule 4: New Uncorroborated First-Time Beneficiary on Fast Rail
-        if account_prior_transfers_count == 0 and transfer.clearing_rail in (ClearingRail.PESALINK, ClearingRail.MPESA_B2C):
+        if account_prior_transfers_count is not None and account_prior_transfers_count == 0 and transfer.clearing_rail in (ClearingRail.PESALINK, ClearingRail.MPESA_B2C):
             triggered_rules.append("RULE_NEW_FAST_BENEFICIARY: First-time counterparty on instant settlement rail")
             risk_score += 0.20
 
@@ -358,19 +412,19 @@ class ISO20022Engine:
         if risk_score >= 0.80:
             decision = PaymentDecision.BLOCK
             tier = RiskTier.CRITICAL
-            recommended_action = "IMMEDIATE_BLOCK: Terminate clearing, notify AML officer, return pacs.002 with reason FRAD"
+            recommended_action = "RECOMMEND_BLOCK: Advisory risk result only; Toroka sends no clearing instruction"
         elif risk_score >= 0.50:
             decision = PaymentDecision.QUARANTINE_HOLD
             tier = RiskTier.HIGH
-            recommended_action = "QUARANTINE_30M: Suspend clearing settlement for 30 minutes to enable automated fraud triage"
+            recommended_action = "RECOMMEND_MANUAL_REVIEW: Advisory only; the bank's authorised control owner decides"
         elif risk_score >= 0.30:
             decision = PaymentDecision.STEP_UP_AUTH
             tier = RiskTier.MEDIUM
-            recommended_action = "STEP_UP_AUTH: Prompt sender for hardware token / biometric confirmation before clearing"
+            recommended_action = "RECOMMEND_STEP_UP_AUTH: Advisory only; Toroka issues no authentication challenge"
         else:
             decision = PaymentDecision.ALLOW
             tier = RiskTier.LOW
-            recommended_action = "ALLOW: Release to clearing rail immediately"
+            recommended_action = "NO_RULE_TRIGGERED: Advisory only; Toroka does not release or clear the payment"
 
         elapsed_ms = (time.perf_counter() - t0) * 1000.0
 

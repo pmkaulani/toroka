@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Any
+from decimal import Decimal
+from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 
@@ -64,8 +65,17 @@ class CreateValidationRunRequest(BaseModel):
     dataset_digest: str
     configuration_digest: str
     metrics: list[ValidationMetricSchema]
-    evaluator: str
+    evaluator: str | None = None  # Deprecated; bound to authenticated actor by service.
     limitations: list[str] = Field(default_factory=list)
+
+
+class ExecuteTrustedValidationRequest(BaseModel):
+    component_id: str
+    component_version: str
+    dataset_digest: str
+    configuration_digest: str
+    plan_name: str = "production-standard-evaluation"
+    metric_specs: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class ValidationRunResponse(BaseModel):
@@ -83,12 +93,15 @@ class ValidationRunResponse(BaseModel):
     completed_at: str
     created_at: str
     validation_digest: str | None = None
+    execution_provenance_digest: str | None = None
+    executor_id: str | None = None
+    is_trusted_execution: bool = False
 
 
 class RecordReadinessAttestationRequest(BaseModel):
     release_version: str
     gate_name: str
-    status: str = "PASS"  # PASS, FAIL, BLOCKED
+    status: Literal["PASS", "FAIL", "BLOCKED"] = "PASS"
     rationale: str
     evidence_reference: str
     evidence_digest: str
@@ -104,7 +117,8 @@ class CreateReleaseRequest(BaseModel):
 
 
 class PromoteReleaseRequest(BaseModel):
-    target_environment: str  # pilot, production
+    target_environment: Literal["pilot", "production"]
+    signature_bundle: dict[str, Any] | None = None
 
 
 class RollbackReleaseRequest(BaseModel):
@@ -291,6 +305,11 @@ class GovernedAIProviderResponse(BaseModel):
     evaluation_summary: dict[str, Any]
     last_evaluated_at: str | None = None
     created_at: str
+    review_status: str | None = None
+    registered_by: str | None = None
+    approved_by: str | None = None
+    approved_at: str | None = None
+    review_notes: str | None = None
 
 
 class ReadinessGateInputSchema(BaseModel):
@@ -376,6 +395,9 @@ class VerifyArtifactResponse(BaseModel):
     signing_key_id: str | None = None
     signing_algorithm: str | None = None
     error: str | None = None
+    digest_integrity_valid: bool = False
+    signature_math_valid: bool = False
+    signer_trusted: bool = False
 
 
 class EvaluateQuantitativeDriftRequest(BaseModel):
@@ -508,9 +530,9 @@ class ForensicDossierResponse(BaseModel):
 class InflightPaymentEvaluationRequest(BaseModel):
     end_to_end_id: str
     msg_id: str | None = None
-    amount: float
+    amount: Decimal
     currency: str = "KES"
-    clearing_rail: str = "PESALINK"
+    clearing_rail: Literal["PESALINK", "KEPSS_RTGS", "MPESA_B2C", "MPESA_B2B", "MPESA_C2B", "SWIFT", "INTERNAL_BOOK"] = "PESALINK"
     debtor_name: str
     debtor_account: str
     debtor_bic: str = "KCBKKENA"
@@ -522,7 +544,7 @@ class InflightPaymentEvaluationRequest(BaseModel):
     creditor_msisdn: str | None = None
     creditor_national_id: str | None = None
     remittance_narrative: str = ""
-    account_prior_transfers_count: int = 10
+    account_prior_transfers_count: int | None = None
 
 
 class InflightPaymentEvaluationResponse(BaseModel):
@@ -534,19 +556,51 @@ class InflightPaymentEvaluationResponse(BaseModel):
     recommended_action: str
     latency_ms: float
     evaluated_at: str
+    integration_mode: str = "SHADOW"
 
 
 class SemanticVerifyRequest(BaseModel):
     claims: list[dict[str, Any]]
-    evidence_context: list[dict[str, Any]]
+    evidence_context: list[dict[str, Any]] = Field(default_factory=list)
+    case_id: str | None = None
 
 
 class SemanticVerifyResponse(BaseModel):
     is_valid: bool
+    verification_scope: str = "CALLER_SUPPLIED_EXCERPTS_ONLY_NOT_SOURCE_AUTHENTICATION"
+    methodology: str = "HEURISTIC_TRIAGE"
     total_claims: int
     entailed_claims: int
     contradicted_claims: int
     numeric_mismatches: int
     ungrounded_claims: int
     evaluations: list[dict[str, Any]]
+
+
+class ApproveAIProviderRequest(BaseModel):
+    review_notes: str
+    privacy_evidence_reference: str | None = None
+    contractual_evidence_reference: str | None = None
+    subprocessor_compliance: bool = True
+
+
+class RegisterTrustedSignerRequest(BaseModel):
+    key_id: str
+    public_key_pem: str
+    algorithm: Literal["Ed25519", "ECDSA_P256"] = "Ed25519"
+    purpose: Literal["RELEASE_PROMOTION", "FORENSIC_DOSSIER", "EVIDENCE_PASSPORT", "AUDIT_ATTESTATION"] = "RELEASE_PROMOTION"
+    security_level: Literal["BANK_MANAGED_HSM", "CLOUD_KMS", "DEV_SOFTWARE"] = "BANK_MANAGED_HSM"
+
+
+class TrustedSignerResponse(BaseModel):
+    key_id: str
+    installation_id: str
+    algorithm: str
+    purpose: str
+    security_level: str
+    is_active: bool
+    is_revoked: bool = False
+    revocation_reason: str | None = None
+    is_revoked: bool
+    created_at: str
 

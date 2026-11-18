@@ -81,11 +81,30 @@ from toroka_enterprise.governance.champion_challenger import (
     PromotionDecision,
     evaluate_challenger_promotion,
 )
+from decimal import Decimal
+from toroka_enterprise.governance.validation_executor import (
+    ExecutionProvenanceLevel,
+    TrustedLocalValidationExecutor,
+    ValidationPlan,
+    ValidationMetricSpec,
+    compute_execution_provenance_digest,
+)
+from toroka_enterprise.governance.evidence_resolver import (
+    BankEvidenceAdapter,
+    BankEvidenceArtifact,
+    EvidenceReferenceResolver,
+)
 from toroka_enterprise.governance.pki import (
     AsymmetricAlgorithm,
+    KeySecurityLevel,
     LocalHSMKeyProvider,
     SignatureBundle,
+    SignatureVerificationResult,
+    SignerKeyPurpose,
+    SignerTrustRegistry,
+    TrustedSignerRecord,
     verify_asymmetric_signature,
+    verify_signature_comprehensive,
 )
 from toroka_enterprise.governance.quantitative_risk import (
     compute_disparate_impact,
@@ -103,6 +122,7 @@ from toroka_enterprise.integrations.iso20022 import (
     ISO20022Engine,
     Pacs008CreditTransfer,
     PartyIdentification,
+    validate_payment_amount,
 )
 from toroka_enterprise.intelligence.copilot.contracts import (
     ClaimKind,
@@ -133,11 +153,13 @@ from toroka_enterprise.intelligence.models import (
     ProductionReleaseRecord,
     QuantitativeDriftEvaluationRecord,
     ReadinessAttestationRecord,
+    SignerTrustRecord,
     SuspensionAuditRecord,
     ValidationRunRecord,
 )
 
 from ..governance_schemas import (
+    ApproveAIProviderRequest,
     ApproveComponentRequest,
     ChampionChallengerRunResponse,
     CreateComponentRequest,
@@ -150,6 +172,7 @@ from ..governance_schemas import (
     EvaluateQuantitativeDriftRequest,
     EvaluateReadinessGatesRequest,
     EvidencePassportResponse,
+    ExecuteTrustedValidationRequest,
     ForensicDossierResponse,
     GovernanceIncidentResponse,
     GovernedAIProviderResponse,
@@ -163,6 +186,7 @@ from ..governance_schemas import (
     RecordDriftRequest,
     RecordReadinessAttestationRequest,
     RegisterAIProviderRequest,
+    RegisterTrustedSignerRequest,
     ResumeComponentRequest,
     SemanticVerifyRequest,
     SemanticVerifyResponse,
@@ -170,6 +194,7 @@ from ..governance_schemas import (
     SuspendComponentRequest,
     SuspensionRecordResponse,
     SystemHealthOverviewResponse,
+    TrustedSignerResponse,
     UpdateIncidentStatusRequest,
     ValidationMetricSchema,
     ValidationPackageResponse,
@@ -205,6 +230,10 @@ def compute_validation_run_digest(run: ValidationRunRecord) -> str:
     }
     raw = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False)
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+# Caller-submitted metrics are not proof that a validation job executed.
+UNVERIFIED_CALLER_ASSERTED_VALIDATION_LIMITATION = "UNVERIFIED_CALLER_ASSERTED_VALIDATION_METRICS"
 
 
 class DatabaseKillSwitchStore:
@@ -395,9 +424,43 @@ class DatabaseKillSwitchStore:
 class ProductionGovernanceService:
     """Operational service for Toroka production governance, model risk, and deployment readiness."""
 
-    def __init__(self, session: Session, installation_id: str) -> None:
+    def __init__(
+        self,
+        session: Session,
+        installation_id: str,
+        evidence_resolver: EvidenceReferenceResolver | None = None,
+        trust_registry: SignerTrustRegistry | None = None,
+    ) -> None:
         self.session = session
         self.installation_id = installation_id
+        self.evidence_resolver = evidence_resolver
+        self.trust_registry = trust_registry or SignerTrustRegistry()
+        self._load_trust_registry_from_db()
+
+    def _load_trust_registry_from_db(self) -> None:
+        try:
+            records = self.session.execute(
+                select(SignerTrustRecord).where(
+                    SignerTrustRecord.installation_id == self.installation_id
+                )
+            ).scalars().all()
+            for r in records:
+                self.trust_registry.register_signer(
+                    TrustedSignerRecord(
+                        key_id=r.key_id,
+                        installation_id=r.installation_id,
+                        public_key_pem=r.public_key_pem,
+                        algorithm=AsymmetricAlgorithm(r.algorithm),
+                        purpose=SignerKeyPurpose(r.purpose),
+                        security_level=KeySecurityLevel(r.security_level),
+                        activated_at=r.activated_at,
+                        expires_at=r.expires_at,
+                        is_revoked=r.is_revoked,
+                        revocation_reason=r.revocation_reason,
+                    )
+                )
+        except Exception:
+            pass
 
     def get_kill_switch(self) -> KillSwitch:
         """Returns a domain KillSwitch backed by the persistent database store."""
@@ -422,10 +485,10 @@ class ProductionGovernanceService:
             domain_comp = GovernedComponent(
                 component_id=request.component_id,
                 version=request.version,
-                component_type=ComponentType(request.component_type),
+                component_type=ComponentType(request.component_type.lower()),
                 name=request.name,
                 status=GovernanceStatus.DRAFT,
-                risk_tier=RiskTier(request.risk_tier),
+                risk_tier=RiskTier(request.risk_tier.lower()),
                 owner_team=request.owner_team,
                 source_digest=request.source_digest,
                 configuration_digest=request.configuration_digest,
@@ -575,6 +638,11 @@ class ProductionGovernanceService:
 
         if run is None:
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Validation run does not exist in this installation")
+        if UNVERIFIED_CALLER_ASSERTED_VALIDATION_LIMITATION in (run.limitations or []):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Caller-submitted metrics without independent execution proof cannot support approval",
+            )
         if run.result != ValidationResult.PASS.value:
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Only a passing validation run can support approval")
         if run.component_id != component_id or run.component_version != version:
@@ -670,7 +738,17 @@ class ProductionGovernanceService:
             for m in request.metrics
         ]
 
-        overall_result = calculate_validation_result(domain_metrics)
+        reported_result = calculate_validation_result(domain_metrics)
+        # Metrics, dataset digests and outcomes in this API request are caller
+        # assertions. A stored digest proves immutability, not execution. Keep
+        # them available for review but fail closed until a trusted executor
+        # attestation can prove which dataset/configuration was actually run.
+        persisted_result = ValidationResult.INCONCLUSIVE
+        limitations = list(dict.fromkeys([
+            *request.limitations,
+            UNVERIFIED_CALLER_ASSERTED_VALIDATION_LIMITATION,
+            f"Caller-reported metric evaluation was {reported_result.value}; execution is not independently attested.",
+        ]))
         run_id = f"val-{uuid.uuid4().hex[:12]}"
         now = _utc_now()
 
@@ -682,9 +760,10 @@ class ProductionGovernanceService:
             dataset_digest=request.dataset_digest,
             configuration_digest=request.configuration_digest,
             metrics=[m.model_dump() for m in request.metrics],
-            result=overall_result.value,
-            evaluator=request.evaluator,
-            limitations=request.limitations,
+            result=persisted_result.value,
+            evaluator=actor_subject,
+            limitations=limitations,
+            is_trusted_execution=False,
             started_at=now,
             completed_at=now,
             created_at=now,
@@ -718,7 +797,7 @@ class ProductionGovernanceService:
                 "run_id": run_id,
                 "component_id": request.component_id,
                 "component_version": request.component_version,
-                "validation_result": overall_result.value,
+                "validation_result": persisted_result.value,
             },
         )
         self.session.commit()
@@ -843,6 +922,9 @@ class ProductionGovernanceService:
                 detail="Release manifest contains no components",
             )
 
+        required_validation_run_ids: set[str] = set()
+        required_approval_record_ids: set[str] = set()
+
         for comp_id, comp_ver in components_map.items():
             comp_rec = self.session.execute(
                 select(GovernedComponentRecord).where(
@@ -872,6 +954,14 @@ class ProductionGovernanceService:
                     detail=f"Component '{comp_id}' version '{comp_ver}' lacks verified validation run evidence",
                 )
 
+            if not comp_rec.approval_record_id:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail=f"Component '{comp_id}' version '{comp_ver}' lacks a persisted approval record",
+                )
+            required_validation_run_ids.add(comp_rec.approved_validation_run_id)
+            required_approval_record_ids.add(comp_rec.approval_record_id)
+
             run = self.session.execute(
                 select(ValidationRunRecord).where(
                     and_(
@@ -893,6 +983,18 @@ class ProductionGovernanceService:
                     status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                     detail=f"Component '{comp_id}' validation digest mismatch with persisted run",
                 )
+
+        # Manifest references must resolve to the exact persisted records.
+        if set(record.validation_runs or []) != required_validation_run_ids:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Release validation_runs do not match component-approved validation runs",
+            )
+        if set(record.approval_records or []) != required_approval_record_ids:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Release approval_records do not match persisted component approvals",
+            )
 
         # 3. For target_environment == "production", verify all 13 MANDATORY_GATES in ReadinessAttestationRecord table
         if target_environment == "production":
@@ -931,13 +1033,40 @@ class ProductionGovernanceService:
                     detail=f"Production promotion blocked: {len(unproven_gates)} mandatory readiness gates lack evidence-backed pass attestations: {', '.join(unproven_gates)}",
                 )
 
+            if self.evidence_resolver is not None:
+                for gate in MANDATORY_GATES:
+                    gate_key = gate.value if hasattr(gate, "value") else str(gate)
+                    atts = attestations_by_gate.get(gate_key, [])
+                    passing = [a for a in atts if a.status == "PASS" and a.evidence_reference and a.evidence_digest]
+                    for pass_att in passing:
+                        valid, reason = self.evidence_resolver.verify_readiness_evidence(
+                            evidence_reference=pass_att.evidence_reference,
+                            expected_digest=pass_att.evidence_digest,
+                            installation_id=self.installation_id,
+                            release_version=record.version,
+                            gate_name=gate_key,
+                            actor_role="authoriser",
+                        )
+                        if not valid:
+                            raise HTTPException(
+                                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                                detail=f"Evidence verification failed for gate '{gate_key}': {reason}",
+                            )
+
     def promote_release(
         self,
         release_id: str,
         target_environment: str,
         actor_subject: str,
         actor_role: str = "authoriser",
+        signature_bundle: dict[str, Any] | None = None,
     ) -> ProductionReleaseResponse:
+        if target_environment not in (DeploymentEnvironment.PILOT.value, DeploymentEnvironment.PRODUCTION.value):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="target_environment must be exactly 'pilot' or 'production'",
+            )
+
         record = self.session.execute(
             select(ProductionReleaseRecord).where(
                 and_(
@@ -952,6 +1081,59 @@ class ProductionGovernanceService:
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Release '{release_id}' not found.",
             )
+
+        # Digital signature and key trust verification for production promotion
+        if target_environment == "production":
+            sig_to_verify = signature_bundle or record.signature_bundle
+            if sig_to_verify is not None:
+                bundle = SignatureBundle.from_dict(sig_to_verify) if isinstance(sig_to_verify, dict) else sig_to_verify
+                db_signer = self.session.execute(
+                    select(SignerTrustRecord).where(
+                        and_(
+                            SignerTrustRecord.installation_id == self.installation_id,
+                            SignerTrustRecord.key_id == bundle.key_id,
+                        )
+                    )
+                ).scalar_one_or_none()
+                if db_signer:
+                    self.trust_registry.register_signer(
+                        TrustedSignerRecord(
+                            key_id=db_signer.key_id,
+                            installation_id=db_signer.installation_id,
+                            public_key_pem=db_signer.public_key_pem,
+                            algorithm=AsymmetricAlgorithm(db_signer.algorithm),
+                            purpose=SignerKeyPurpose(db_signer.purpose),
+                            security_level=KeySecurityLevel(db_signer.security_level),
+                            activated_at=db_signer.activated_at,
+                            expires_at=db_signer.expires_at,
+                            is_revoked=db_signer.is_revoked,
+                            revocation_reason=db_signer.revocation_reason,
+                        )
+                    )
+
+                signer_rec = self.trust_registry.get_signer(self.installation_id, bundle.key_id)
+                if not signer_rec:
+                    raise HTTPException(
+                        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                        detail=f"Signer key '{bundle.key_id}' is not in the trusted registry for installation '{self.installation_id}'",
+                    )
+                if signer_rec.security_level == KeySecurityLevel.DEV_SOFTWARE:
+                    raise HTTPException(
+                        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                        detail="Production promotion requires an institutional key (BANK_MANAGED_HSM or CLOUD_KMS); DEV_SOFTWARE key is not permitted",
+                    )
+                ver_res = self.trust_registry.verify_trust(
+                    bundle=bundle,
+                    installation_id=self.installation_id,
+                    expected_purpose=SignerKeyPurpose.RELEASE_PROMOTION,
+                )
+                if not ver_res.is_valid:
+                    raise HTTPException(
+                        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                        detail=f"Digital signature verification failed for production promotion: {ver_res.trust_failure_reason}",
+                    )
+                if signature_bundle is not None:
+                    record.signature_bundle = bundle.to_dict()
 
         # Enforce independent evidence verification
         self._verify_release_evidence(record, actor_subject, target_environment)
@@ -1436,10 +1618,15 @@ class ProductionGovernanceService:
         # 1. Audit integrity health
         audit_verified = False
         try:
-            audit_verified = verify_audit_chain(self.session, self.installation_id)
+            audit_result = verify_audit_chain(self.session, self.installation_id)
+            if isinstance(audit_result, tuple):
+                audit_verified = bool(audit_result[0])
+            else:
+                audit_verified = bool(audit_result)
             audit_health = HealthStatus.HEALTHY.value if audit_verified else HealthStatus.CRITICAL.value
-        except Exception:
-            audit_health = HealthStatus.UNKNOWN.value
+        except Exception as exc:
+            logger.error("Audit chain verification failed: %s", exc)
+            audit_health = HealthStatus.CRITICAL.value
 
         # 2. Active drifts & open incidents & active suspensions
         drift_records = list(self.session.execute(
@@ -1896,24 +2083,34 @@ class ProductionGovernanceService:
         key_id = None
         algo = None
 
+        signer_trusted = False
+        sig_math_valid = False
         if is_signed:
             try:
                 bundle = SignatureBundle.from_dict(record.signature_bundle)
                 key_id = bundle.key_id
                 algo = bundle.algorithm
-                sig_ok = verify_asymmetric_signature(
+                res = verify_signature_comprehensive(
                     payload=domain_passport.canonical_payload(),
                     bundle=bundle,
+                    trust_registry=self.trust_registry,
+                    installation_id=self.installation_id,
+                    expected_purpose=SignerKeyPurpose.EVIDENCE_PASSPORT,
                     trusted_public_key_pem=request.trusted_public_key_pem,
                 )
-                if not sig_ok:
+                sig_math_valid = res.signature_math_valid
+                signer_trusted = res.signer_trusted
+                sig_ok = res.is_valid
+                if not sig_math_valid:
                     sig_err = "Asymmetric digital signature verification failed against passport payload."
+                elif not signer_trusted:
+                    sig_err = res.trust_failure_reason or "Signer key is not trusted in this installation registry."
             except Exception as exc:
                 sig_err = f"Digital signature error: {exc}"
         else:
             sig_err = "Artifact is not digitally signed (tamper-evident SHA-256 digest only)."
 
-        is_valid = digest_ok and (sig_ok if is_signed else True)
+        is_valid = digest_ok and is_signed and sig_ok
 
         return VerifyArtifactResponse(
             is_valid=is_valid,
@@ -1925,6 +2122,9 @@ class ProductionGovernanceService:
             signing_key_id=key_id,
             signing_algorithm=algo,
             error=sig_err,
+            digest_integrity_valid=digest_ok,
+            signature_math_valid=sig_math_valid,
+            signer_trusted=signer_trusted,
         )
 
     def sign_release(
@@ -2021,24 +2221,34 @@ class ProductionGovernanceService:
         key_id = None
         algo = None
 
+        signer_trusted = False
+        sig_math_valid = False
         if is_signed:
             try:
                 bundle = SignatureBundle.from_dict(record.signature_bundle)
                 key_id = bundle.key_id
                 algo = bundle.algorithm
-                sig_ok = verify_asymmetric_signature(
+                res = verify_signature_comprehensive(
                     payload=manifest._compute_digest_payload(),
                     bundle=bundle,
+                    trust_registry=self.trust_registry,
+                    installation_id=self.installation_id,
+                    expected_purpose=SignerKeyPurpose.RELEASE_PROMOTION,
                     trusted_public_key_pem=request.trusted_public_key_pem,
                 )
-                if not sig_ok:
+                sig_math_valid = res.signature_math_valid
+                signer_trusted = res.signer_trusted
+                sig_ok = res.is_valid
+                if not sig_math_valid:
                     sig_err = "Asymmetric digital signature verification failed against release manifest payload."
+                elif not signer_trusted:
+                    sig_err = res.trust_failure_reason or "Signer key is not trusted in this installation registry."
             except Exception as exc:
                 sig_err = f"Digital signature error: {exc}"
         else:
             sig_err = "Artifact is not digitally signed."
 
-        is_valid = digest_ok and (sig_ok if is_signed else True)
+        is_valid = digest_ok and is_signed and sig_ok
 
         return VerifyArtifactResponse(
             is_valid=is_valid,
@@ -2050,6 +2260,9 @@ class ProductionGovernanceService:
             signing_key_id=key_id,
             signing_algorithm=algo,
             error=sig_err,
+            digest_integrity_valid=digest_ok,
+            signature_math_valid=sig_math_valid,
+            signer_trusted=signer_trusted,
         )
 
     def evaluate_quantitative_drift(
@@ -2245,8 +2458,8 @@ class ProductionGovernanceService:
             hosting_location=request.hosting_location,
             data_retention_policy=request.data_retention_policy,
             training_on_customer_data_permitted=request.training_on_customer_data_permitted,
-            risk_tier=RiskTier(request.risk_tier),
-            is_approved=True,
+            risk_tier=RiskTier(request.risk_tier.lower()),
+            is_approved=False,
         )
 
         is_compliant, reason = verify_provider_compliance(provider)
@@ -2266,9 +2479,15 @@ class ProductionGovernanceService:
             hosting_location=provider.hosting_location,
             data_retention_policy=provider.data_retention_policy,
             training_on_customer_data_permitted=provider.training_on_customer_data_permitted,
-            is_approved=True,
+            is_approved=False,
             risk_tier=provider.risk_tier.value,
-            evaluation_summary={"compliance_reason": reason, "verified_at": now.isoformat()},
+            evaluation_summary={
+                "compliance_reason": reason,
+                "review_status": "PENDING_INDEPENDENT_REVIEW",
+                "verified_at": now.isoformat(),
+            },
+            registered_by=actor_subject,
+            review_status="PENDING_INDEPENDENT_REVIEW",
             last_evaluated_at=now,
             created_at=now,
         )
@@ -2285,6 +2504,57 @@ class ProductionGovernanceService:
             safe_metadata={
                 "provider_id": provider.provider_id,
                 "risk_tier": provider.risk_tier.value,
+                "review_status": "PENDING_INDEPENDENT_REVIEW",
+            },
+        )
+        self.session.commit()
+        return self._to_provider_response(rec)
+
+    def approve_ai_provider(
+        self,
+        provider_id: str,
+        request: ApproveAIProviderRequest,
+        actor_subject: str,
+        actor_role: str = "authoriser",
+    ) -> GovernedAIProviderResponse:
+        rec = self.session.execute(
+            select(GovernedAIProviderRecord).where(
+                and_(
+                    GovernedAIProviderRecord.installation_id == self.installation_id,
+                    GovernedAIProviderRecord.provider_id == provider_id,
+                )
+            )
+        ).scalar_one_or_none()
+        if not rec:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"AI Provider '{provider_id}' not found.")
+
+        # Maker-checker separation: registrant cannot approve the provider
+        if rec.registered_by and rec.registered_by == actor_subject:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Provider registrant cannot approve their own AI provider registration (maker-checker separation)",
+            )
+
+        now = _utc_now()
+        rec.is_approved = True
+        rec.approved_by = actor_subject
+        rec.approved_at = now
+        rec.review_status = "APPROVED"
+        rec.review_notes = request.review_notes
+
+        append_audit(
+            self.session,
+            installation_id=self.installation_id,
+            actor_subject=actor_subject,
+            actor_role=actor_role,
+            action="ai_provider_approved",
+            target_type="ai_provider",
+            target_id=provider_id,
+            safe_metadata={
+                "provider_id": provider_id,
+                "approved_by": actor_subject,
+                "review_status": "APPROVED",
+                "notes": request.review_notes,
             },
         )
         self.session.commit()
@@ -2506,6 +2776,9 @@ class ProductionGovernanceService:
             completed_at=r.completed_at.isoformat(),
             created_at=r.created_at.isoformat(),
             validation_digest=v_digest,
+            execution_provenance_digest=r.execution_provenance_digest,
+            executor_id=r.executor_id,
+            is_trusted_execution=bool(r.is_trusted_execution),
         )
 
     def _to_release_response(self, r: ProductionReleaseRecord) -> ProductionReleaseResponse:
@@ -2692,6 +2965,11 @@ class ProductionGovernanceService:
             evaluation_summary=r.evaluation_summary or {},
             last_evaluated_at=r.last_evaluated_at.isoformat() if r.last_evaluated_at else None,
             created_at=r.created_at.isoformat(),
+            review_status=getattr(r, "review_status", None) or ("APPROVED" if r.is_approved else "PENDING_INDEPENDENT_REVIEW"),
+            registered_by=getattr(r, "registered_by", None),
+            approved_by=getattr(r, "approved_by", None),
+            approved_at=r.approved_at.isoformat() if getattr(r, "approved_at", None) else None,
+            review_notes=getattr(r, "review_notes", None),
         )
 
     def _to_quantitative_drift_response(self, r: QuantitativeDriftEvaluationRecord) -> QuantitativeDriftEvaluationResponse:
@@ -2758,9 +3036,10 @@ class ProductionGovernanceService:
                 "dossier_digest": r.dossier_digest,
                 "signature_bundle": r.signature_bundle,
             })
-            is_verified = dossier.verify_dossier_integrity()
             if is_signed:
-                is_verified = is_verified and dossier.verify_digital_signature()
+                is_verified = dossier.verify_dossier_integrity() and dossier.verify_digital_signature()
+            else:
+                is_verified = False
         except Exception:
             is_verified = False
 
@@ -2792,7 +3071,19 @@ class ProductionGovernanceService:
         self,
         request: CreateForensicDossierRequest,
         actor_subject: str,
+        actor_role: str = "authoriser",
     ) -> ForensicDossierResponse:
+        case_record = self.session.execute(
+            select(EnterpriseCase).where(
+                and_(EnterpriseCase.installation_id == self.installation_id, EnterpriseCase.id == request.case_id)
+            )
+        ).scalar_one_or_none()
+        if case_record is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="The requested case does not exist in this installation",
+            )
+
         dossier_id = f"dos-{uuid.uuid4().hex[:12]}"
         now = _utc_now()
 
@@ -2800,28 +3091,25 @@ class ProductionGovernanceService:
             event_id=f"cust-{uuid.uuid4().hex[:8]}",
             timestamp=now,
             actor_subject=actor_subject,
-            actor_role="LEAD_EXAMINER",
+            actor_role=actor_role,
             action="DOSSIER_COMPILED",
             source_hash="0000000000000000000000000000000000000000000000000000000000000000",
             destination_hash="",
-            notes="Initial compilation of court-ready forensic evidence dossier",
+            notes="Initial compilation of an unverified draft evidence dossier",
         )
 
+        # Do not manufacture a Section 106B certificate from caller-entered
+        # certifier details or an unverified statement about device operation.
         cert = None
-        if request.certifier_name:
-            cert = Section106BCertificate(
-                certificate_id=f"cert-106b-{uuid.uuid4().hex[:8]}",
-                statutory_framework="Kenya Evidence Act (Cap 80) Section 106B",
-                certifier_name=request.certifier_name,
-                certifier_designation=request.certifier_designation or "Lead Financial Crime Investigator",
-                certifier_organization="Toroka Financial Crime Compliance",
-                device_identification=f"TOROKA-NODE-{self.installation_id[:8]}",
-                operating_condition_statement="At all material times, the computer system was operating properly and there was no malfunction affecting the production of the electronic record or accuracy of its contents.",
-                hash_algorithm="SHA-256",
-                merkle_root_hash="PENDING_ROOT",
-                certified_at=now,
-                declaration_text=request.declaration_text or "I certify under penalty of perjury that this electronic evidence record was generated in the ordinary course of financial crime detection.",
-            )
+
+        sanitized_evidence = []
+        for ev in request.evidence_records:
+            ev_dict = dict(ev) if isinstance(ev, dict) else ev
+            if "provenance" not in ev_dict or not ev_dict["provenance"]:
+                ev_dict["provenance"] = "ANALYST_SUPPLIED"
+            sanitized_evidence.append(ev_dict)
+
+        loss_dec = Decimal(str(request.fraud_loss_amount))
 
         # Build initial domain dossier
         dossier = ForensicDossier(
@@ -2830,15 +3118,15 @@ class ProductionGovernanceService:
             installation_id=self.installation_id,
             title=request.title,
             incident_type=request.incident_type,
-            fraud_loss_amount=request.fraud_loss_amount,
+            fraud_loss_amount=loss_dec,
             currency=request.currency,
             examiner_subject=actor_subject,
-            examiner_role="LEAD_EXAMINER",
+            examiner_role=actor_role,
             created_at=now,
             case_summary=request.case_summary,
             attack_path_summary=request.attack_path_summary,
             identified_mule_nodes=tuple(request.identified_mule_nodes),
-            evidence_records=tuple(request.evidence_records),
+            evidence_records=tuple(sanitized_evidence),
             chain_of_custody=(custody_event,),
             section_106b_certificate=cert,
         )
@@ -2857,39 +3145,23 @@ class ProductionGovernanceService:
             ),
         )
 
-        updated_cert = cert
-        if cert:
-            updated_cert = Section106BCertificate(
-                certificate_id=cert.certificate_id,
-                statutory_framework=cert.statutory_framework,
-                certifier_name=cert.certifier_name,
-                certifier_designation=cert.certifier_designation,
-                certifier_organization=cert.certifier_organization,
-                device_identification=cert.device_identification,
-                operating_condition_statement=cert.operating_condition_statement,
-                hash_algorithm=cert.hash_algorithm,
-                merkle_root_hash=dossier.dossier_digest,
-                certified_at=cert.certified_at,
-                declaration_text=cert.declaration_text,
-            )
-
         final_dossier = ForensicDossier(
             dossier_id=dossier_id,
             case_id=request.case_id,
             installation_id=self.installation_id,
             title=request.title,
             incident_type=request.incident_type,
-            fraud_loss_amount=request.fraud_loss_amount,
+            fraud_loss_amount=loss_dec,
             currency=request.currency,
             examiner_subject=actor_subject,
-            examiner_role="LEAD_EXAMINER",
+            examiner_role=actor_role,
             created_at=now,
             case_summary=request.case_summary,
             attack_path_summary=request.attack_path_summary,
             identified_mule_nodes=tuple(request.identified_mule_nodes),
-            evidence_records=tuple(request.evidence_records),
+            evidence_records=tuple(sanitized_evidence),
             chain_of_custody=updated_custody,
-            section_106b_certificate=updated_cert,
+            section_106b_certificate=None,
         )
 
         record = ForensicDossierRecord(
@@ -2907,13 +3179,23 @@ class ProductionGovernanceService:
             identified_mule_nodes=list(final_dossier.identified_mule_nodes),
             evidence_records=list(final_dossier.evidence_records),
             chain_of_custody=[c.to_dict() for c in final_dossier.chain_of_custody],
-            section_106b_certificate=final_dossier.section_106b_certificate.to_dict() if final_dossier.section_106b_certificate else None,
+            section_106b_certificate=None,
             dossier_digest=final_dossier.dossier_digest,
             signature_bundle=None,
-            status="SEALED",
+            status="DRAFT_UNVERIFIED",
             created_at=final_dossier.created_at,
         )
         self.session.add(record)
+        append_audit(
+            self.session,
+            installation_id=self.installation_id,
+            actor_subject=actor_subject,
+            actor_role=actor_role,
+            action="forensic_dossier_draft_created",
+            target_type="forensic_dossier",
+            target_id=dossier_id,
+            safe_metadata={"case_id": request.case_id, "status": "DRAFT_UNVERIFIED"},
+        )
         self.session.commit()
         self.session.refresh(record)
 
@@ -3033,25 +3315,64 @@ class ProductionGovernanceService:
             "signature_bundle": record.signature_bundle,
         })
 
+        # Hydrate trust registry from DB
+        trust_records = self.session.execute(
+            select(SignerTrustRecord).where(
+                SignerTrustRecord.installation_id == self.installation_id
+            )
+        ).scalars().all()
+        for tr in trust_records:
+            self.trust_registry.register_signer(
+                SignerTrustRecord(
+                    key_id=tr.key_id,
+                    installation_id=tr.installation_id,
+                    security_level=KeySecurityLevel(tr.security_level),
+                    purpose=SignerKeyPurpose(tr.purpose),
+                    public_key_pem=tr.public_key_pem,
+                    algorithm=AsymmetricAlgorithm(tr.algorithm),
+                    is_active=tr.is_active,
+                )
+            )
+
         is_digest_valid = dossier.verify_dossier_integrity()
         sig_verified = False
+        sig_math_valid = False
+        signer_trusted = False
         sig_err = None
 
         if dossier.signature_bundle:
-            sig_verified = dossier.verify_digital_signature(request.trusted_public_key_pem)
-            if not sig_verified:
+            bundle = SignatureBundle.from_dict(dossier.signature_bundle)
+            res = verify_signature_comprehensive(
+                payload=dossier.dossier_digest.encode("utf-8"),
+                bundle=bundle,
+                registry=self.trust_registry,
+                installation_id=self.installation_id,
+                expected_purpose=SignerKeyPurpose.FORENSIC_DOSSIER,
+                trusted_public_key_pem=request.trusted_public_key_pem,
+            )
+            sig_math_valid = res.signature_math_valid
+            signer_trusted = res.signer_trusted
+            sig_verified = sig_math_valid
+            if not sig_math_valid:
                 sig_err = "Cryptographic signature does not match canonical dossier digest"
+            elif not signer_trusted and trust_records:
+                sig_err = res.trust_detail or "Signer key is not trusted in this installation registry."
         else:
             sig_err = "Dossier has no digital signature attached"
+
+        is_valid = is_digest_valid and dossier.signature_bundle is not None and sig_verified
 
         return VerifyArtifactResponse(
             artifact_id=record.dossier_id,
             artifact_type="forensic_dossier",
-            is_valid=is_digest_valid and (sig_verified if dossier.signature_bundle else True),
+            is_valid=is_valid,
             digest_verified=is_digest_valid,
             signature_verified=sig_verified,
             is_digitally_signed=dossier.signature_bundle is not None,
-            signature_error=sig_err,
+            error=sig_err,
+            digest_integrity_valid=is_digest_valid,
+            signature_math_valid=sig_math_valid,
+            signer_trusted=signer_trusted,
         )
 
     def export_forensic_dossier_html(self, dossier_id: str) -> str:
@@ -3107,16 +3428,27 @@ class ProductionGovernanceService:
             national_id=request.creditor_national_id,
             msisdn=request.creditor_msisdn,
         )
-        clearing_rail = (
-            ClearingRail(request.clearing_rail)
-            if request.clearing_rail in ClearingRail.__members__.values()
-            else ClearingRail.PESALINK
-        )
+        try:
+            clearing_rail = ClearingRail(request.clearing_rail)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Unsupported clearing_rail: {request.clearing_rail}",
+            ) from exc
+
+        try:
+            dec_amount = validate_payment_amount(request.amount, request.currency)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Invalid payment amount: {exc}",
+            ) from exc
+
         transfer = Pacs008CreditTransfer(
             msg_id=request.msg_id or f"MSG-{uuid.uuid4().hex[:12]}",
             end_to_end_id=request.end_to_end_id,
             tx_id=f"TX-{uuid.uuid4().hex[:12]}",
-            amount=request.amount,
+            amount=dec_amount,
             currency=request.currency,
             debtor=debtor,
             creditor=creditor,
@@ -3154,6 +3486,7 @@ class ProductionGovernanceService:
             risk_tier=eval_result.risk_tier.value,
             triggered_rules=list(eval_result.triggered_rules),
             recommended_action=eval_result.recommended_action,
+            integration_mode="SHADOW",
             latency_ms=eval_result.latency_ms,
             evaluated_at=eval_result.evaluated_at,
         )
@@ -3168,6 +3501,7 @@ class ProductionGovernanceService:
             risk_tier=record.risk_tier,
             triggered_rules=record.triggered_rules,
             recommended_action=record.recommended_action,
+            integration_mode=record.integration_mode,
             latency_ms=record.latency_ms,
             evaluated_at=record.evaluated_at.isoformat(),
         )
@@ -3219,6 +3553,8 @@ class ProductionGovernanceService:
         report = verify_report_semantics(claims, ctx)
         return SemanticVerifyResponse(
             is_valid=report.is_valid,
+            verification_scope="CALLER_SUPPLIED_EXCERPTS_ONLY_NOT_SOURCE_AUTHENTICATION",
+            methodology=report.methodology,
             total_claims=report.total_claims,
             entailed_claims=report.entailed_claims,
             contradicted_claims=report.contradicted_claims,
@@ -3226,4 +3562,242 @@ class ProductionGovernanceService:
             ungrounded_claims=report.ungrounded_claims,
             evaluations=[e.to_dict() for e in report.evaluations],
         )
+
+    # =========================================================================
+    # Trust Registry & Validation Executor Hardening Methods
+    # =========================================================================
+
+    def register_trusted_signer(
+        self,
+        request: RegisterTrustedSignerRequest,
+        actor_subject: str,
+        actor_role: str = "authoriser",
+    ) -> TrustedSignerResponse:
+        now = _utc_now()
+        algo = AsymmetricAlgorithm.ED25519 if request.algorithm.upper() in ("ED25519", "ED_25519") else AsymmetricAlgorithm.ECDSA_P256
+        purpose = SignerKeyPurpose(request.purpose)
+        sec_level = KeySecurityLevel(request.security_level)
+
+        signer_record = TrustedSignerRecord(
+            key_id=request.key_id,
+            installation_id=self.installation_id,
+            public_key_pem=request.public_key_pem,
+            algorithm=algo,
+            purpose=purpose,
+            security_level=sec_level,
+            activated_at=now,
+            expires_at=None,
+            is_revoked=False,
+        )
+        self.trust_registry.register_signer(signer_record)
+
+        db_rec = self.session.execute(
+            select(SignerTrustRecord).where(
+                and_(
+                    SignerTrustRecord.installation_id == self.installation_id,
+                    SignerTrustRecord.key_id == request.key_id,
+                )
+            )
+        ).scalar_one_or_none()
+
+        if db_rec is None:
+            db_rec = SignerTrustRecord(
+                key_id=request.key_id,
+                installation_id=self.installation_id,
+                public_key_pem=request.public_key_pem,
+                algorithm=algo.value,
+                purpose=purpose.value,
+                security_level=sec_level.value,
+                activated_at=now,
+                is_revoked=False,
+                registered_by=actor_subject,
+                created_at=now,
+            )
+            self.session.add(db_rec)
+        else:
+            db_rec.public_key_pem = request.public_key_pem
+            db_rec.algorithm = algo.value
+            db_rec.purpose = purpose.value
+            db_rec.security_level = sec_level.value
+            db_rec.is_revoked = False
+            db_rec.revocation_reason = None
+
+        append_audit(
+            self.session,
+            installation_id=self.installation_id,
+            actor_subject=actor_subject,
+            actor_role=actor_role,
+            action="signer_registered",
+            target_type="trusted_signer",
+            target_id=request.key_id,
+            safe_metadata={
+                "key_id": request.key_id,
+                "purpose": purpose.value,
+                "security_level": sec_level.value,
+            },
+        )
+        self.session.commit()
+        return self._to_signer_response(db_rec)
+
+    def list_trusted_signers(self) -> list[TrustedSignerResponse]:
+        records = self.session.execute(
+            select(SignerTrustRecord).where(
+                SignerTrustRecord.installation_id == self.installation_id
+            ).order_by(SignerTrustRecord.key_id)
+        ).scalars().all()
+        return [self._to_signer_response(r) for r in records]
+
+    def revoke_trusted_signer(
+        self,
+        key_id: str,
+        reason: str,
+        actor_subject: str,
+        actor_role: str = "authoriser",
+    ) -> TrustedSignerResponse:
+        db_rec = self.session.execute(
+            select(SignerTrustRecord).where(
+                and_(
+                    SignerTrustRecord.installation_id == self.installation_id,
+                    SignerTrustRecord.key_id == key_id,
+                )
+            )
+        ).scalar_one_or_none()
+        if not db_rec:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Signer '{key_id}' not found.")
+
+        db_rec.is_revoked = True
+        db_rec.revocation_reason = reason
+        self.trust_registry.revoke_signer(key_id, self.installation_id, reason)
+
+        append_audit(
+            self.session,
+            installation_id=self.installation_id,
+            actor_subject=actor_subject,
+            actor_role=actor_role,
+            action="signer_revoked",
+            target_type="trusted_signer",
+            target_id=key_id,
+            safe_metadata={"key_id": key_id, "reason": reason},
+        )
+        self.session.commit()
+        return self._to_signer_response(db_rec)
+
+    def _to_signer_response(self, r: SignerTrustRecord) -> TrustedSignerResponse:
+        return TrustedSignerResponse(
+            key_id=r.key_id,
+            installation_id=r.installation_id,
+            algorithm=r.algorithm,
+            purpose=r.purpose,
+            security_level=r.security_level,
+            is_active=not r.is_revoked,
+            is_revoked=r.is_revoked,
+            revocation_reason=r.revocation_reason,
+            created_at=_canonical_utc(r.created_at),
+        )
+
+    def execute_trusted_validation(
+        self,
+        request: ExecuteTrustedValidationRequest,
+        actor_subject: str,
+        actor_role: str = "authoriser",
+    ) -> ValidationRunResponse:
+        comp = self.session.execute(
+            select(GovernedComponentRecord).where(
+                and_(
+                    GovernedComponentRecord.installation_id == self.installation_id,
+                    GovernedComponentRecord.component_id == request.component_id,
+                    GovernedComponentRecord.version == request.component_version,
+                )
+            )
+        ).scalar_one_or_none()
+        if not comp:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Component '{request.component_id}' version '{request.component_version}' not found.",
+            )
+
+        # Independence: component maker cannot execute their own validation
+        if comp.created_by == actor_subject:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Component maker cannot execute validation for their own component (maker-checker separation)",
+            )
+
+        executor = TrustedLocalValidationExecutor(executor_id=f"exec-{actor_subject}")
+        plan = ValidationPlan(
+            plan_name=request.plan_name,
+            expected_dataset_digest=request.dataset_digest,
+            expected_configuration_digest=request.configuration_digest,
+            required_metrics=tuple(
+                ValidationMetricSpec(
+                    metric_name=m["name"],
+                    threshold=float(m["threshold"]),
+                    direction=m.get("direction", "gte"),
+                )
+                for m in request.metric_specs
+            ),
+        )
+
+        exec_res = executor.execute_validation(
+            component_id=request.component_id,
+            component_version=request.component_version,
+            component_source_digest=comp.source_digest,
+            plan=plan,
+            runtime_dataset_digest=request.dataset_digest,
+            runtime_configuration_digest=request.configuration_digest,
+        )
+
+        run_id = f"val-{uuid.uuid4().hex[:12]}"
+        now = _utc_now()
+        run_record = ValidationRunRecord(
+            run_id=run_id,
+            installation_id=self.installation_id,
+            component_id=request.component_id,
+            component_version=request.component_version,
+            dataset_digest=request.dataset_digest,
+            configuration_digest=request.configuration_digest,
+            metrics=[
+                {
+                    "name": m.metric_name,
+                    "value": m.observed_value,
+                    "threshold": m.threshold,
+                    "direction": m.direction,
+                    "result": m.result,
+                }
+                for m in exec_res.metrics
+            ],
+            result=exec_res.overall_result.value,
+            evaluator=actor_subject,
+            limitations=[],
+            execution_provenance_digest=exec_res.provenance_digest,
+            executor_id=exec_res.executor_id,
+            is_trusted_execution=True,
+            started_at=exec_res.execution_started_at,
+            completed_at=exec_res.execution_completed_at,
+            created_at=now,
+        )
+        self.session.add(run_record)
+
+        if comp.status == GovernanceStatus.DRAFT.value:
+            comp.status = GovernanceStatus.VALIDATION.value
+            comp.updated_at = now
+
+        append_audit(
+            self.session,
+            installation_id=self.installation_id,
+            actor_subject=actor_subject,
+            actor_role=actor_role,
+            action="trusted_validation_executed",
+            target_type="validation_run",
+            target_id=run_id,
+            safe_metadata={
+                "run_id": run_id,
+                "component_id": request.component_id,
+                "component_version": request.component_version,
+                "provenance_digest": exec_res.provenance_digest,
+                "result": exec_res.overall_result.value,
+            },
+        )
+        self.session.commit()
+        return self._to_validation_run_response(run_record)
 

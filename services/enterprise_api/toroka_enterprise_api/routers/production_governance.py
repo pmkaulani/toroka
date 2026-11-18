@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from ..auth import EnterprisePrincipal, get_current_principal, require_roles
 from ..dependencies import get_db, get_installation_id
 from ..governance_schemas import (
+    ApproveAIProviderRequest,
     ApproveComponentRequest,
     ChampionChallengerRunResponse,
     CreateComponentRequest,
@@ -20,6 +21,7 @@ from ..governance_schemas import (
     EvaluateQuantitativeDriftRequest,
     EvaluateReadinessGatesRequest,
     EvidencePassportResponse,
+    ExecuteTrustedValidationRequest,
     ForensicDossierResponse,
     GenerateEvidencePassportRequest,
     GovernanceIncidentResponse,
@@ -35,6 +37,7 @@ from ..governance_schemas import (
     RecordDriftRequest,
     RecordReadinessAttestationRequest,
     RegisterAIProviderRequest,
+    RegisterTrustedSignerRequest,
     ResumeComponentRequest,
     RollbackReleaseRequest,
     SemanticVerifyRequest,
@@ -43,6 +46,7 @@ from ..governance_schemas import (
     SuspendComponentRequest,
     SuspensionRecordResponse,
     SystemHealthOverviewResponse,
+    TrustedSignerResponse,
     UpdateIncidentStatusRequest,
     ValidationPackageResponse,
     ValidationRunResponse,
@@ -197,6 +201,27 @@ def list_validation_runs(
     return service.list_validation_runs(component_id=component_id)
 
 
+@router.post(
+    "/validation-runs/execute-trusted",
+    response_model=ValidationRunResponse,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_roles(ROLE_AUTHORISER, ROLE_SYSTEM_ADMINISTRATOR))],
+)
+def execute_trusted_validation(
+    request: ExecuteTrustedValidationRequest,
+    principal: EnterprisePrincipal = Depends(get_current_principal),
+    installation_id: str = Depends(get_installation_id),
+    db: Session = Depends(get_db),
+) -> ValidationRunResponse:
+    effective_inst = principal.installation_id or installation_id
+    service = ProductionGovernanceService(db, effective_inst)
+    return service.execute_trusted_validation(
+        request=request,
+        actor_subject=principal.subject,
+        actor_role=_primary_role(principal),
+    )
+
+
 # =============================================================================
 # 3. Production Release Manager & Deployment
 # =============================================================================
@@ -258,6 +283,7 @@ def promote_release(
         target_environment=request.target_environment,
         actor_subject=principal.subject,
         actor_role=_primary_role(principal),
+        signature_bundle=request.signature_bundle,
     )
 
 
@@ -577,6 +603,28 @@ def list_ai_providers(
     return service.list_ai_providers()
 
 
+@router.post(
+    "/ai-providers/{provider_id}/approve",
+    response_model=GovernedAIProviderResponse,
+    dependencies=[Depends(require_roles(ROLE_AUTHORISER, ROLE_SYSTEM_ADMINISTRATOR))],
+)
+def approve_ai_provider(
+    provider_id: str,
+    request: ApproveAIProviderRequest,
+    principal: EnterprisePrincipal = Depends(get_current_principal),
+    installation_id: str = Depends(get_installation_id),
+    db: Session = Depends(get_db),
+) -> GovernedAIProviderResponse:
+    effective_inst = principal.installation_id or installation_id
+    service = ProductionGovernanceService(db, effective_inst)
+    return service.approve_ai_provider(
+        provider_id=provider_id,
+        request=request,
+        actor_subject=principal.subject,
+        actor_role=_primary_role(principal),
+    )
+
+
 # =============================================================================
 # 9. Production Readiness Assessment & Bank Validation Package
 # =============================================================================
@@ -845,7 +893,11 @@ def create_forensic_dossier(
 ) -> ForensicDossierResponse:
     effective_inst = principal.installation_id or installation_id
     service = ProductionGovernanceService(db, effective_inst)
-    return service.create_forensic_dossier(request=request, actor_subject=principal.subject)
+    return service.create_forensic_dossier(
+        request=request,
+        actor_subject=principal.subject,
+        actor_role=_primary_role(principal),
+    )
 
 
 @router.get(
@@ -967,5 +1019,69 @@ def verify_copilot_semantics(
     effective_inst = principal.installation_id or installation_id
     service = ProductionGovernanceService(db, effective_inst)
     return service.verify_copilot_semantics(request=request)
+
+
+# =============================================================================
+# 15. Signer Trust Registry
+# =============================================================================
+
+@router.post(
+    "/trust-registry/signers",
+    response_model=TrustedSignerResponse,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_roles(ROLE_AUTHORISER, ROLE_SYSTEM_ADMINISTRATOR))],
+)
+def register_trusted_signer(
+    request: RegisterTrustedSignerRequest,
+    principal: EnterprisePrincipal = Depends(get_current_principal),
+    installation_id: str = Depends(get_installation_id),
+    db: Session = Depends(get_db),
+) -> TrustedSignerResponse:
+    effective_inst = principal.installation_id or installation_id
+    service = ProductionGovernanceService(db, effective_inst)
+    return service.register_trusted_signer(
+        request=request,
+        actor_subject=principal.subject,
+        actor_role=_primary_role(principal),
+    )
+
+
+@router.get(
+    "/trust-registry/signers",
+    response_model=list[TrustedSignerResponse],
+    dependencies=[
+        Depends(require_roles(ROLE_AUTHORISER, ROLE_AUDITOR, ROLE_INVESTIGATOR, ROLE_SYSTEM_ADMINISTRATOR))
+    ],
+)
+def list_trusted_signers(
+    principal: EnterprisePrincipal = Depends(get_current_principal),
+    installation_id: str = Depends(get_installation_id),
+    db: Session = Depends(get_db),
+) -> list[TrustedSignerResponse]:
+    effective_inst = principal.installation_id or installation_id
+    service = ProductionGovernanceService(db, effective_inst)
+    return service.list_trusted_signers()
+
+
+@router.post(
+    "/trust-registry/signers/{key_id}/revoke",
+    response_model=TrustedSignerResponse,
+    dependencies=[Depends(require_roles(ROLE_AUTHORISER, ROLE_SYSTEM_ADMINISTRATOR))],
+)
+def revoke_trusted_signer(
+    key_id: str,
+    reason: str = Query(..., description="Reason for key revocation"),
+    principal: EnterprisePrincipal = Depends(get_current_principal),
+    installation_id: str = Depends(get_installation_id),
+    db: Session = Depends(get_db),
+) -> TrustedSignerResponse:
+    effective_inst = principal.installation_id or installation_id
+    service = ProductionGovernanceService(db, effective_inst)
+    return service.revoke_trusted_signer(
+        key_id=key_id,
+        reason=reason,
+        actor_subject=principal.subject,
+        actor_role=_primary_role(principal),
+    )
 
 
