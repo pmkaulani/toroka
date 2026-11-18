@@ -24,6 +24,7 @@ from ..governance_schemas import (
     EvaluateReadinessGatesRequest,
     EvidencePassportResponse,
     ExecuteTrustedValidationRequest,
+    FederatedMuleEntryResponse,
     ForensicDossierResponse,
     GenerateEvidencePassportRequest,
     GovernanceIncidentResponse,
@@ -34,11 +35,14 @@ from ..governance_schemas import (
     ProductionReleaseResponse,
     PromoteReleaseRequest,
     QuantitativeDriftEvaluationResponse,
+    QueryFederatedMuleRequest,
+    QueryFederatedMuleResponse,
     ReadinessAssessmentResponse,
     ReadinessAttestationResponse,
     RecordDriftRequest,
     RecordReadinessAttestationRequest,
     RegisterAIProviderRequest,
+    RegisterFederatedMuleRequest,
     RegisterTrustedSignerRequest,
     ResumeComponentRequest,
     RollbackReleaseRequest,
@@ -51,6 +55,7 @@ from ..governance_schemas import (
     TelecomSignalRequest,
     TelecomSignalResponse,
     TrustedSignerResponse,
+    UpdateFederatedMuleStatusRequest,
     UpdateIncidentStatusRequest,
     ValidationPackageResponse,
     ValidationRunResponse,
@@ -1131,6 +1136,85 @@ def evaluate_telecom_scam_signal(
     effective_inst = principal.installation_id or installation_id
     service = ProductionGovernanceService(db, effective_inst)
     return service.evaluate_telecom_signal(request=request, actor_subject=principal.subject)
+
+
+# =============================================================================
+# 18. Federated Mule Directory & Hash-Linked Interbank Blacklist
+# =============================================================================
+
+@router.post(
+    "/integrations/federated-mules/register",
+    response_model=FederatedMuleEntryResponse,
+    dependencies=[
+        Depends(require_roles(ROLE_INVESTIGATOR, ROLE_AUTHORISER, ROLE_SYSTEM_ADMINISTRATOR))
+    ],
+)
+def register_federated_mule(
+    request: RegisterFederatedMuleRequest,
+    principal: EnterprisePrincipal = Depends(get_current_principal),
+    installation_id: str = Depends(get_installation_id),
+    db: Session = Depends(get_db),
+) -> FederatedMuleEntryResponse:
+    effective_inst = principal.installation_id or installation_id
+    service = ProductionGovernanceService(db, effective_inst)
+    return service.register_federated_mule(request=request, actor_subject=principal.subject)
+
+
+@router.post(
+    "/integrations/federated-mules/query",
+    response_model=QueryFederatedMuleResponse,
+    dependencies=[
+        Depends(require_roles(ROLE_INVESTIGATOR, ROLE_AUTHORISER, ROLE_AUDITOR, ROLE_SYSTEM_ADMINISTRATOR))
+    ],
+)
+def query_federated_mule(
+    request: QueryFederatedMuleRequest,
+    principal: EnterprisePrincipal = Depends(get_current_principal),
+    installation_id: str = Depends(get_installation_id),
+    db: Session = Depends(get_db),
+) -> QueryFederatedMuleResponse:
+    effective_inst = principal.installation_id or installation_id
+    service = ProductionGovernanceService(db, effective_inst)
+    return service.query_federated_mule(request=request)
+
+
+@router.get(
+    "/integrations/federated-mules/entries",
+    response_model=list[FederatedMuleEntryResponse],
+    dependencies=[
+        Depends(require_roles(ROLE_INVESTIGATOR, ROLE_AUTHORISER, ROLE_AUDITOR, ROLE_SYSTEM_ADMINISTRATOR))
+    ],
+)
+def list_federated_mules(
+    entity_type: str | None = Query(None),
+    status: str | None = Query(None),
+    principal: EnterprisePrincipal = Depends(get_current_principal),
+    installation_id: str = Depends(get_installation_id),
+    db: Session = Depends(get_db),
+) -> list[FederatedMuleEntryResponse]:
+    effective_inst = principal.installation_id or installation_id
+    service = ProductionGovernanceService(db, effective_inst)
+    return service.list_federated_mules(entity_type=entity_type, status=status)
+
+
+@router.patch(
+    "/integrations/federated-mules/entries/{entry_id}/status",
+    response_model=FederatedMuleEntryResponse,
+    dependencies=[
+        Depends(require_roles(ROLE_AUTHORISER, ROLE_SYSTEM_ADMINISTRATOR))
+    ],
+)
+def update_federated_mule_status(
+    entry_id: str,
+    request: UpdateFederatedMuleStatusRequest,
+    principal: EnterprisePrincipal = Depends(get_current_principal),
+    installation_id: str = Depends(get_installation_id),
+    db: Session = Depends(get_db),
+) -> FederatedMuleEntryResponse:
+    effective_inst = principal.installation_id or installation_id
+    service = ProductionGovernanceService(db, effective_inst)
+    return service.update_federated_mule_status(entry_id=entry_id, request=request, actor_subject=principal.subject)
+
 
 
 

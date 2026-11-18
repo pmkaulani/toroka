@@ -1305,6 +1305,8 @@ export interface InflightPaymentEvaluation {
   telecom_call_status?: string | null;
   telecom_coercion_score?: number | null;
   is_telecom_coerced?: boolean;
+  is_federated_mule?: boolean;
+  federated_mule_tier?: string | null;
 }
 
 export interface CopVerifyRequest {
@@ -1385,6 +1387,38 @@ export interface TelecomSignalResponse {
   query_digest: string;
   queried_at: string;
 }
+
+export interface FederatedMuleEntry {
+  entry_id: string;
+  installation_id: string;
+  entity_type: "BANK_ACCOUNT" | "MSISDN" | "NATIONAL_ID" | "PAYBILL_TILL" | string;
+  blinded_token: string;
+  cleartext_preview: string;
+  severity_tier: "SUSPECT_MULE" | "CORROBORATED_MULE" | "CONFIRMED_SYNDICATE_CONTROLLER" | string;
+  originating_bank_bic: string;
+  reason_code: string;
+  dossier_reference?: string | null;
+  status: "ACTIVE" | "CONTESTED" | "EXPUNGED" | string;
+  registered_by?: string | null;
+  registered_at: string;
+  expires_at?: string | null;
+}
+
+export interface QueryFederatedMuleResponse {
+  is_match: boolean;
+  blinded_token: string;
+  cleartext_preview: string;
+  entity_type: string;
+  severity_tier?: string | null;
+  originating_bank_bic?: string | null;
+  reason_code?: string | null;
+  dossier_reference?: string | null;
+  status: string;
+  registered_at?: string | null;
+  expires_at?: string | null;
+  recommended_action: string;
+}
+
 
 
 

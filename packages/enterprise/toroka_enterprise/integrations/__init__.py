@@ -45,6 +45,14 @@ from .telecom_signal import (
     TelecomSignalQuery,
     TelecomSignalResponse,
 )
+from .federated_mule import (
+    FederatedMuleEngine,
+    FederatedMuleMatch,
+    FederatedMuleQuery,
+    MuleEntityType,
+    MuleEntryStatus,
+    MuleSeverityTier,
+)
 from .quality import QualityIssue, QualityReport, assess_canonical_batch
 from .registry import ConnectorRegistry, DEFAULT_CONNECTOR_REGISTRY
 
@@ -56,6 +64,12 @@ __all__ = [
     "CopInquiryRequest",
     "CopStatus",
     "CopVerificationResult",
+    "FederatedMuleEngine",
+    "FederatedMuleMatch",
+    "FederatedMuleQuery",
+    "MuleEntityType",
+    "MuleEntryStatus",
+    "MuleSeverityTier",
     "SimSwapStatus",
     "TelecomCarrier",
     "TelecomScamSignalGateway",

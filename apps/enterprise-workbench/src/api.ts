@@ -70,6 +70,8 @@ import {
   InflightPaymentEvaluation,
   CopVerifyResponse,
   TelecomSignalResponse,
+  FederatedMuleEntry,
+  QueryFederatedMuleResponse,
 } from "./types";
 
 export const BANK_PERSONAS: Persona[] = [
@@ -1058,6 +1060,44 @@ export const api = {
   }): Promise<TelecomSignalResponse> =>
     request<TelecomSignalResponse>("/api/enterprise/v1/governance/integrations/telecom/scam-signal", {
       method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  registerFederatedMule: (payload: {
+    entity_type: string;
+    value: string;
+    severity_tier?: string;
+    originating_bank_bic?: string;
+    reason_code?: string;
+    dossier_reference?: string;
+    ttl_days?: number;
+  }): Promise<FederatedMuleEntry> =>
+    request<FederatedMuleEntry>("/api/enterprise/v1/governance/integrations/federated-mules/register", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  queryFederatedMule: (payload: {
+    entity_type: string;
+    value: string;
+    is_already_blinded?: boolean;
+  }): Promise<QueryFederatedMuleResponse> =>
+    request<QueryFederatedMuleResponse>("/api/enterprise/v1/governance/integrations/federated-mules/query", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  listFederatedMules: (params?: { entity_type?: string; status?: string }): Promise<FederatedMuleEntry[]> => {
+    const qs = new URLSearchParams();
+    if (params?.entity_type) qs.append("entity_type", params.entity_type);
+    if (params?.status) qs.append("status", params.status);
+    const q = qs.toString() ? `?${qs.toString()}` : "";
+    return request<FederatedMuleEntry[]>(`/api/enterprise/v1/governance/integrations/federated-mules/entries${q}`);
+  },
+
+  updateFederatedMuleStatus: (entryId: string, payload: { status: string; justification: string }): Promise<FederatedMuleEntry> =>
+    request<FederatedMuleEntry>(`/api/enterprise/v1/governance/integrations/federated-mules/entries/${encodeURIComponent(entryId)}/status`, {
+      method: "PATCH",
       body: JSON.stringify(payload),
     }),
 };

@@ -139,3 +139,31 @@ def test_telecom_active_call_plus_cop_no_match_escalates_to_block(base_transfer)
     assert any("RULE_TELECOM_ACTIVE_CALL" in r for r in eval_res.triggered_rules)
     assert any("RULE_COP_NO_MATCH" in r for r in eval_res.triggered_rules)
 
+
+def test_iso20022_federated_mule_match_block(base_transfer):
+    # Federated corroborated mule match (+0.85) -> BLOCK
+    from toroka_enterprise.integrations.federated_mule import (
+        FederatedMuleMatch,
+        MuleEntityType,
+        MuleSeverityTier,
+    )
+    fed_match = FederatedMuleMatch(
+        is_match=True,
+        blinded_token="abc123token",
+        cleartext_preview="2220****000",
+        entity_type=MuleEntityType.BANK_ACCOUNT,
+        severity_tier=MuleSeverityTier.CORROBORATED_MULE,
+        originating_bank_bic="KCBKKENA",
+    )
+    eval_res = ISO20022Engine.evaluate_inflight_payment(
+        base_transfer,
+        account_prior_transfers_count=10,
+        federated_mule_match=fed_match,
+    )
+    assert eval_res.decision == PaymentDecision.BLOCK
+    assert eval_res.risk_tier == RiskTier.CRITICAL
+    assert eval_res.is_federated_mule is True
+    assert eval_res.federated_mule_tier == "CORROBORATED_MULE"
+    assert any("RULE_FEDERATED_MULE_MATCH" in r for r in eval_res.triggered_rules)
+
+

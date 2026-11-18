@@ -18,6 +18,8 @@ import {
   InflightPaymentEvaluation,
   CopVerifyResponse,
   TelecomSignalResponse,
+  FederatedMuleEntry,
+  QueryFederatedMuleResponse,
   Persona,
 } from "../types";
 
@@ -113,11 +115,26 @@ export const ProductionGovernanceView: React.FC<Props> = ({ currentPersona }) =>
   const [telecomResult, setTelecomResult] = useState<TelecomSignalResponse | null>(null);
   const [isoTelecomCallStatus, setIsoTelecomCallStatus] = useState<string>("NONE");
 
+  // Phase 14.2 Federated Mule Directory state
+  const [fedMuleEntries, setFedMuleEntries] = useState<FederatedMuleEntry[]>([]);
+  const [fedMuleQueryValue, setFedMuleQueryValue] = useState("01199922233");
+  const [fedMuleQueryType, setFedMuleQueryType] = useState<string>("BANK_ACCOUNT");
+  const [fedMuleQueryResult, setFedMuleQueryResult] = useState<QueryFederatedMuleResponse | null>(null);
+  const [fedMuleQuerying, setFedMuleQuerying] = useState(false);
+
+  // New mule enrollment form state
+  const [fedNewValue, setFedNewValue] = useState("");
+  const [fedNewType, setFedNewType] = useState<string>("BANK_ACCOUNT");
+  const [fedNewTier, setFedNewTier] = useState<string>("CORROBORATED_MULE");
+  const [fedNewBic, setFedNewBic] = useState("KCBKKENA");
+  const [fedNewReason, setFedNewReason] = useState("HIGH_VELOCITY_RAPID_CASHOUT");
+  const [fedRegistering, setFedRegistering] = useState(false);
+
   const fetchData = async () => {
     setLoading(true);
     setError(null);
     try {
-      const [h, comps, vRuns, rels, susps, incs, drifts, pass, providers, qDrifts, ccRuns] = await Promise.all([
+      const [h, comps, vRuns, rels, susps, incs, drifts, pass, providers, qDrifts, ccRuns, fedMules] = await Promise.all([
         api.getSystemHealthOverview().catch(() => null),
         api.listGovernedComponents().catch(() => []),
         api.listValidationRuns().catch(() => []),
@@ -129,6 +146,7 @@ export const ProductionGovernanceView: React.FC<Props> = ({ currentPersona }) =>
         api.listAIProviders().catch(() => []),
         api.listQuantitativeDriftEvaluations().catch(() => []),
         api.listChampionChallengerRuns().catch(() => []),
+        api.listFederatedMules().catch(() => []),
       ]);
 
       setHealth(h);
@@ -142,6 +160,7 @@ export const ProductionGovernanceView: React.FC<Props> = ({ currentPersona }) =>
       setAiProviders(providers);
       setQuantDrifts(qDrifts);
       setChampionChallengerRuns(ccRuns);
+      setFedMuleEntries(fedMules);
 
       // Attempt to load default validation package
       try {
@@ -354,6 +373,42 @@ export const ProductionGovernanceView: React.FC<Props> = ({ currentPersona }) =>
       alert(`Evaluation failed: ${err.message}`);
     } finally {
       setIsoEvaluating(false);
+    }
+  };
+
+  const handleQueryFederatedMule = async () => {
+    setFedMuleQuerying(true);
+    try {
+      const res = await api.queryFederatedMule({
+        value: fedMuleQueryValue,
+        entity_type: fedMuleQueryType,
+      });
+      setFedMuleQueryResult(res);
+    } catch (err: any) {
+      alert(`Federated Mule Query failed: ${err.message}`);
+    } finally {
+      setFedMuleQuerying(false);
+    }
+  };
+
+  const handleRegisterFederatedMule = async () => {
+    if (!fedNewValue.trim()) return;
+    setFedRegistering(true);
+    try {
+      const entry = await api.registerFederatedMule({
+        value: fedNewValue.trim(),
+        entity_type: fedNewType,
+        severity_tier: fedNewTier,
+        originating_bank_bic: fedNewBic,
+        reason_code: fedNewReason,
+      });
+      setFedMuleEntries((prev) => [entry, ...prev]);
+      setFedNewValue("");
+      alert(`Successfully enrolled blinded token into federated directory: ${entry.blinded_token.substring(0, 16)}...`);
+    } catch (err: any) {
+      alert(`Enrollment failed: ${err.message}`);
+    } finally {
+      setFedRegistering(false);
     }
   };
 
@@ -1914,6 +1969,18 @@ export const ProductionGovernanceView: React.FC<Props> = ({ currentPersona }) =>
                       </div>
                     )}
 
+                    {isoEvaluation.is_federated_mule && (
+                      <div className="p-2.5 rounded bg-rose-950/90 border border-rose-600 text-rose-200 flex items-center space-x-2">
+                        <span className="text-base">⛔</span>
+                        <div>
+                          <strong className="text-white block font-semibold">Federated Interbank Blacklist Hit (PBOC Art. 21 / US EWS)</strong>
+                          <span className="text-[11px] text-rose-300">
+                            Creditor account matches a {isoEvaluation.federated_mule_tier || "CORROBORATED MULE"} recorded across participant institutions. Outbound settlement block enforced.
+                          </span>
+                        </div>
+                      </div>
+                    )}
+
                     {isoEvaluation.triggered_rules.length > 0 && (
                       <div>
                         <span className="text-slate-400 block mb-1">Triggered Risk Rules:</span>
@@ -1926,6 +1993,213 @@ export const ProductionGovernanceView: React.FC<Props> = ({ currentPersona }) =>
                     )}
                   </div>
                 )}
+              </div>
+
+              {/* Section 5: Federated Mule Directory & Hash-Linked Interbank Blacklist */}
+              <div className="p-5 rounded-lg bg-slate-900 border border-slate-800 space-y-4">
+                <div className="border-b border-slate-800 pb-3 flex items-center justify-between">
+                  <div>
+                    <h3 className="text-sm font-bold text-white flex items-center">
+                      <span className="mr-2">🛡️</span> Federated Mule Directory & Hash-Linked Interbank Blacklist
+                    </h3>
+                    <p className="text-xs text-slate-400 mt-1">
+                      Zero-knowledge blinded token queries (PBOC Art. 21 / US EWS / Swiss SMPC). Cross-institution matching without exposing confidential customer lists.
+                    </p>
+                  </div>
+                  <span className="px-2.5 py-1 rounded bg-indigo-950 text-indigo-300 border border-indigo-700 font-mono text-[11px]">
+                    {fedMuleEntries.length} Federated Records
+                  </span>
+                </div>
+
+                {/* Query Tool */}
+                <div className="p-3 rounded bg-slate-950 border border-slate-800 space-y-3 text-xs">
+                  <span className="font-semibold text-slate-300 block">Blinded Directory Lookup</span>
+                  <div className="grid grid-cols-3 gap-3">
+                    <div>
+                      <label className="text-slate-400 block mb-1">Entity Type</label>
+                      <select
+                        value={fedMuleQueryType}
+                        onChange={(e) => setFedMuleQueryType(e.target.value)}
+                        className="w-full bg-slate-900 border border-slate-800 rounded px-2.5 py-1.5 text-white"
+                      >
+                        <option value="BANK_ACCOUNT">Bank Account</option>
+                        <option value="MSISDN">Mobile MSISDN</option>
+                        <option value="NATIONAL_ID">National ID</option>
+                        <option value="PAYBILL_TILL">Paybill / Till</option>
+                      </select>
+                    </div>
+                    <div className="col-span-2">
+                      <label className="text-slate-400 block mb-1">Identifier (Cleartext or Blinded Token)</label>
+                      <div className="flex space-x-2">
+                        <input
+                          value={fedMuleQueryValue}
+                          onChange={(e) => setFedMuleQueryValue(e.target.value)}
+                          className="flex-1 bg-slate-900 border border-slate-800 rounded px-2.5 py-1.5 text-white font-mono"
+                          placeholder="e.g. 01199922233 or +254711..."
+                        />
+                        <button
+                          onClick={handleQueryFederatedMule}
+                          disabled={fedMuleQuerying}
+                          className="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-500 font-semibold text-white rounded transition"
+                        >
+                          {fedMuleQuerying ? "Querying..." : "Check Blacklist"}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {fedMuleQueryResult && (
+                    <div className={`p-3 rounded border text-xs space-y-2 ${
+                      fedMuleQueryResult.is_match
+                        ? "bg-rose-950/70 border-rose-700 text-rose-200"
+                        : "bg-emerald-950/70 border-emerald-700 text-emerald-200"
+                    }`}>
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-sm">
+                          {fedMuleQueryResult.is_match ? "⛔ BLACKLIST MATCH FOUND" : "✅ CLEAN IDENTIFIER"}
+                        </span>
+                        <span className="font-mono text-[10px] text-slate-400">
+                          Token: {fedMuleQueryResult.blinded_token.substring(0, 16)}...
+                        </span>
+                      </div>
+                      {fedMuleQueryResult.is_match && (
+                        <div className="grid grid-cols-3 gap-2 pt-1 border-t border-rose-800/60 text-slate-300">
+                          <div>Severity: <strong className="text-white">{fedMuleQueryResult.severity_tier}</strong></div>
+                          <div>Origin Bank: <strong className="text-white">{fedMuleQueryResult.originating_bank_bic || "N/A"}</strong></div>
+                          <div>Reason: <strong className="text-white font-mono text-[11px]">{fedMuleQueryResult.reason_code}</strong></div>
+                        </div>
+                      )}
+                      <div className="text-[11px] leading-relaxed">
+                        {fedMuleQueryResult.recommended_action}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Directory Table */}
+                <div className="overflow-x-auto text-xs">
+                  <table className="w-full text-left text-slate-300">
+                    <thead className="bg-slate-950 text-slate-400 border-b border-slate-800">
+                      <tr>
+                        <th className="p-2.5">Masked Preview</th>
+                        <th className="p-2.5">Type</th>
+                        <th className="p-2.5">Severity Tier</th>
+                        <th className="p-2.5">Originating BIC</th>
+                        <th className="p-2.5">Reason Code</th>
+                        <th className="p-2.5">Blinded Token</th>
+                        <th className="p-2.5">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800/60 font-mono text-[11px]">
+                      {fedMuleEntries.slice(0, 8).map((m) => (
+                        <tr key={m.entry_id} className="hover:bg-slate-950/50 transition">
+                          <td className="p-2.5 text-white font-semibold">{m.cleartext_preview}</td>
+                          <td className="p-2.5 text-slate-400">{m.entity_type}</td>
+                          <td className="p-2.5">
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                              m.severity_tier === "CONFIRMED_SYNDICATE_CONTROLLER"
+                                ? "bg-rose-950 text-rose-300 border border-rose-700"
+                                : m.severity_tier === "CORROBORATED_MULE"
+                                ? "bg-amber-950 text-amber-300 border border-amber-700"
+                                : "bg-blue-950 text-blue-300 border border-blue-700"
+                            }`}>
+                              {m.severity_tier}
+                            </span>
+                          </td>
+                          <td className="p-2.5 text-indigo-300">{m.originating_bank_bic || "LOCAL"}</td>
+                          <td className="p-2.5 text-slate-300">{m.reason_code}</td>
+                          <td className="p-2.5 text-slate-500">{m.blinded_token.substring(0, 12)}...</td>
+                          <td className="p-2.5">
+                            <span className={`px-1.5 py-0.5 rounded text-[10px] ${
+                              m.status === "ACTIVE" ? "bg-emerald-950 text-emerald-300" : "bg-slate-800 text-slate-400"
+                            }`}>
+                              {m.status}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                      {fedMuleEntries.length === 0 && (
+                        <tr>
+                          <td colSpan={7} className="p-4 text-center text-slate-500 font-sans">
+                            No federated mule records enrolled yet.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Enrollment Drawer */}
+                <div className="p-3 rounded bg-slate-950 border border-slate-800 space-y-3 text-xs">
+                  <span className="font-semibold text-slate-300 block">Enroll Suspect / Corroborated Entity</span>
+                  <div className="grid grid-cols-4 gap-3">
+                    <div>
+                      <label className="text-slate-400 block mb-1">Entity Type</label>
+                      <select
+                        value={fedNewType}
+                        onChange={(e) => setFedNewType(e.target.value)}
+                        className="w-full bg-slate-900 border border-slate-800 rounded px-2.5 py-1.5 text-white"
+                      >
+                        <option value="BANK_ACCOUNT">Bank Account</option>
+                        <option value="MSISDN">Mobile MSISDN</option>
+                        <option value="NATIONAL_ID">National ID</option>
+                        <option value="PAYBILL_TILL">Paybill / Till</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block mb-1">Severity Tier</label>
+                      <select
+                        value={fedNewTier}
+                        onChange={(e) => setFedNewTier(e.target.value)}
+                        className="w-full bg-slate-900 border border-slate-800 rounded px-2.5 py-1.5 text-white"
+                      >
+                        <option value="CORROBORATED_MULE">CORROBORATED MULE</option>
+                        <option value="CONFIRMED_SYNDICATE_CONTROLLER">SYNDICATE CONTROLLER</option>
+                        <option value="SUSPECT_MULE">SUSPECT MULE</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block mb-1">Originating BIC</label>
+                      <input
+                        value={fedNewBic}
+                        onChange={(e) => setFedNewBic(e.target.value)}
+                        className="w-full bg-slate-900 border border-slate-800 rounded px-2.5 py-1.5 text-white font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block mb-1">Reason Code</label>
+                      <select
+                        value={fedNewReason}
+                        onChange={(e) => setFedNewReason(e.target.value)}
+                        className="w-full bg-slate-900 border border-slate-800 rounded px-2.5 py-1.5 text-white"
+                      >
+                        <option value="HIGH_VELOCITY_RAPID_CASHOUT">HIGH_VELOCITY_RAPID_CASHOUT</option>
+                        <option value="DIRECT_FRAUD_VICTIM_TRANSFER">DIRECT_FRAUD_VICTIM_TRANSFER</option>
+                        <option value="CREDENTIAL_STUFFING_BURST">CREDENTIAL_STUFFING_BURST</option>
+                        <option value="MONEY_MULE_ADVERTISER">MONEY_MULE_ADVERTISER</option>
+                        <option value="ACCOUNT_TAKEOVER_RECIPIENT">ACCOUNT_TAKEOVER_RECIPIENT</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block mb-1">Raw Identifier</label>
+                      <div className="flex space-x-2">
+                        <input
+                          value={fedNewValue}
+                          onChange={(e) => setFedNewValue(e.target.value)}
+                          placeholder="e.g. 01100998877"
+                          className="flex-1 bg-slate-900 border border-slate-800 rounded px-2.5 py-1.5 text-white font-mono"
+                        />
+                        <button
+                          onClick={handleRegisterFederatedMule}
+                          disabled={fedRegistering}
+                          className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 font-semibold text-white rounded transition whitespace-nowrap"
+                        >
+                          {fedRegistering ? "Enrolling..." : "Enroll Blinded"}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
           </div>

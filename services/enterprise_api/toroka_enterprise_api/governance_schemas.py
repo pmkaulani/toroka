@@ -554,6 +554,8 @@ class InflightPaymentEvaluationRequest(BaseModel):
     # Phase 14.1 Extensions: Telecom Scam Signal Live Telemetry
     telecom_call_status: Literal["IDLE", "CALL_IN_PROGRESS", "RECENT_CALL", "UNKNOWN"] | None = None
     telecom_coercion_score: float | None = None
+    # Phase 14.2 Extensions: Federated Mule Directory & Hash-Linked Interbank Blacklist
+    check_federated_mule_directory: bool = True
 
 
 class InflightPaymentEvaluationResponse(BaseModel):
@@ -571,6 +573,8 @@ class InflightPaymentEvaluationResponse(BaseModel):
     telecom_call_status: str | None = None
     telecom_coercion_score: float | None = None
     is_telecom_coerced: bool = False
+    is_federated_mule: bool = False
+    federated_mule_tier: str | None = None
 
 
 # ==============================================================================
@@ -673,5 +677,62 @@ class TelecomSignalResponse(BaseModel):
     statutory_warning: str | None = None
     query_digest: str
     queried_at: str
+
+
+# ==============================================================================
+# Phase 14.2: Federated Mule Directory Schemas (PBOC Art. 21 / US EWS / Swiss SMPC)
+# ==============================================================================
+
+class RegisterFederatedMuleRequest(BaseModel):
+    entity_type: Literal["BANK_ACCOUNT", "MSISDN", "NATIONAL_ID", "PAYBILL_TILL"] = "BANK_ACCOUNT"
+    value: str
+    severity_tier: Literal["SUSPECT_MULE", "CORROBORATED_MULE", "CONFIRMED_SYNDICATE_CONTROLLER"] = "CORROBORATED_MULE"
+    originating_bank_bic: str = ""
+    reason_code: str = "SUSPICIOUS_MULE_ACTIVITY"
+    dossier_reference: str | None = None
+    ttl_days: int | None = 365
+
+
+class FederatedMuleEntryResponse(BaseModel):
+    entry_id: str
+    installation_id: str
+    entity_type: str
+    blinded_token: str
+    cleartext_preview: str
+    severity_tier: str
+    originating_bank_bic: str
+    reason_code: str
+    dossier_reference: str | None = None
+    status: str
+    registered_by: str | None = None
+    registered_at: str
+    expires_at: str | None = None
+
+
+class QueryFederatedMuleRequest(BaseModel):
+    entity_type: Literal["BANK_ACCOUNT", "MSISDN", "NATIONAL_ID", "PAYBILL_TILL"] = "BANK_ACCOUNT"
+    value: str
+    is_already_blinded: bool = False
+
+
+class QueryFederatedMuleResponse(BaseModel):
+    is_match: bool
+    blinded_token: str
+    cleartext_preview: str
+    entity_type: str
+    severity_tier: str | None = None
+    originating_bank_bic: str | None = None
+    reason_code: str | None = None
+    dossier_reference: str | None = None
+    status: str
+    registered_at: str | None = None
+    expires_at: str | None = None
+    recommended_action: str
+
+
+class UpdateFederatedMuleStatusRequest(BaseModel):
+    status: Literal["ACTIVE", "CONTESTED", "EXPUNGED"]
+    justification: str
+
 
 

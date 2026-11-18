@@ -203,6 +203,8 @@ class InflightRiskEvaluation:
     telecom_call_status: str | None = None
     telecom_coercion_score: float | None = None
     is_telecom_coerced: bool = False
+    is_federated_mule: bool = False
+    federated_mule_tier: str | None = None
     evaluated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
     def to_dict(self) -> dict[str, Any]:
@@ -219,6 +221,8 @@ class InflightRiskEvaluation:
             "telecom_call_status": self.telecom_call_status,
             "telecom_coercion_score": round(self.telecom_coercion_score, 4) if self.telecom_coercion_score is not None else None,
             "is_telecom_coerced": self.is_telecom_coerced,
+            "is_federated_mule": self.is_federated_mule,
+            "federated_mule_tier": self.federated_mule_tier,
             "evaluated_at": self.evaluated_at.isoformat(),
         }
 
@@ -393,6 +397,7 @@ class ISO20022Engine:
         enable_graduated_controls: bool = True,
         telecom_call_status: str | None = None,
         telecom_coercion_score: float | None = None,
+        federated_mule_match: Any = None,
     ) -> InflightRiskEvaluation:
         """Evaluates an in-flight payment against instant risk rules in advisory mode."""
         t0 = time.perf_counter()
@@ -401,10 +406,31 @@ class ISO20022Engine:
 
         mules = known_mule_accounts or set()
 
-        # Rule 1: Known Mule Counterparty Match
+        # Rule 1: Known Mule Counterparty Match (Local Corpus & Federated Directory)
+        is_federated_mule = False
+        federated_mule_tier = None
         if transfer.creditor.account_number in mules:
             triggered_rules.append("RULE_MULE_ACCOUNT_MATCH: Creditor account is a corroborated mule")
             risk_score += 0.85
+
+        if federated_mule_match:
+            fed_is_match = (
+                getattr(federated_mule_match, "is_match", False)
+                if hasattr(federated_mule_match, "is_match")
+                else (federated_mule_match.get("is_match") if isinstance(federated_mule_match, dict) else bool(federated_mule_match))
+            )
+            if fed_is_match:
+                fed_tier = getattr(federated_mule_match, "severity_tier", None)
+                tier_str = str(fed_tier.value if hasattr(fed_tier, "value") else (fed_tier or "CORROBORATED_MULE"))
+                is_federated_mule = True
+                federated_mule_tier = tier_str
+                triggered_rules.append(f"RULE_FEDERATED_MULE_MATCH: Creditor listed on cross-bank blacklist ({tier_str})")
+                if "SYNDICATE" in tier_str.upper():
+                    risk_score += 0.95
+                elif "CORROBORATED" in tier_str.upper():
+                    risk_score += 0.85
+                else:
+                    risk_score += 0.50
 
         # Rule 2: Large Round Amount Layering
         dec_amount = Decimal(str(transfer.amount))
@@ -517,6 +543,8 @@ class ISO20022Engine:
             telecom_call_status=telecom_call_status,
             telecom_coercion_score=telecom_coercion_score,
             is_telecom_coerced=is_telecom_coerced,
+            is_federated_mule=is_federated_mule,
+            federated_mule_tier=federated_mule_tier,
         )
 
     @classmethod

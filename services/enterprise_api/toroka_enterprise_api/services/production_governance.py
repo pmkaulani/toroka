@@ -5,7 +5,7 @@ import hmac
 import json
 import logging
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from fastapi import HTTPException, status
@@ -137,6 +137,14 @@ from toroka_enterprise.integrations.telecom_signal import (
     TelecomScamSignalGateway,
     TelecomSignalQuery,
 )
+from toroka_enterprise.integrations.federated_mule import (
+    FederatedMuleEngine,
+    FederatedMuleMatch,
+    FederatedMuleQuery,
+    MuleEntityType,
+    MuleEntryStatus,
+    MuleSeverityTier,
+)
 from toroka_enterprise.intelligence.copilot.contracts import (
     ClaimKind,
     EvidenceContext,
@@ -156,6 +164,7 @@ from toroka_enterprise.intelligence.models import (
     DriftRecordEntity,
     EntityLinkCandidateRecord,
     EvidencePassportRecord,
+    FederatedMuleRecord,
     ForensicDossierRecord,
     GovernanceIncidentRecord,
     GovernedAIProviderRecord,
@@ -190,6 +199,7 @@ from ..governance_schemas import (
     EvaluateReadinessGatesRequest,
     EvidencePassportResponse,
     ExecuteTrustedValidationRequest,
+    FederatedMuleEntryResponse,
     ForensicDossierResponse,
     GovernanceIncidentResponse,
     GovernedAIProviderResponse,
@@ -198,11 +208,14 @@ from ..governance_schemas import (
     InflightPaymentEvaluationResponse,
     ProductionReleaseResponse,
     QuantitativeDriftEvaluationResponse,
+    QueryFederatedMuleRequest,
+    QueryFederatedMuleResponse,
     ReadinessAssessmentResponse,
     ReadinessAttestationResponse,
     RecordDriftRequest,
     RecordReadinessAttestationRequest,
     RegisterAIProviderRequest,
+    RegisterFederatedMuleRequest,
     RegisterTrustedSignerRequest,
     ResumeComponentRequest,
     SemanticVerifyRequest,
@@ -214,6 +227,7 @@ from ..governance_schemas import (
     TelecomSignalRequest,
     TelecomSignalResponse,
     TrustedSignerResponse,
+    UpdateFederatedMuleStatusRequest,
     UpdateIncidentStatusRequest,
     ValidationMetricSchema,
     ValidationPackageResponse,
@@ -3485,6 +3499,42 @@ class ProductionGovernanceService:
             if f.finding_data and "mule_accounts" in f.finding_data:
                 mule_accounts.update(f.finding_data["mule_accounts"])
 
+        federated_match = None
+        if request.check_federated_mule_directory:
+            creditor_token = FederatedMuleEngine.compute_blinded_token(
+                transfer.creditor.account_number,
+                MuleEntityType.BANK_ACCOUNT,
+            )
+            fed_records = self.session.execute(
+                select(FederatedMuleRecord).where(
+                    FederatedMuleRecord.installation_id == self.installation_id,
+                    FederatedMuleRecord.blinded_token == creditor_token,
+                    FederatedMuleRecord.status == "ACTIVE",
+                )
+            ).scalars().all()
+            if fed_records:
+                active_dicts = [
+                    {
+                        "blinded_token": r.blinded_token,
+                        "cleartext_preview": r.cleartext_preview,
+                        "entity_type": r.entity_type,
+                        "severity_tier": r.severity_tier,
+                        "originating_bank_bic": r.originating_bank_bic,
+                        "reason_code": r.reason_code,
+                        "dossier_reference": r.dossier_reference,
+                        "status": r.status,
+                        "registered_at": r.registered_at,
+                        "expires_at": r.expires_at,
+                    }
+                    for r in fed_records
+                ]
+                query_obj = FederatedMuleQuery(
+                    value=creditor_token,
+                    entity_type=MuleEntityType.BANK_ACCOUNT,
+                    is_already_blinded=True,
+                )
+                federated_match = FederatedMuleEngine.evaluate_mule_query(query_obj, active_dicts)
+
         eval_result = ISO20022Engine.evaluate_inflight_payment(
             transfer=transfer,
             known_mule_accounts=mule_accounts,
@@ -3496,6 +3546,7 @@ class ProductionGovernanceService:
             enable_graduated_controls=request.enable_graduated_controls,
             telecom_call_status=request.telecom_call_status,
             telecom_coercion_score=request.telecom_coercion_score,
+            federated_mule_match=federated_match,
         )
 
         record = InflightPaymentRiskRecord(
@@ -3535,6 +3586,8 @@ class ProductionGovernanceService:
             telecom_call_status=eval_result.telecom_call_status,
             telecom_coercion_score=eval_result.telecom_coercion_score,
             is_telecom_coerced=eval_result.is_telecom_coerced,
+            is_federated_mule=eval_result.is_federated_mule,
+            federated_mule_tier=eval_result.federated_mule_tier,
         )
 
     def verify_confirmation_of_payee(
@@ -3649,6 +3702,147 @@ class ProductionGovernanceService:
             statutory_warning=record.statutory_warning,
             query_digest=record.query_digest,
             queried_at=record.queried_at.isoformat(),
+        )
+
+    # =========================================================================
+    # Phase 14.2: Federated Mule Directory & Hash-Linked Interbank Blacklist
+    # =========================================================================
+
+    def register_federated_mule(
+        self,
+        request: RegisterFederatedMuleRequest,
+        actor_subject: str,
+    ) -> FederatedMuleEntryResponse:
+        """Registers a suspect/corroborated mule in the federated directory with a blinded HMAC token."""
+        token = FederatedMuleEngine.compute_blinded_token(request.value, request.entity_type)
+        preview = FederatedMuleEngine.mask_identifier(request.value, request.entity_type)
+        entry_id = f"mule-{uuid.uuid4().hex[:12]}"
+        now = _utc_now()
+        expires_at = now + timedelta(days=request.ttl_days) if request.ttl_days else None
+
+        record = FederatedMuleRecord(
+            entry_id=entry_id,
+            installation_id=self.installation_id,
+            entity_type=request.entity_type,
+            blinded_token=token,
+            cleartext_preview=preview,
+            severity_tier=request.severity_tier,
+            originating_bank_bic=request.originating_bank_bic,
+            reason_code=request.reason_code,
+            dossier_reference=request.dossier_reference,
+            status="ACTIVE",
+            registered_by=actor_subject,
+            registered_at=now,
+            expires_at=expires_at,
+        )
+        self.session.add(record)
+        self.session.commit()
+        self.session.refresh(record)
+
+        return self._to_federated_mule_response(record)
+
+    def query_federated_mule(
+        self,
+        request: QueryFederatedMuleRequest,
+    ) -> QueryFederatedMuleResponse:
+        """Queries the federated cross-bank mule directory using raw or blinded token."""
+        if request.is_already_blinded:
+            token = request.value.strip().lower()
+        else:
+            token = FederatedMuleEngine.compute_blinded_token(request.value, request.entity_type)
+
+        fed_records = self.session.execute(
+            select(FederatedMuleRecord).where(
+                FederatedMuleRecord.installation_id == self.installation_id,
+                FederatedMuleRecord.blinded_token == token,
+            )
+        ).scalars().all()
+        active_dicts = [
+            {
+                "blinded_token": r.blinded_token,
+                "cleartext_preview": r.cleartext_preview,
+                "entity_type": r.entity_type,
+                "severity_tier": r.severity_tier,
+                "originating_bank_bic": r.originating_bank_bic,
+                "reason_code": r.reason_code,
+                "dossier_reference": r.dossier_reference,
+                "status": r.status,
+                "registered_at": r.registered_at,
+                "expires_at": r.expires_at,
+            }
+            for r in fed_records
+        ]
+        query_obj = FederatedMuleQuery(
+            value=request.value,
+            entity_type=MuleEntityType(request.entity_type),
+            is_already_blinded=request.is_already_blinded,
+        )
+        match = FederatedMuleEngine.evaluate_mule_query(query_obj, active_dicts)
+        return QueryFederatedMuleResponse(
+            is_match=match.is_match,
+            blinded_token=match.blinded_token,
+            cleartext_preview=match.cleartext_preview,
+            entity_type=match.entity_type.value,
+            severity_tier=match.severity_tier.value if match.severity_tier else None,
+            originating_bank_bic=match.originating_bank_bic,
+            reason_code=match.reason_code,
+            dossier_reference=match.dossier_reference,
+            status=match.status.value,
+            registered_at=match.registered_at.isoformat() if match.registered_at else None,
+            expires_at=match.expires_at.isoformat() if match.expires_at else None,
+            recommended_action=match.recommended_action,
+        )
+
+    def list_federated_mules(
+        self,
+        entity_type: str | None = None,
+        status: str | None = None,
+    ) -> list[FederatedMuleEntryResponse]:
+        stmt = select(FederatedMuleRecord).where(
+            FederatedMuleRecord.installation_id == self.installation_id
+        )
+        if entity_type:
+            stmt = stmt.where(FederatedMuleRecord.entity_type == entity_type)
+        if status:
+            stmt = stmt.where(FederatedMuleRecord.status == status)
+        stmt = stmt.order_by(FederatedMuleRecord.registered_at.desc())
+        records = self.session.execute(stmt).scalars().all()
+        return [self._to_federated_mule_response(r) for r in records]
+
+    def update_federated_mule_status(
+        self,
+        entry_id: str,
+        request: UpdateFederatedMuleStatusRequest,
+        actor_subject: str,
+    ) -> FederatedMuleEntryResponse:
+        rec = self.session.execute(
+            select(FederatedMuleRecord).where(
+                FederatedMuleRecord.installation_id == self.installation_id,
+                FederatedMuleRecord.entry_id == entry_id,
+            )
+        ).scalar_one_or_none()
+        if not rec:
+            raise HTTPException(status_code=404, detail=f"Mule entry '{entry_id}' not found")
+        rec.status = request.status
+        self.session.commit()
+        self.session.refresh(rec)
+        return self._to_federated_mule_response(rec)
+
+    def _to_federated_mule_response(self, r: FederatedMuleRecord) -> FederatedMuleEntryResponse:
+        return FederatedMuleEntryResponse(
+            entry_id=r.entry_id,
+            installation_id=r.installation_id,
+            entity_type=r.entity_type,
+            blinded_token=r.blinded_token,
+            cleartext_preview=r.cleartext_preview,
+            severity_tier=r.severity_tier,
+            originating_bank_bic=r.originating_bank_bic,
+            reason_code=r.reason_code,
+            dossier_reference=r.dossier_reference,
+            status=r.status,
+            registered_by=r.registered_by,
+            registered_at=r.registered_at.isoformat(),
+            expires_at=r.expires_at.isoformat() if r.expires_at else None,
         )
 
     def verify_copilot_semantics(

@@ -1339,6 +1339,33 @@ class TelecomScamSignalRecord(IntelligenceBase):
     queried_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
 
 
+# ==============================================================================
+# Phase 14.2 Models: Federated Mule Directory & Hash-Linked Interbank Blacklist
+# ==============================================================================
+
+class FederatedMuleRecord(IntelligenceBase):
+    """Interbank cross-institution blinded mule directory record (PBOC Art. 21 / US EWS / Swiss SMPC)."""
+    __tablename__ = "enterprise_federated_mule_directory"
+
+    entry_id: Mapped[str] = mapped_column(String(100), primary_key=True)
+    installation_id: Mapped[str] = mapped_column(String(100), primary_key=True, index=True)
+
+    entity_type: Mapped[str] = mapped_column(String(50), nullable=False, default="BANK_ACCOUNT")
+    blinded_token: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    cleartext_preview: Mapped[str] = mapped_column(String(100), nullable=False)
+
+    severity_tier: Mapped[str] = mapped_column(String(50), nullable=False, default="CORROBORATED_MULE", index=True)
+    originating_bank_bic: Mapped[str] = mapped_column(String(50), nullable=False, default="")
+    reason_code: Mapped[str] = mapped_column(String(100), nullable=False, default="SUSPICIOUS_MULE_ACTIVITY")
+    dossier_reference: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
+
+    status: Mapped[str] = mapped_column(String(50), nullable=False, default="ACTIVE", index=True)
+    registered_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    registered_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+
 
 
 
