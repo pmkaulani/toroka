@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 
@@ -64,7 +64,8 @@ class CreateValidationRunRequest(BaseModel):
     dataset_digest: str
     configuration_digest: str
     metrics: list[ValidationMetricSchema]
-    evaluator: str
+    # Deprecated client field. The API records the authenticated principal instead.
+    evaluator: str | None = None
     limitations: list[str] = Field(default_factory=list)
 
 
@@ -104,7 +105,7 @@ class CreateReleaseRequest(BaseModel):
 
 
 class PromoteReleaseRequest(BaseModel):
-    target_environment: str  # pilot, production
+    target_environment: Literal["pilot", "production"]
 
 
 class RollbackReleaseRequest(BaseModel):
@@ -522,7 +523,8 @@ class InflightPaymentEvaluationRequest(BaseModel):
     creditor_msisdn: str | None = None
     creditor_national_id: str | None = None
     remittance_narrative: str = ""
-    account_prior_transfers_count: int = 10
+    # Counterparty history must come from bank-controlled data, never this API payload.
+    account_prior_transfers_count: int | None = None
 
 
 class InflightPaymentEvaluationResponse(BaseModel):
