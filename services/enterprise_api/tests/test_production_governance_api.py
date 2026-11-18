@@ -118,10 +118,8 @@ def test_component_registry_and_maker_checker_approval(oidc_client, token_factor
             "rationale": "Independent validation verified across synthetic test datasets",
         },
     )
-    assert bob_approve_resp.status_code == 200
-    approved_comp = bob_approve_resp.json()
-    assert approved_comp["status"] == "approved"
-    assert approved_comp["approved_by"] == "authoriser.bob"
+    assert bob_approve_resp.status_code == 422
+    assert "passing validation run" in bob_approve_resp.json()["detail"].lower()
 
 
 def test_validation_run_recording_and_listing(oidc_client, token_factory):
@@ -147,8 +145,9 @@ def test_validation_run_recording_and_listing(oidc_client, token_factory):
     )
     assert val_resp.status_code == 201
     val_data = val_resp.json()
-    assert val_data["result"] == "pass"
-    assert len(val_data["metrics"]) == 3
+    assert val_data["result"] == "inconclusive"
+    assert all(metric["result"] == "inconclusive" for metric in val_data["metrics"])
+    assert any("UNVERIFIED_CALLER_SUBMITTED_METRICS" in item for item in val_data["limitations"])
 
     # 2. List validation runs
     list_resp = oidc_client.get(
