@@ -1307,6 +1307,16 @@ export interface InflightPaymentEvaluation {
   is_telecom_coerced?: boolean;
   is_federated_mule?: boolean;
   federated_mule_tier?: string | null;
+  // Phase 14.4 Swiss SIC5 Sub-50ms Parallel Telemetry
+  is_parallel_pipeline?: boolean;
+  sla_budget_ms?: number;
+  is_sla_compliant?: boolean;
+  cop_latency_ms?: number | null;
+  telecom_latency_ms?: number | null;
+  federated_mule_latency_ms?: number | null;
+  behavioral_latency_ms?: number | null;
+  feed_statuses?: Record<string, string> | null;
+  circuit_breaker_tripped?: boolean;
 }
 
 export interface CopVerifyRequest {

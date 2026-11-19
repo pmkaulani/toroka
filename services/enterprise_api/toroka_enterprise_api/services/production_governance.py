@@ -146,6 +146,11 @@ from toroka_enterprise.integrations.federated_mule import (
     MuleEntryStatus,
     MuleSeverityTier,
 )
+from toroka_enterprise.integrations.sic5_parallel import (
+    SIC5ParallelClearingEngine,
+    ParallelClearingResult,
+    ClearingFeedLatencyBreakdown,
+)
 from toroka_enterprise.intelligence.mule_cascade import (
     MuleCascadeTracerEngine,
     MuleCascadeTraceResult,
@@ -3510,20 +3515,25 @@ class ProductionGovernanceService:
             if f.finding_data and "mule_accounts" in f.finding_data:
                 mule_accounts.update(f.finding_data["mule_accounts"])
 
-        federated_match = None
-        if request.check_federated_mule_directory:
-            creditor_token = FederatedMuleEngine.compute_blinded_token(
-                transfer.creditor.account_number,
-                MuleEntityType.BANK_ACCOUNT,
-            )
-            fed_records = self.session.execute(
-                select(FederatedMuleRecord).where(
-                    FederatedMuleRecord.installation_id == self.installation_id,
-                    FederatedMuleRecord.blinded_token == creditor_token,
-                    FederatedMuleRecord.status == "ACTIVE",
-                )
-            ).scalars().all()
-            if fed_records:
+        is_parallel = bool(request.use_parallel_pipeline)
+        feed_statuses_dict = None
+        cop_lat = None
+        tel_lat = None
+        fed_lat = None
+        beh_lat = None
+        circuit_tripped = False
+        is_sla_comp = True
+        sla_budget = float(request.sla_budget_ms)
+
+        if is_parallel:
+            active_dicts = []
+            if request.check_federated_mule_directory:
+                fed_records = self.session.execute(
+                    select(FederatedMuleRecord).where(
+                        FederatedMuleRecord.installation_id == self.installation_id,
+                        FederatedMuleRecord.status == "ACTIVE",
+                    )
+                ).scalars().all()
                 active_dicts = [
                     {
                         "blinded_token": r.blinded_token,
@@ -3539,26 +3549,86 @@ class ProductionGovernanceService:
                     }
                     for r in fed_records
                 ]
-                query_obj = FederatedMuleQuery(
-                    value=creditor_token,
-                    entity_type=MuleEntityType.BANK_ACCOUNT,
-                    is_already_blinded=True,
-                )
-                federated_match = FederatedMuleEngine.evaluate_mule_query(query_obj, active_dicts)
 
-        eval_result = ISO20022Engine.evaluate_inflight_payment(
-            transfer=transfer,
-            known_mule_accounts=mule_accounts,
-            account_prior_transfers_count=request.account_prior_transfers_count,
-            cop_status=request.cop_status,
-            cop_match_score=request.cop_match_score,
-            beneficiary_inflow_restriction=request.beneficiary_inflow_restriction,
-            debtor_channel_anomaly=request.debtor_channel_anomaly,
-            enable_graduated_controls=request.enable_graduated_controls,
-            telecom_call_status=request.telecom_call_status,
-            telecom_coercion_score=request.telecom_coercion_score,
-            federated_mule_match=federated_match,
-        )
+            parallel_res = SIC5ParallelClearingEngine.evaluate_parallel(
+                transfer=transfer,
+                cop_enabled=(request.cop_status is not None),
+                cop_override_status=request.cop_status,
+                cop_override_score=request.cop_match_score,
+                cop_registered_name=None,
+                telecom_enabled=(request.telecom_call_status is not None or request.telecom_coercion_score is not None),
+                telecom_msisdn=request.debtor_msisdn,
+                telecom_override_status=request.telecom_call_status,
+                telecom_override_score=request.telecom_coercion_score,
+                telecom_simulated_call=request.telecom_call_status,
+                federated_mule_enabled=request.check_federated_mule_directory,
+                federated_mule_records=active_dicts,
+                known_mule_accounts=mule_accounts,
+                account_prior_transfers_count=request.account_prior_transfers_count,
+                beneficiary_inflow_restriction=request.beneficiary_inflow_restriction,
+                debtor_channel_anomaly=request.debtor_channel_anomaly,
+                enable_graduated_controls=request.enable_graduated_controls,
+                sla_budget_ms=sla_budget,
+                simulated_latencies=request.simulated_latencies,
+            )
+            eval_result = parallel_res.evaluation
+            feed_statuses_dict = parallel_res.feed_statuses
+            circuit_tripped = parallel_res.circuit_breaker_tripped
+            cop_lat = parallel_res.latency_breakdown.cop_latency_ms
+            tel_lat = parallel_res.latency_breakdown.telecom_latency_ms
+            fed_lat = parallel_res.latency_breakdown.federated_mule_latency_ms
+            beh_lat = parallel_res.latency_breakdown.behavioral_latency_ms
+            is_sla_comp = parallel_res.latency_breakdown.is_sla_compliant
+        else:
+            federated_match = None
+            if request.check_federated_mule_directory:
+                creditor_token = FederatedMuleEngine.compute_blinded_token(
+                    transfer.creditor.account_number,
+                    MuleEntityType.BANK_ACCOUNT,
+                )
+                fed_records = self.session.execute(
+                    select(FederatedMuleRecord).where(
+                        FederatedMuleRecord.installation_id == self.installation_id,
+                        FederatedMuleRecord.blinded_token == creditor_token,
+                        FederatedMuleRecord.status == "ACTIVE",
+                    )
+                ).scalars().all()
+                if fed_records:
+                    active_dicts = [
+                        {
+                            "blinded_token": r.blinded_token,
+                            "cleartext_preview": r.cleartext_preview,
+                            "entity_type": r.entity_type,
+                            "severity_tier": r.severity_tier,
+                            "originating_bank_bic": r.originating_bank_bic,
+                            "reason_code": r.reason_code,
+                            "dossier_reference": r.dossier_reference,
+                            "status": r.status,
+                            "registered_at": r.registered_at,
+                            "expires_at": r.expires_at,
+                        }
+                        for r in fed_records
+                    ]
+                    query_obj = FederatedMuleQuery(
+                        value=creditor_token,
+                        entity_type=MuleEntityType.BANK_ACCOUNT,
+                        is_already_blinded=True,
+                    )
+                    federated_match = FederatedMuleEngine.evaluate_mule_query(query_obj, active_dicts)
+
+            eval_result = ISO20022Engine.evaluate_inflight_payment(
+                transfer=transfer,
+                known_mule_accounts=mule_accounts,
+                account_prior_transfers_count=request.account_prior_transfers_count,
+                cop_status=request.cop_status,
+                cop_match_score=request.cop_match_score,
+                beneficiary_inflow_restriction=request.beneficiary_inflow_restriction,
+                debtor_channel_anomaly=request.debtor_channel_anomaly,
+                enable_graduated_controls=request.enable_graduated_controls,
+                telecom_call_status=request.telecom_call_status,
+                telecom_coercion_score=request.telecom_coercion_score,
+                federated_mule_match=federated_match,
+            )
 
         record = InflightPaymentRiskRecord(
             evaluation_id=f"eval-pmt-{uuid.uuid4().hex[:12]}",
@@ -3576,6 +3646,15 @@ class ProductionGovernanceService:
             recommended_action=eval_result.recommended_action,
             integration_mode="SHADOW",
             latency_ms=eval_result.latency_ms,
+            is_parallel_pipeline=is_parallel,
+            sla_budget_ms=sla_budget,
+            is_sla_compliant=is_sla_comp,
+            feed_latencies={
+                "cop": cop_lat,
+                "telecom": tel_lat,
+                "federated_mule": fed_lat,
+                "behavioral": beh_lat,
+            } if is_parallel else {},
             evaluated_at=eval_result.evaluated_at,
         )
         self.session.add(record)
@@ -3599,6 +3678,15 @@ class ProductionGovernanceService:
             is_telecom_coerced=eval_result.is_telecom_coerced,
             is_federated_mule=eval_result.is_federated_mule,
             federated_mule_tier=eval_result.federated_mule_tier,
+            is_parallel_pipeline=record.is_parallel_pipeline,
+            sla_budget_ms=record.sla_budget_ms,
+            is_sla_compliant=record.is_sla_compliant,
+            cop_latency_ms=cop_lat,
+            telecom_latency_ms=tel_lat,
+            federated_mule_latency_ms=fed_lat,
+            behavioral_latency_ms=beh_lat,
+            feed_statuses=feed_statuses_dict,
+            circuit_breaker_tripped=circuit_tripped,
         )
 
     def verify_confirmation_of_payee(

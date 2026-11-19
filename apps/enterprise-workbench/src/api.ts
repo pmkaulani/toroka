@@ -1035,6 +1035,10 @@ export const api = {
     enable_graduated_controls?: boolean;
     telecom_call_status?: string | null;
     telecom_coercion_score?: number | null;
+    check_federated_mule_directory?: boolean;
+    use_parallel_pipeline?: boolean;
+    sla_budget_ms?: number;
+    simulated_latencies?: Record<string, number>;
   }): Promise<InflightPaymentEvaluation> =>
     request<InflightPaymentEvaluation>("/api/enterprise/v1/governance/integrations/iso20022/evaluate-inflight", {
       method: "POST",

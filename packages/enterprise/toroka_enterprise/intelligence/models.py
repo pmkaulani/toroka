@@ -1251,6 +1251,12 @@ class InflightPaymentRiskRecord(IntelligenceBase):
     latency_ms: Mapped[float] = mapped_column(Float, nullable=False)
     integration_mode: Mapped[str] = mapped_column(String(32), nullable=False, default="SHADOW")
 
+    # Phase 14.4 Swiss SIC5 Parallel Pipeline telemetry
+    is_parallel_pipeline: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    sla_budget_ms: Mapped[float] = mapped_column(Float, nullable=False, default=45.0)
+    is_sla_compliant: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    feed_latencies: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+
     evaluated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
 
 

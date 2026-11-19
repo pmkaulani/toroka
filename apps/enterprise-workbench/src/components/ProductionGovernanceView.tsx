@@ -115,6 +115,7 @@ export const ProductionGovernanceView: React.FC<Props> = ({ currentPersona }) =>
   const [telecomQuerying, setTelecomQuerying] = useState(false);
   const [telecomResult, setTelecomResult] = useState<TelecomSignalResponse | null>(null);
   const [isoTelecomCallStatus, setIsoTelecomCallStatus] = useState<string>("NONE");
+  const [useParallelPipeline, setUseParallelPipeline] = useState<boolean>(true);
 
   // Phase 14.2 Federated Mule Directory state
   const [fedMuleEntries, setFedMuleEntries] = useState<FederatedMuleEntry[]>([]);
@@ -383,6 +384,9 @@ export const ProductionGovernanceView: React.FC<Props> = ({ currentPersona }) =>
         enable_graduated_controls: enableGraduatedControls,
         telecom_call_status: isoTelecomCallStatus !== "NONE" ? isoTelecomCallStatus : undefined,
         telecom_coercion_score: telecomResult?.scam_signal_score,
+        check_federated_mule_directory: true,
+        use_parallel_pipeline: useParallelPipeline,
+        sla_budget_ms: 45.0,
       });
       setIsoEvaluation(res);
     } catch (err: any) {
@@ -1962,6 +1966,19 @@ export const ProductionGovernanceView: React.FC<Props> = ({ currentPersona }) =>
                         </select>
                       </div>
                     </div>
+
+                    <div className="flex items-center justify-between pt-2 border-t border-slate-800/80">
+                      <label className="flex items-center space-x-2 text-[11px] text-slate-300 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={useParallelPipeline}
+                          onChange={(e) => setUseParallelPipeline(e.target.checked)}
+                          className="rounded border-slate-700 bg-slate-900 text-indigo-600 focus:ring-0"
+                        />
+                        <span className="font-semibold text-indigo-300">Swiss SIC5 Parallel Pipeline (&lt;45ms SLA)</span>
+                      </label>
+                      <span className="text-[10px] text-slate-500 font-mono">Concurrent CoP + Telco + Mules</span>
+                    </div>
                   </div>
 
                   <button
@@ -1969,7 +1986,7 @@ export const ProductionGovernanceView: React.FC<Props> = ({ currentPersona }) =>
                     disabled={isoEvaluating}
                     className="w-full py-2 bg-emerald-600 hover:bg-emerald-500 font-semibold text-white rounded transition shadow-sm flex items-center justify-center"
                   >
-                    {isoEvaluating ? "Evaluating in &lt;100ms..." : "Evaluate In-Flight Clearing Decision"}
+                    {isoEvaluating ? "Evaluating in &lt;45ms..." : "Evaluate In-Flight Clearing Decision"}
                   </button>
                 </div>
 
@@ -2002,6 +2019,55 @@ export const ProductionGovernanceView: React.FC<Props> = ({ currentPersona }) =>
                         </span>
                       </div>
                     </div>
+
+                    {isoEvaluation.is_parallel_pipeline && (
+                      <div className="p-3 rounded bg-slate-900 border border-indigo-900/50 space-y-2 text-xs">
+                        <div className="flex items-center justify-between">
+                          <span className="font-bold text-indigo-300 flex items-center">
+                            <span className="mr-1.5">⚡</span> Swiss SIC5 Parallel Pipeline Telemetry
+                          </span>
+                          <div className="flex items-center space-x-2">
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-semibold ${
+                              isoEvaluation.is_sla_compliant
+                                ? "bg-emerald-950 text-emerald-300 border border-emerald-700"
+                                : "bg-rose-950 text-rose-300 border border-rose-700"
+                            }`}>
+                              {isoEvaluation.is_sla_compliant ? "SLA COMPLIANT (<45ms)" : "SLA BREACHED"}
+                            </span>
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-semibold ${
+                              isoEvaluation.circuit_breaker_tripped
+                                ? "bg-amber-950 text-amber-300 border border-amber-700"
+                                : "bg-slate-800 text-slate-300"
+                            }`}>
+                              {isoEvaluation.circuit_breaker_tripped ? "CIRCUIT BREAKER TRIPPED" : "CIRCUIT BREAKER HEALTHY"}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1 text-[11px] font-mono">
+                          <div className="p-1.5 bg-slate-950 rounded border border-slate-800">
+                            <div className="text-slate-400 text-[10px]">CoP Feed</div>
+                            <div className="text-white font-bold">{isoEvaluation.cop_latency_ms?.toFixed(1) ?? "0.0"} ms</div>
+                            <div className="text-[9px] text-emerald-400">{isoEvaluation.feed_statuses?.["cop"] || "SUCCESS"}</div>
+                          </div>
+                          <div className="p-1.5 bg-slate-950 rounded border border-slate-800">
+                            <div className="text-slate-400 text-[10px]">Telecom Feed</div>
+                            <div className="text-white font-bold">{isoEvaluation.telecom_latency_ms?.toFixed(1) ?? "0.0"} ms</div>
+                            <div className="text-[9px] text-emerald-400">{isoEvaluation.feed_statuses?.["telecom"] || "SUCCESS"}</div>
+                          </div>
+                          <div className="p-1.5 bg-slate-950 rounded border border-slate-800">
+                            <div className="text-slate-400 text-[10px]">Mule Directory</div>
+                            <div className="text-white font-bold">{isoEvaluation.federated_mule_latency_ms?.toFixed(1) ?? "0.0"} ms</div>
+                            <div className="text-[9px] text-emerald-400">{isoEvaluation.feed_statuses?.["federated_mule"] || "SUCCESS"}</div>
+                          </div>
+                          <div className="p-1.5 bg-slate-950 rounded border border-slate-800">
+                            <div className="text-slate-400 text-[10px]">Behavioral / Model</div>
+                            <div className="text-white font-bold">{isoEvaluation.behavioral_latency_ms?.toFixed(1) ?? "0.0"} ms</div>
+                            <div className="text-[9px] text-emerald-400">{isoEvaluation.feed_statuses?.["behavioral"] || "SUCCESS"}</div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
 
                     <div className="grid grid-cols-2 gap-2 text-slate-400">
                       <div>

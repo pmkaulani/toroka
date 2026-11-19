@@ -53,6 +53,12 @@ from .federated_mule import (
     MuleEntryStatus,
     MuleSeverityTier,
 )
+from .sic5_parallel import (
+    ClearingFeedLatencyBreakdown,
+    ParallelClearingResult,
+    SIC5FeedStatus,
+    SIC5ParallelClearingEngine,
+)
 from .quality import QualityIssue, QualityReport, assess_canonical_batch
 from .registry import ConnectorRegistry, DEFAULT_CONNECTOR_REGISTRY
 
@@ -108,4 +114,8 @@ __all__ = [
     "assess_canonical_batch",
     "ConnectorRegistry",
     "DEFAULT_CONNECTOR_REGISTRY",
+    "SIC5FeedStatus",
+    "ClearingFeedLatencyBreakdown",
+    "ParallelClearingResult",
+    "SIC5ParallelClearingEngine",
 ]

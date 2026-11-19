@@ -556,6 +556,10 @@ class InflightPaymentEvaluationRequest(BaseModel):
     telecom_coercion_score: float | None = None
     # Phase 14.2 Extensions: Federated Mule Directory & Hash-Linked Interbank Blacklist
     check_federated_mule_directory: bool = True
+    # Phase 14.4 Extensions: Swiss SIC5 Sub-50ms Parallel Clearing Engine
+    use_parallel_pipeline: bool = True
+    sla_budget_ms: float = 45.0
+    simulated_latencies: dict[str, float] | None = None
 
 
 class InflightPaymentEvaluationResponse(BaseModel):
@@ -575,6 +579,16 @@ class InflightPaymentEvaluationResponse(BaseModel):
     is_telecom_coerced: bool = False
     is_federated_mule: bool = False
     federated_mule_tier: str | None = None
+    # Phase 14.4 Swiss SIC5 Telemetry
+    is_parallel_pipeline: bool = False
+    sla_budget_ms: float = 45.0
+    is_sla_compliant: bool = True
+    cop_latency_ms: float | None = None
+    telecom_latency_ms: float | None = None
+    federated_mule_latency_ms: float | None = None
+    behavioral_latency_ms: float | None = None
+    feed_statuses: dict[str, str] | None = None
+    circuit_breaker_tripped: bool = False
 
 
 # ==============================================================================
