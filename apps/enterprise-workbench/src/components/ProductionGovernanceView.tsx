@@ -185,6 +185,52 @@ export const ProductionGovernanceView: React.FC<Props> = ({ currentPersona }) =>
   const [bioSimHesitation, setBioSimHesitation] = useState(1200);
   const [bioSimResult, setBioSimResult] = useState<any>(null);
 
+  // Phase 16 Global Frontier Complete Defenses State
+  const [ksActive, setKsActive] = useState(false);
+  const [ksRevokedCount] = useState(2);
+  const [ksNotice, setKsNotice] = useState<string | null>(null);
+  const [ksMaker, setKsMaker] = useState("teller-cbd-01");
+  const [ksChecker, setKsChecker] = useState("branch-mgr-02");
+  const [ksBranchCode] = useState("BR-NAIROBI-HQ");
+
+  const [srfBankCoolingFail, setSrfBankCoolingFail] = useState(true);
+  const [srfTelcoSpoofFail, setSrfTelcoSpoofFail] = useState(false);
+  const [srfAdjudicationResult, setSrfAdjudicationResult] = useState<any>(null);
+
+  const [safeAccounts] = useState<any[]>([
+    { id: "SAFE-1", payee: "ACC-LANDLORD-RENT", bic: "KCBKKENA", label: "Monthly Rent", cap: "1,000,000" },
+    { id: "SAFE-2", payee: "ACC-MOM-SAVINGS", bic: "EQBLKENA", label: "Mother Support", cap: "500,000" },
+  ]);
+  const [safeNonDesignatedAmount, setSafeNonDesignatedAmount] = useState("35000");
+  const [safeEvalResult, setSafeEvalResult] = useState<string | null>(null);
+
+  const [atmDelayedActive] = useState(true);
+  const [atmWithdrawalAttempt, setAtmWithdrawalAttempt] = useState<string | null>(null);
+
+  const [vpnToggle, setVpnToggle] = useState(false);
+  const [overseasToggle, setOverseasToggle] = useState(false);
+  const [ingressResult, setIngressResult] = useState<string | null>(null);
+
+  const [med2ClawbackResult] = useState<any>({
+    contestation_id: "MED2-CNT-8991A",
+    original_fraud: "100,000 BRL",
+    recovered_amount: "85,000 BRL (85%)",
+    status: "RESOLVED_7_DAY_WINDOW",
+    layers: [
+      { tier: "Tier 1 (Direct)", bic: "ITAU0001", hold: "20,000 BRL", status: "HOLD_PLACED_FULL" },
+      { tier: "Tier 2 (Split A)", bic: "BRAD0002", hold: "35,000 BRL", status: "HOLD_PLACED_FULL" },
+      { tier: "Tier 3 (Split B)", bic: "NUBK0003", hold: "30,000 BRL", status: "HOLD_PLACED_PARTIAL" },
+      { tier: "Tier 4 (Crypto)", bic: "BINANCE_GATE", hold: "0 BRL", status: "INSUFFICIENT_FUNDS" },
+    ],
+  });
+
+  const [ghElapsedMins, setGhElapsedMins] = useState(45);
+  const [ghReportResult, setGhReportResult] = useState<any>(null);
+
+  const [scameterInput, setScameterInput] = useState("0712345678");
+  const [scameterLookup, setScameterLookup] = useState<any>(null);
+  const [scameterWaiverSigned, setScameterWaiverSigned] = useState(false);
+
   const fetchData = async () => {
     setLoading(true);
     setError(null);
@@ -3065,6 +3111,431 @@ export const ProductionGovernanceView: React.FC<Props> = ({ currentPersona }) =>
                         </div>
                         <div className="text-[11px]">{bioSimResult.reason}</div>
                         <div className="text-[10px] font-mono font-semibold uppercase">Action: {bioSimResult.action}</div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Section 8: Global Frontier Defenses Complete (Singapore SRF, Korea FSS, Brazil MED 2.0, India 1930 & HK Scameter) */}
+            <div className="p-5 rounded-lg bg-slate-900 border border-slate-800 space-y-6">
+              <div className="border-b border-slate-800 pb-3 flex flex-wrap items-center justify-between gap-4">
+                <div>
+                  <h3 className="text-sm font-bold text-white flex items-center">
+                    <span className="mr-2">🌐</span> Global Frontier Defenses Complete (Singapore SRF, Korea FSS, Brazil MED 2.0, India 1930 & HK Scameter)
+                  </h3>
+                  <p className="text-xs text-slate-400 mt-1">
+                    Statutory waterfall liability arbitration, 24/7 customer panic kill switch, designated safe accounts, 30-min anti-runner ATM holds, 5-layer cascading clawbacks, Golden Hour emergency broadcasts, and liability shielding waivers.
+                  </p>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <span className="px-2 py-0.5 rounded bg-rose-950/80 border border-rose-800/60 text-[10px] text-rose-300 font-semibold">
+                    🇸🇬 24/7 Kill Switch & SRF
+                  </span>
+                  <span className="px-2 py-0.5 rounded bg-blue-950/80 border border-blue-800/60 text-[10px] text-blue-300 font-semibold">
+                    🇰🇷 Safe Accounts & ATM Hold
+                  </span>
+                  <span className="px-2 py-0.5 rounded bg-amber-950/80 border border-amber-800/60 text-[10px] text-amber-300 font-semibold">
+                    🇧🇷 MED 2.0 5-Layer
+                  </span>
+                  <span className="px-2 py-0.5 rounded bg-purple-950/80 border border-purple-800/60 text-[10px] text-purple-300 font-semibold">
+                    🇮🇳 1930 Golden Hour
+                  </span>
+                  <span className="px-2 py-0.5 rounded bg-emerald-950/80 border border-emerald-800/60 text-[10px] text-emerald-300 font-semibold">
+                    🇭🇰 Scameter Waiver
+                  </span>
+                </div>
+              </div>
+
+              {/* 3-Column Grid for Section 8 */}
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                {/* Column 1: Singapore 24/7 Kill Switch & SRF Waterfall */}
+                <div className="p-4 rounded bg-slate-950 border border-slate-800 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-slate-200 flex items-center">
+                      <span className="mr-1.5">🚨</span> Singapore MAS SRF & Kill Switch
+                    </span>
+                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                      ksActive ? "bg-rose-900/60 text-rose-200" : "bg-slate-800 text-slate-400"
+                    }`}>
+                      {ksActive ? "KILL SWITCH ACTIVE" : "ARMED (STANDBY)"}
+                    </span>
+                  </div>
+
+                  <div className="p-3 rounded bg-slate-900 border border-slate-800 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-slate-400">Customer Emergency Panic Trigger:</span>
+                      <button
+                        onClick={() => {
+                          setKsActive(!ksActive);
+                          setKsNotice(
+                            !ksActive
+                              ? `EMERGENCY KILL SWITCH ACTIVATED: ${ksRevokedCount} OAuth sessions terminated. Outbound clearing rails hard-locked.`
+                              : "Kill switch deactivated via branch dual-custody verification."
+                          );
+                        }}
+                        className={`px-2.5 py-1 text-[11px] font-bold rounded transition ${
+                          ksActive
+                            ? "bg-slate-800 hover:bg-slate-700 text-slate-300"
+                            : "bg-rose-600 hover:bg-rose-500 text-white"
+                        }`}
+                      >
+                        {ksActive ? "Reset Panic Button" : "Trigger Panic Trigger"}
+                      </button>
+                    </div>
+                    {ksNotice && (
+                      <div className={`p-2 rounded text-[11px] ${ksActive ? "bg-rose-950/80 text-rose-300 border border-rose-800" : "bg-emerald-950/80 text-emerald-300 border border-emerald-800"}`}>
+                        {ksNotice}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Dual-Officer Deactivation Form */}
+                  <div className="p-3 rounded bg-slate-900 border border-slate-800 space-y-2">
+                    <div className="text-[11px] font-bold text-slate-300">Branch Dual-Custody Deactivation Gate</div>
+                    <div className="grid grid-cols-2 gap-2 text-[10px]">
+                      <div>
+                        <span className="text-slate-500">Maker Officer:</span>
+                        <input
+                          type="text"
+                          value={ksMaker}
+                          onChange={(e) => setKsMaker(e.target.value)}
+                          className="w-full mt-0.5 p-1 rounded bg-slate-950 border border-slate-800 text-white text-[11px]"
+                        />
+                      </div>
+                      <div>
+                        <span className="text-slate-500">Checker Officer:</span>
+                        <input
+                          type="text"
+                          value={ksChecker}
+                          onChange={(e) => setKsChecker(e.target.value)}
+                          className="w-full mt-0.5 p-1 rounded bg-slate-950 border border-slate-800 text-white text-[11px]"
+                        />
+                      </div>
+                    </div>
+                    <div className="text-[10px] text-slate-400">Branch Code: <span className="font-mono text-white">{ksBranchCode}</span> (In-Person KYC Mandatory)</div>
+                  </div>
+
+                  {/* SRF Waterfall Adjudicator */}
+                  <div className="p-3 rounded bg-slate-900 border border-slate-800 space-y-2">
+                    <div className="text-[11px] font-bold text-slate-300">MAS-IMDA SRF Waterfall Adjudication</div>
+                    <div className="space-y-1 text-xs">
+                      <label className="flex items-center text-slate-300 text-[11px]">
+                        <input
+                          type="checkbox"
+                          checked={srfBankCoolingFail}
+                          onChange={(e) => setSrfBankCoolingFail(e.target.checked)}
+                          className="mr-2 rounded border-slate-800"
+                        />
+                        Bank breached 12h token cooling duty
+                      </label>
+                      <label className="flex items-center text-slate-300 text-[11px]">
+                        <input
+                          type="checkbox"
+                          checked={srfTelcoSpoofFail}
+                          onChange={(e) => setSrfTelcoSpoofFail(e.target.checked)}
+                          className="mr-2 rounded border-slate-800"
+                        />
+                        Telco failed SMS sender ID anti-spoofing
+                      </label>
+                    </div>
+                    <button
+                      onClick={() => {
+                        let verdict = "CONSUMER_100_PERCENT";
+                        let party = "CONSUMER";
+                        let bankAmt = "0.00";
+                        let telcoAmt = "0.00";
+                        let consumerAmt = "150,000.00";
+                        if (srfBankCoolingFail && srfTelcoSpoofFail) {
+                          verdict = "SHARED_50_50_BANK_TELCO";
+                          party = "BANK & TELCO JOINT";
+                          bankAmt = "75,000.00 KES";
+                          telcoAmt = "75,000.00 KES";
+                          consumerAmt = "0.00 KES";
+                        } else if (srfBankCoolingFail) {
+                          verdict = "BANK_100_PERCENT";
+                          party = "FINANCIAL INSTITUTION";
+                          bankAmt = "150,000.00 KES";
+                          telcoAmt = "0.00 KES";
+                          consumerAmt = "0.00 KES";
+                        } else if (srfTelcoSpoofFail) {
+                          verdict = "TELCO_100_PERCENT";
+                          party = "TELECOM OPERATOR";
+                          bankAmt = "0.00 KES";
+                          telcoAmt = "150,000.00 KES";
+                          consumerAmt = "0.00 KES";
+                        }
+                        setSrfAdjudicationResult({ verdict, party, bankAmt, telcoAmt, consumerAmt });
+                      }}
+                      className="w-full py-1 text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white rounded transition"
+                    >
+                      Adjudicate Claim Waterfall
+                    </button>
+                    {srfAdjudicationResult && (
+                      <div className="p-2 rounded bg-slate-950 border border-slate-800 text-[10px] space-y-1">
+                        <div className="font-bold text-indigo-300">Verdict: {srfAdjudicationResult.verdict}</div>
+                        <div className="text-slate-400">Primary Liable: {srfAdjudicationResult.party}</div>
+                        <div className="text-slate-300">Bank Pays: {srfAdjudicationResult.bankAmt} | Telco Pays: {srfAdjudicationResult.telcoAmt}</div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Column 2: South Korea FSS Designated Safe Accounts & Delayed ATM */}
+                <div className="p-4 rounded bg-slate-950 border border-slate-800 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-slate-200 flex items-center">
+                      <span className="mr-1.5">🇰🇷</span> South Korea FSS Controls
+                    </span>
+                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-900/60 text-blue-200">
+                      입금계좌지정 & 지연인출
+                    </span>
+                  </div>
+
+                  {/* Designated Safe Accounts Registry */}
+                  <div className="p-3 rounded bg-slate-900 border border-slate-800 space-y-2">
+                    <div className="text-[11px] font-bold text-slate-300">Pre-Registered Designated Safe Accounts</div>
+                    <div className="space-y-1">
+                      {safeAccounts.map((acc) => (
+                        <div key={acc.id} className="flex justify-between items-center text-[11px] p-1.5 rounded bg-slate-950 border border-slate-800">
+                          <div>
+                            <span className="font-semibold text-white">{acc.label}</span>
+                            <div className="text-[9px] text-slate-500 font-mono">{acc.payee} ({acc.bic})</div>
+                          </div>
+                          <span className="text-[10px] text-emerald-400 font-mono font-bold">Limit: {acc.cap}</span>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="border-t border-slate-800 pt-2 space-y-1.5">
+                      <div className="text-[10px] text-slate-400">Transfer to Non-Designated Payee:</div>
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          value={safeNonDesignatedAmount}
+                          onChange={(e) => setSafeNonDesignatedAmount(e.target.value)}
+                          className="w-28 p-1 rounded bg-slate-950 border border-slate-800 text-white text-[11px]"
+                          placeholder="Amount"
+                        />
+                        <button
+                          onClick={() => {
+                            const amt = parseFloat(safeNonDesignatedAmount) || 0;
+                            if (amt > 10000) {
+                              setSafeEvalResult("STEP_UP_AUTH: Non-designated payee exceeds 10,000 KES micro-limit. Physical branch authorization required.");
+                            } else {
+                              setSafeEvalResult(`ALLOW: Transfer of ${amt} KES approved under non-designated micro-limit.`);
+                            }
+                          }}
+                          className="flex-1 py-1 text-xs font-semibold bg-blue-600 hover:bg-blue-500 text-white rounded transition"
+                        >
+                          Simulate Transfer
+                        </button>
+                      </div>
+                      {safeEvalResult && (
+                        <div className={`p-2 rounded text-[10px] ${safeEvalResult.includes("STEP_UP") ? "bg-amber-950/80 text-amber-300 border border-amber-800" : "bg-emerald-950/80 text-emerald-300 border border-emerald-800"}`}>
+                          {safeEvalResult}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Delayed ATM Cash-Out Service (30m) */}
+                  <div className="p-3 rounded bg-slate-900 border border-slate-800 space-y-2">
+                    <div className="flex justify-between items-center">
+                      <span className="text-[11px] font-bold text-slate-300">Delayed ATM Cashout (지연인출제도)</span>
+                      <span className="text-[10px] font-mono text-amber-400 font-bold">28m 45s Remaining</span>
+                    </div>
+                    <div className="text-[10px] text-slate-400">Electronic deposit of KES 120,000 received at 11:45. Mandatory 30-minute anti-runner cash withdrawal hold active.</div>
+                    <button
+                      onClick={() => {
+                        if (atmDelayedActive) {
+                          setAtmWithdrawalAttempt("ATM CASH-OUT BLOCKED: 30-minute electronic deposit hold in effect. Runner extraction intercepted.");
+                        } else {
+                          setAtmWithdrawalAttempt("ATM CASH-OUT PERMITTED: 30-minute quarantine concluded.");
+                        }
+                      }}
+                      className="w-full py-1 text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 rounded transition"
+                    >
+                      Attempt ATM Physical Cash-Out
+                    </button>
+                    {atmWithdrawalAttempt && (
+                      <div className="p-2 rounded text-[10px] bg-rose-950/80 text-rose-300 border border-rose-800">
+                        {atmWithdrawalAttempt}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Ingress Shield Switches */}
+                  <div className="p-3 rounded bg-slate-900 border border-slate-800 space-y-2">
+                    <div className="text-[11px] font-bold text-slate-300">Overseas & VPN Ingress Shield (해외IP차단)</div>
+                    <div className="flex justify-between text-xs">
+                      <label className="flex items-center text-slate-300 text-[11px]">
+                        <input
+                          type="checkbox"
+                          checked={vpnToggle}
+                          onChange={(e) => setVpnToggle(e.target.checked)}
+                          className="mr-2 rounded border-slate-800"
+                        />
+                        Commercial VPN / Tor
+                      </label>
+                      <label className="flex items-center text-slate-300 text-[11px]">
+                        <input
+                          type="checkbox"
+                          checked={overseasToggle}
+                          onChange={(e) => setOverseasToggle(e.target.checked)}
+                          className="mr-2 rounded border-slate-800"
+                        />
+                        Unregistered Overseas IP
+                      </label>
+                    </div>
+                    <button
+                      onClick={() => {
+                        if (vpnToggle) {
+                          setIngressResult("BLOCK_VPN_OR_TOR: Remote connection through anonymized VPN/Tor proxy hard-blocked.");
+                        } else if (overseasToggle) {
+                          setIngressResult("BLOCK_OVERSEAS_UNREGISTERED: Ingress from foreign subnet rejected. Branch travel registration required.");
+                        } else {
+                          setIngressResult("ALLOW: Domestic carrier residential IP reputation clean.");
+                        }
+                      }}
+                      className="w-full py-1 text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white rounded transition"
+                    >
+                      Evaluate IP Ingress
+                    </button>
+                    {ingressResult && (
+                      <div className={`p-2 rounded text-[10px] ${ingressResult.includes("BLOCK") ? "bg-rose-950/80 text-rose-300 border border-rose-800" : "bg-emerald-950/80 text-emerald-300 border border-emerald-800"}`}>
+                        {ingressResult}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Column 3: Brazil MED 2.0 5-Layer Clawback, India 1930 & HK Scameter */}
+                <div className="p-4 rounded bg-slate-950 border border-slate-800 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-slate-200 flex items-center">
+                      <span className="mr-1.5">⚡</span> MED 2.0, India 1930 & HK Scameter
+                    </span>
+                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-purple-900/60 text-purple-200">
+                      5-HOP & GOLDEN HOUR
+                    </span>
+                  </div>
+
+                  {/* Pix MED 2.0 Cascading Clawback Table */}
+                  <div className="p-3 rounded bg-slate-900 border border-slate-800 space-y-2">
+                    <div className="flex justify-between items-center text-[11px]">
+                      <span className="font-bold text-slate-300">Brazil Pix MED 2.0 Multi-Hop Cascade</span>
+                      <span className="text-[10px] text-emerald-400 font-bold">{med2ClawbackResult.recovered_amount}</span>
+                    </div>
+                    <div className="space-y-1">
+                      {med2ClawbackResult.layers.map((l: any, idx: number) => (
+                        <div key={idx} className="flex justify-between items-center text-[10px] p-1.5 rounded bg-slate-950 border border-slate-800">
+                          <div>
+                            <span className="text-slate-300 font-semibold">{l.tier}</span>
+                            <span className="text-slate-500 ml-1.5 font-mono">{l.bic}</span>
+                          </div>
+                          <div className="text-right">
+                            <span className="text-amber-300 font-mono font-bold">{l.hold}</span>
+                            <div className="text-[8px] text-slate-500">{l.status}</div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* India 1930 Golden Hour Emergency Intake */}
+                  <div className="p-3 rounded bg-slate-900 border border-slate-800 space-y-2">
+                    <div className="flex justify-between items-center text-[11px]">
+                      <span className="font-bold text-slate-300">India I4C 1930 Golden Hour Protocol</span>
+                      <span className="text-[10px] font-mono text-purple-400 font-bold">{ghElapsedMins} min elapsed</span>
+                    </div>
+                    <div className="space-y-1">
+                      <div className="flex justify-between text-[10px] text-slate-400">
+                        <span>Incident Reporting Delay:</span>
+                        <span>{ghElapsedMins} min / 120 min</span>
+                      </div>
+                      <input
+                        type="range"
+                        min="5"
+                        max="180"
+                        value={ghElapsedMins}
+                        onChange={(e) => setGhElapsedMins(parseInt(e.target.value))}
+                        className="w-full accent-purple-500"
+                      />
+                    </div>
+                    <button
+                      onClick={() => {
+                        const isGolden = ghElapsedMins <= 120;
+                        setGhReportResult({
+                          isGolden,
+                          broadcastId: isGolden ? `SW-FRZ-I4C-9901` : null,
+                          status: isGolden ? "GOLDEN_HOUR_ACTIVE" : "STANDARD_WINDOW_ACTIVE",
+                          action: isGolden
+                            ? "BROADCAST_DISPATCHED: Clearing switch freeze transmitted across all receiving FIs."
+                            : "STANDARD_PROCESSING: Historical investigation queue activated.",
+                        });
+                      }}
+                      className="w-full py-1 text-xs font-semibold bg-purple-600 hover:bg-purple-500 text-white rounded transition"
+                    >
+                      Submit 1930 Emergency Intake
+                    </button>
+                    {ghReportResult && (
+                      <div className={`p-2 rounded text-[10px] ${ghReportResult.isGolden ? "bg-purple-950/80 text-purple-300 border border-purple-800" : "bg-slate-950 text-slate-400 border border-slate-800"}`}>
+                        <div className="font-bold">Status: {ghReportResult.status}</div>
+                        <div>{ghReportResult.action}</div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Hong Kong FPS Scameter Shield */}
+                  <div className="p-3 rounded bg-slate-900 border border-slate-800 space-y-2">
+                    <div className="text-[11px] font-bold text-slate-300">HK FPS Scameter & Liability Shield</div>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={scameterInput}
+                        onChange={(e) => setScameterInput(e.target.value)}
+                        className="flex-1 p-1 rounded bg-slate-950 border border-slate-800 text-white text-[11px]"
+                        placeholder="Proxy (Phone/Email)"
+                      />
+                      <button
+                        onClick={() => {
+                          if (scameterInput.includes("0712345678")) {
+                            setScameterLookup({
+                              risk: "HIGH_RISK_POLICE_RECORD",
+                              policeCase: "HKPF-CYBER-9912",
+                              warning: "CRITICAL: Police Scam Record Detected. Recipient flagged in confirmed cybercrime dossier.",
+                            });
+                          } else {
+                            setScameterLookup({
+                              risk: "CLEAR",
+                              policeCase: null,
+                              warning: "No active police crime reports linked to proxy ID.",
+                            });
+                          }
+                        }}
+                        className="py-1 px-2 text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 rounded transition"
+                      >
+                        Lookup
+                      </button>
+                    </div>
+
+                    {scameterLookup && (
+                      <div className="p-2 rounded text-[10px] bg-rose-950/80 text-rose-300 border border-rose-800 space-y-1.5">
+                        <div className="font-bold flex justify-between">
+                          <span>{scameterLookup.risk}</span>
+                          <span className="font-mono">{scameterLookup.policeCase}</span>
+                        </div>
+                        <div className="text-[9px]">{scameterLookup.warning}</div>
+                        {scameterLookup.risk === "HIGH_RISK_POLICE_RECORD" && (
+                          <button
+                            onClick={() => setScameterWaiverSigned(true)}
+                            className="w-full py-1 text-[10px] font-bold bg-rose-700 hover:bg-rose-600 text-white rounded transition"
+                          >
+                            {scameterWaiverSigned ? "Liability Waiver Signed (Bank Shielded)" : "Sign Statutory Liability Waiver"}
+                          </button>
+                        )}
                       </div>
                     )}
                   </div>

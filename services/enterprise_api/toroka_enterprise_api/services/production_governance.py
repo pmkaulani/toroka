@@ -181,6 +181,36 @@ from toroka_enterprise.intelligence.behavioral_biometrics import (
     BiometricsTelemetry,
     BiometricsVerdict,
 )
+from toroka_enterprise.governance.srf_liability import (
+    SrfWaterfallAdjudicator,
+    SrfBankDuties,
+    SrfTelcoDuties,
+    CustomerKillSwitchEngine,
+    CustomerKillSwitchStatus,
+    CustomerKillSwitchChannel,
+)
+from toroka_enterprise.governance.safe_accounts_and_limits import (
+    DesignatedSafeAccountEngine,
+    DelayedAtmCashoutEngine,
+    IpIngressShieldEngine,
+    IngressShieldTelemetry,
+    IngressShieldVerdict,
+    LimitCoolingEngine,
+    PayeeFrictionEngine,
+)
+from toroka_enterprise.integrations.med2_clawback import (
+    Med2CascadingClawbackEngine,
+    Med2DisbursementEdge,
+    Med2HopTier,
+)
+from toroka_enterprise.integrations.golden_hour_intake import (
+    GoldenHourInterceptorEngine,
+    TargetRecipientDirective,
+)
+from toroka_enterprise.governance.scameter_shield import (
+    FpsScameterShieldEngine,
+    ScameterRiskLevel,
+)
 from toroka_enterprise.intelligence.copilot.contracts import (
     ClaimKind,
     EvidenceContext,
@@ -220,6 +250,13 @@ from toroka_enterprise.intelligence.models import (
     SuspensionAuditRecord,
     TelecomScamSignalRecord,
     ValidationRunRecord,
+    CustomerKillSwitchRecord,
+    DesignatedSafeAccountRecord,
+    AtmDelayedWithdrawalRecord,
+    LimitIncreaseRequestRecord,
+    Med2ClawbackTraceRecord,
+    GoldenHourReportRecord,
+    ScameterShieldWaiverRecord,
 )
 
 from ..governance_schemas import (
@@ -288,6 +325,28 @@ from ..governance_schemas import (
     ValidationRunResponse,
     VerifyArtifactRequest,
     VerifyArtifactResponse,
+    SrfAdjudicationRequest,
+    SrfAdjudicationResponse,
+    CustomerKillSwitchActivateRequest,
+    CustomerKillSwitchDeactivateRequest,
+    CustomerKillSwitchResponse,
+    SafeAccountRegisterRequest,
+    SafeAccountResponse,
+    AtmDepositInboundRequest,
+    AtmWithdrawalEvaluateRequest,
+    AtmWithdrawalEvaluateResponse,
+    LimitIncreaseRequestCreate,
+    LimitIncreaseResponse,
+    Med2CascadeTraceRequest,
+    Med2CascadeTraceResponse,
+    Med2HopEdgeInput,
+    GoldenHourReportCreateRequest,
+    GoldenHourReportResponse,
+    TargetRecipientInput,
+    ScameterLookupRequest,
+    ScameterLookupResponse,
+    ScameterWaiverCreateRequest,
+    ScameterWaiverResponse,
 )
 from ..persistence.audit import append_audit, verify_audit_chain
 from ..persistence.models import EnterpriseCase
@@ -3832,8 +3891,123 @@ class ProductionGovernanceService:
                     decision_str = "STEP_UP_AUTH"
                     rec_action = "INTERRUPT_WITH_COACHING_WARNING_MODAL"
 
-        # 5. Phase 15.1: Precautionary Hold (Bloqueio Cautelar 72h) Trigger
-        if decision_str == "BLOCK" or risk_score_val >= 0.85 or is_rat or is_money_lock_br:
+        # Phase 16 Variables
+        is_kill_switch_active_val = False
+        is_safe_payee_val = None
+        safe_accounts_breach_val = False
+        ip_ingress_verdict_val = None
+        accord_delay_hours_val = 0
+        accord_warning_message_val = None
+        scameter_risk_level_val = None
+        is_scameter_shielded_val = False
+
+        # 5. Phase 16.0: Singapore MAS 24/7 Customer Kill Switch Check
+        if request.check_kill_switch:
+            ks_rec = self.session.execute(
+                select(CustomerKillSwitchRecord).where(
+                    CustomerKillSwitchRecord.installation_id == self.installation_id,
+                    CustomerKillSwitchRecord.account_id == transfer.debtor.account_number,
+                    CustomerKillSwitchRecord.status == "ACTIVE",
+                )
+            ).scalar_one_or_none()
+            if ks_rec:
+                is_kill_switch_active_val = True
+                decision_str = "BLOCK"
+                risk_score_val = 1.0
+                risk_tier_str = "CRITICAL"
+                rules_list.append("CUSTOMER_24_7_EMERGENCY_KILL_SWITCH_ACTIVE")
+                rec_action = (
+                    f"HARD_BLOCK_24_7_KILL_SWITCH: Outbound clearing rejected for account {transfer.debtor.account_number}. "
+                    f"Customer emergency kill switch is active (initiated via {ks_rec.channel_initiated}). "
+                    f"Physical branch maker-checker dual-custody verification required to deactivate."
+                )
+
+        # 6. Phase 16.1: South Korea FSS Designated Safe Accounts
+        if request.enforce_safe_accounts:
+            safe_rec = self.session.execute(
+                select(DesignatedSafeAccountRecord).where(
+                    DesignatedSafeAccountRecord.installation_id == self.installation_id,
+                    DesignatedSafeAccountRecord.account_id == transfer.debtor.account_number,
+                    DesignatedSafeAccountRecord.payee_account == transfer.creditor.account_number,
+                    DesignatedSafeAccountRecord.is_active == True,
+                )
+            ).scalar_one_or_none()
+            if safe_rec:
+                is_safe_payee_val = True
+            else:
+                is_safe_payee_val = False
+                if transfer.amount > Decimal("10000.00"):
+                    safe_accounts_breach_val = True
+                    rules_list.append("NON_DESIGNATED_SAFE_ACCOUNT_MICRO_LIMIT_EXCEEDED")
+                    if decision_str in ("PROCEED", "ALLOW"):
+                        decision_str = "STEP_UP_AUTH"
+                        rec_action = "STEP_UP_BRANCH_NON_DESIGNATED_SAFE_ACCOUNT_LIMIT"
+
+        # 7. Phase 16.1: South Korea & Global Ingress Shield (VPN / Tor / Overseas)
+        if request.check_ip_ingress or request.is_vpn or request.is_tor or request.is_datacenter_proxy or (request.client_country_code and request.client_country_code != "KE"):
+            shield_telemetry = IngressShieldTelemetry(
+                client_ip=request.client_ip or "127.0.0.1",
+                country_code=request.client_country_code or "KE",
+                is_vpn=request.is_vpn,
+                is_tor=request.is_tor,
+                is_datacenter_proxy=request.is_datacenter_proxy,
+                registered_overseas_travel=request.registered_overseas_travel,
+                customer_home_country="KE",
+            )
+            v_res, v_reason = IpIngressShieldEngine.evaluate_ingress(shield_telemetry)
+            ip_ingress_verdict_val = v_res.value
+            if v_res in (IngressShieldVerdict.BLOCK_VPN_OR_TOR, IngressShieldVerdict.BLOCK_DATACENTER_PROXY):
+                decision_str = "BLOCK"
+                risk_score_val = max(risk_score_val, 0.95)
+                risk_tier_str = "CRITICAL"
+                rules_list.append(f"INGRESS_SHIELD_{v_res.value}")
+                rec_action = f"HARD_BLOCK_INGRESS_PROXY: {v_reason}"
+            elif v_res == IngressShieldVerdict.BLOCK_OVERSEAS_UNREGISTERED:
+                rules_list.append("OVERSEAS_IP_UNREGISTERED_SOUTH_KOREA_MODEL")
+                risk_score_val = max(risk_score_val, 0.85)
+                if decision_str in ("PROCEED", "ALLOW"):
+                    decision_str = "STEP_UP_AUTH"
+                    rec_action = "STEP_UP_OVERSEAS_TRAVEL_VERIFICATION"
+
+        # 8. Phase 16.2: Australia NASC Scam-Safe Accord First-Time Payee Settlement Delays
+        if request.enforce_accord_delay and request.is_first_time_payee:
+            accord_res = PayeeFrictionEngine.evaluate_settlement_delay(
+                account_id=transfer.debtor.account_number,
+                payee_account=transfer.creditor.account_number,
+                amount=transfer.amount,
+                is_first_time_payee=True,
+            )
+            if accord_res.is_delayed:
+                accord_delay_hours_val = accord_res.delay_hours
+                accord_warning_message_val = accord_res.contextual_warning_message
+                rules_list.append(f"AUSTRALIA_ACCORD_DELAY_{accord_res.delay_hours}H_FIRST_TIME_PAYEE")
+                if decision_str in ("PROCEED", "ALLOW"):
+                    decision_str = "DELAY_SETTLEMENT_15M"
+                    rec_action = f"DELAY_SETTLEMENT_{accord_res.delay_hours}H_NASC_ACCORD"
+
+        # 9. Phase 16.4: Hong Kong FPS Scameter High-Risk Proxy Warning & Shield
+        if request.check_scameter and request.scameter_proxy_id:
+            if request.scameter_waiver_id:
+                w_rec = self.session.execute(
+                    select(ScameterShieldWaiverRecord).where(
+                        ScameterShieldWaiverRecord.installation_id == self.installation_id,
+                        ScameterShieldWaiverRecord.waiver_id == request.scameter_waiver_id,
+                    )
+                ).scalar_one_or_none()
+                if w_rec:
+                    is_scameter_shielded_val = True
+                    rules_list.append("FPS_SCAMETER_STATUTORY_LIABILITY_WAIVER_EXECUTED")
+            else:
+                if any(k in request.scameter_proxy_id.lower() for k in ("police", "999", "scam", "fraud")):
+                    scameter_risk_level_val = "HIGH_RISK_POLICE_RECORD"
+                    rules_list.append("FPS_SCAMETER_HIGH_RISK_POLICE_RECORD_HKMA")
+                    risk_score_val = max(risk_score_val, 0.92)
+                    if decision_str in ("PROCEED", "ALLOW"):
+                        decision_str = "STEP_UP_AUTH"
+                        rec_action = "PROMPT_UNSKIPPABLE_SCAMETER_WARNING_AND_WAIVER"
+
+        # 10. Precautionary Hold (Bloqueio Cautelar 72h) Trigger
+        if decision_str == "BLOCK" or risk_score_val >= 0.85 or is_rat or is_money_lock_br or is_kill_switch_active_val:
             hold_directive = PrecautionaryHoldEngine.create_precautionary_hold(
                 installation_id=self.installation_id,
                 tx_id=transfer.tx_id,
@@ -3938,6 +4112,14 @@ class ProductionGovernanceService:
             biometrics_verdict=bio_verdict,
             biometrics_risk_score=bio_risk_score,
             is_rat_detected=is_rat,
+            is_kill_switch_active=is_kill_switch_active_val,
+            is_designated_safe_payee=is_safe_payee_val,
+            safe_accounts_breach=safe_accounts_breach_val,
+            ip_ingress_verdict=ip_ingress_verdict_val,
+            accord_delay_hours=accord_delay_hours_val,
+            accord_warning_message=accord_warning_message_val,
+            scameter_risk_level=scameter_risk_level_val,
+            is_scameter_shielded=is_scameter_shielded_val,
         )
 
     def verify_confirmation_of_payee(
@@ -5133,4 +5315,545 @@ class ProductionGovernanceService:
             status=rec.status,
             enrolled_at=rec.enrolled_at.isoformat(),
         )
+
+    # ==============================================================================
+    # Phase 16.0: Singapore SRF & 24/7 Customer Emergency Kill Switch Methods
+    # ==============================================================================
+
+    def adjudicate_srf_claim(
+        self,
+        request: SrfAdjudicationRequest,
+        actor_subject: str,
+    ) -> SrfAdjudicationResponse:
+        bank_duties = SrfBankDuties(
+            enforced_token_cooling_12h=request.enforced_token_cooling_12h,
+            real_time_alert_dispatched=request.real_time_alert_dispatched,
+            kill_switch_available_24_7=request.kill_switch_available_24_7,
+            fraud_surveillance_active=request.fraud_surveillance_active,
+        )
+        telco_duties = SrfTelcoDuties(
+            checked_ssir_registry=request.checked_ssir_registry,
+            blocked_sender_id_spoofing=request.blocked_sender_id_spoofing,
+            filtered_malicious_urls=request.filtered_malicious_urls,
+        )
+        res = SrfWaterfallAdjudicator.adjudicate_phishing_loss(
+            account_id=request.account_id,
+            disputed_amount=request.disputed_amount,
+            bank_duties=bank_duties,
+            telco_duties=telco_duties,
+            consumer_gross_negligence=request.consumer_gross_negligence,
+        )
+        return SrfAdjudicationResponse(
+            claim_id=res.claim_id,
+            account_id=res.account_id,
+            disputed_amount=str(res.disputed_amount),
+            liability_verdict=res.liability_verdict.value,
+            primary_liable_party=res.primary_liable_party,
+            reimbursement_bank_amount=str(res.reimbursement_bank_amount),
+            reimbursement_telco_amount=str(res.reimbursement_telco_amount),
+            consumer_liability_amount=str(res.consumer_liability_amount),
+            identified_breaches=res.identified_breaches,
+            adjudication_timestamp=res.adjudication_timestamp.isoformat(),
+            statutory_reference=res.statutory_reference,
+        )
+
+    def activate_customer_kill_switch(
+        self,
+        account_id: str,
+        request: CustomerKillSwitchActivateRequest,
+        actor_subject: str,
+    ) -> CustomerKillSwitchResponse:
+        rec = self.session.execute(
+            select(CustomerKillSwitchRecord).where(
+                CustomerKillSwitchRecord.installation_id == self.installation_id,
+                CustomerKillSwitchRecord.account_id == account_id,
+            )
+        ).scalar_one_or_none()
+
+        now_utc = datetime.now(timezone.utc)
+        if not rec:
+            rec = CustomerKillSwitchRecord(
+                account_id=account_id,
+                installation_id=self.installation_id,
+                customer_id=f"CUST-{account_id}",
+                status="ACTIVE",
+                channel_initiated=request.channel,
+                activation_reason=request.reason,
+                revoked_sessions_count=request.active_sessions_to_revoke,
+                activated_at=now_utc,
+            )
+            self.session.add(rec)
+        else:
+            rec.status = "ACTIVE"
+            rec.channel_initiated = request.channel
+            rec.activation_reason = request.reason
+            rec.revoked_sessions_count = request.active_sessions_to_revoke
+            rec.activated_at = now_utc
+            rec.deactivated_at = None
+            rec.deactivation_maker_officer = None
+            rec.deactivation_checker_officer = None
+            rec.deactivation_branch_code = None
+
+        self.session.commit()
+        self.session.refresh(rec)
+        return CustomerKillSwitchResponse(
+            account_id=rec.account_id,
+            customer_id=rec.customer_id,
+            installation_id=rec.installation_id,
+            status=rec.status,
+            activated_at=rec.activated_at.isoformat(),
+            channel_initiated=rec.channel_initiated,
+            activation_reason=rec.activation_reason,
+            revoked_sessions_count=rec.revoked_sessions_count,
+        )
+
+    def deactivate_customer_kill_switch(
+        self,
+        account_id: str,
+        request: CustomerKillSwitchDeactivateRequest,
+        actor_subject: str,
+    ) -> CustomerKillSwitchResponse:
+        rec = self.session.execute(
+            select(CustomerKillSwitchRecord).where(
+                CustomerKillSwitchRecord.installation_id == self.installation_id,
+                CustomerKillSwitchRecord.account_id == account_id,
+            )
+        ).scalar_one_or_none()
+
+        if not rec:
+            raise HTTPException(status_code=404, detail=f"Kill switch for account {account_id} not found.")
+
+        if not request.maker_officer or not request.checker_officer:
+            raise HTTPException(status_code=422, detail="Both Maker and Checker officers required for deactivation.")
+        if request.maker_officer.strip() == request.checker_officer.strip():
+            raise HTTPException(status_code=422, detail="Maker and Checker officers must be distinct individuals.")
+        if not request.branch_code:
+            raise HTTPException(status_code=422, detail="Physical branch code required for deactivation.")
+
+        now_utc = datetime.now(timezone.utc)
+        rec.status = "INACTIVE"
+        rec.deactivated_at = now_utc
+        rec.deactivation_maker_officer = request.maker_officer.strip()
+        rec.deactivation_checker_officer = request.checker_officer.strip()
+        rec.deactivation_branch_code = request.branch_code.strip()
+        rec.deactivation_notes = request.notes
+
+        self.session.commit()
+        self.session.refresh(rec)
+        return CustomerKillSwitchResponse(
+            account_id=rec.account_id,
+            customer_id=rec.customer_id,
+            installation_id=rec.installation_id,
+            status=rec.status,
+            activated_at=rec.activated_at.isoformat(),
+            channel_initiated=rec.channel_initiated,
+            activation_reason=rec.activation_reason,
+            revoked_sessions_count=rec.revoked_sessions_count,
+            deactivated_at=rec.deactivated_at.isoformat() if rec.deactivated_at else None,
+            deactivation_maker_officer=rec.deactivation_maker_officer,
+            deactivation_checker_officer=rec.deactivation_checker_officer,
+            deactivation_branch_code=rec.deactivation_branch_code,
+        )
+
+    def get_customer_kill_switch(self, account_id: str) -> CustomerKillSwitchResponse:
+        rec = self.session.execute(
+            select(CustomerKillSwitchRecord).where(
+                CustomerKillSwitchRecord.installation_id == self.installation_id,
+                CustomerKillSwitchRecord.account_id == account_id,
+            )
+        ).scalar_one_or_none()
+        if not rec:
+            return CustomerKillSwitchResponse(
+                account_id=account_id,
+                customer_id=f"CUST-{account_id}",
+                installation_id=self.installation_id,
+                status="INACTIVE",
+            )
+        return CustomerKillSwitchResponse(
+            account_id=rec.account_id,
+            customer_id=rec.customer_id,
+            installation_id=rec.installation_id,
+            status=rec.status,
+            activated_at=rec.activated_at.isoformat(),
+            channel_initiated=rec.channel_initiated,
+            activation_reason=rec.activation_reason,
+            revoked_sessions_count=rec.revoked_sessions_count,
+            deactivated_at=rec.deactivated_at.isoformat() if rec.deactivated_at else None,
+            deactivation_maker_officer=rec.deactivation_maker_officer,
+            deactivation_checker_officer=rec.deactivation_checker_officer,
+            deactivation_branch_code=rec.deactivation_branch_code,
+        )
+
+    # ==============================================================================
+    # Phase 16.1: South Korea FSS Designated Safe Accounts & Delayed ATM Methods
+    # ==============================================================================
+
+    def register_designated_safe_account(
+        self,
+        account_id: str,
+        request: SafeAccountRegisterRequest,
+        actor_subject: str,
+    ) -> SafeAccountResponse:
+        reg_id = f"SAFE-REG-{uuid.uuid4().hex[:10].upper()}"
+        now_utc = datetime.now(timezone.utc)
+        rec = DesignatedSafeAccountRecord(
+            registration_id=reg_id,
+            installation_id=self.installation_id,
+            account_id=account_id,
+            payee_account=request.payee_account.strip(),
+            payee_institution=request.payee_institution.strip(),
+            label=request.label.strip(),
+            is_active=True,
+            registered_at=now_utc,
+        )
+        self.session.add(rec)
+        self.session.commit()
+        self.session.refresh(rec)
+        return SafeAccountResponse(
+            registration_id=rec.registration_id,
+            account_id=rec.account_id,
+            installation_id=rec.installation_id,
+            payee_account=rec.payee_account,
+            payee_institution=rec.payee_institution,
+            label=rec.label,
+            is_active=rec.is_active,
+            registered_at=rec.registered_at.isoformat(),
+        )
+
+    def list_designated_safe_accounts(self, account_id: str) -> list[SafeAccountResponse]:
+        records = self.session.execute(
+            select(DesignatedSafeAccountRecord).where(
+                DesignatedSafeAccountRecord.installation_id == self.installation_id,
+                DesignatedSafeAccountRecord.account_id == account_id,
+                DesignatedSafeAccountRecord.is_active == True,
+            )
+        ).scalars().all()
+        return [
+            SafeAccountResponse(
+                registration_id=r.registration_id,
+                account_id=r.account_id,
+                installation_id=r.installation_id,
+                payee_account=r.payee_account,
+                payee_institution=r.payee_institution,
+                label=r.label,
+                is_active=r.is_active,
+                registered_at=r.registered_at.isoformat(),
+            )
+            for r in records
+        ]
+
+    def record_atm_inbound_deposit(
+        self,
+        account_id: str,
+        request: AtmDepositInboundRequest,
+        actor_subject: str,
+    ) -> AtmWithdrawalEvaluateResponse:
+        now_utc = datetime.now(timezone.utc)
+        threshold = Decimal("50000.00")
+        if request.amount >= threshold:
+            hold_id = f"ATM-HOLD-{uuid.uuid4().hex[:10].upper()}"
+            expiry = now_utc + timedelta(minutes=30)
+            rec = AtmDelayedWithdrawalRecord(
+                hold_id=hold_id,
+                installation_id=self.installation_id,
+                account_id=account_id,
+                inbound_amount=request.amount,
+                inbound_reference=request.reference,
+                credit_timestamp=now_utc,
+                hold_expiry_timestamp=expiry,
+                status="ACTIVE_HOLD",
+            )
+            self.session.add(rec)
+            self.session.commit()
+            return AtmWithdrawalEvaluateResponse(
+                account_id=account_id,
+                allowed=False,
+                reason=f"Electronic deposit of {request.amount} triggered South Korea FSS 30-minute anti-runner ATM hold.",
+                hold_id=hold_id,
+                inbound_amount=str(request.amount),
+                hold_expiry_timestamp=expiry.isoformat(),
+            )
+        return AtmWithdrawalEvaluateResponse(
+            account_id=account_id,
+            allowed=True,
+            reason="Inbound amount below ATM hold threshold",
+        )
+
+    def evaluate_atm_withdrawal(
+        self,
+        account_id: str,
+        request: AtmWithdrawalEvaluateRequest,
+        actor_subject: str,
+    ) -> AtmWithdrawalEvaluateResponse:
+        now_utc = datetime.now(timezone.utc)
+        active_holds = self.session.execute(
+            select(AtmDelayedWithdrawalRecord).where(
+                AtmDelayedWithdrawalRecord.installation_id == self.installation_id,
+                AtmDelayedWithdrawalRecord.account_id == account_id,
+                AtmDelayedWithdrawalRecord.status == "ACTIVE_HOLD",
+            )
+        ).scalars().all()
+
+        for hold in active_holds:
+            hold_exp = hold.hold_expiry_timestamp
+            if hold_exp.tzinfo is None:
+                hold_exp = hold_exp.replace(tzinfo=timezone.utc)
+            if now_utc < hold_exp:
+                mins_left = max(1, int((hold_exp - now_utc).total_seconds() / 60))
+                return AtmWithdrawalEvaluateResponse(
+                    account_id=account_id,
+                    allowed=False,
+                    reason=(
+                        f"ATM cash withdrawal blocked: South Korea FSS Delayed Withdrawal Service (지연인출제도) active. "
+                        f"Mandatory 30-minute anti-runner quarantine in effect. {mins_left} minutes remaining."
+                    ),
+                    hold_id=hold.hold_id,
+                    inbound_amount=str(hold.inbound_amount),
+                    hold_expiry_timestamp=hold_exp.isoformat(),
+                )
+            else:
+                hold.status = "EXPIRED_RELEASED"
+
+        self.session.commit()
+        return AtmWithdrawalEvaluateResponse(
+            account_id=account_id,
+            allowed=True,
+            reason="ATM withdrawal authorized (no active quarantine holds)",
+        )
+
+    # ==============================================================================
+    # Phase 16.2: Brazil BCB Limit Increase Cooling-off & Pix MED 2.0 Methods
+    # ==============================================================================
+
+    def request_limit_increase(
+        self,
+        account_id: str,
+        request: LimitIncreaseRequestCreate,
+        actor_subject: str,
+    ) -> LimitIncreaseResponse:
+        now_utc = datetime.now(timezone.utc)
+        effective = now_utc + timedelta(hours=24)
+        req_id = f"LIM-REQ-{uuid.uuid4().hex[:10].upper()}"
+
+        rec = LimitIncreaseRequestRecord(
+            request_id=req_id,
+            installation_id=self.installation_id,
+            account_id=account_id,
+            limit_type=request.limit_type,
+            current_limit=Decimal("50000.00"),
+            requested_limit=request.requested_limit,
+            requested_at=now_utc,
+            effective_at=effective,
+            is_cancelled=False,
+        )
+        self.session.add(rec)
+        self.session.commit()
+        self.session.refresh(rec)
+
+        return LimitIncreaseResponse(
+            request_id=rec.request_id,
+            account_id=rec.account_id,
+            limit_type=rec.limit_type,
+            current_limit=f"{rec.current_limit:.2f}",
+            requested_limit=f"{rec.requested_limit:.2f}",
+            requested_at=rec.requested_at.isoformat(),
+            effective_at=rec.effective_at.isoformat(),
+            is_cooling=True,
+            status_message=f"Mandatory 24h statutory cooling-off active under Brazil BCB Limite Noturno framework. Activates at {effective.isoformat()}.",
+        )
+
+    def execute_med2_cascade_clawback(
+        self,
+        request: Med2CascadeTraceRequest,
+        actor_subject: str,
+    ) -> Med2CascadeTraceResponse:
+        incident_dt = datetime.fromisoformat(request.incident_timestamp.replace("Z", "+00:00"))
+        domain_edges: list[Med2DisbursementEdge] = []
+        for e in request.edges:
+            edge_ts = datetime.fromisoformat(e.timestamp.replace("Z", "+00:00")) if e.timestamp else incident_dt
+            domain_edges.append(
+                Med2DisbursementEdge(
+                    edge_id=e.edge_id,
+                    source_account=e.source_account,
+                    target_account=e.target_account,
+                    target_institution_bic=e.target_institution_bic,
+                    amount=e.amount,
+                    timestamp=edge_ts,
+                    hop_tier=Med2HopTier(e.hop_tier),
+                )
+            )
+
+        report = Med2CascadingClawbackEngine.execute_med2_cascade_clawback(
+            original_tx_id=request.original_tx_id,
+            victim_account=request.victim_account,
+            total_stolen_amount=request.total_stolen_amount,
+            incident_timestamp=incident_dt,
+            edges=domain_edges,
+            account_balances=dict(request.account_balances),
+        )
+
+        trace_rec = Med2ClawbackTraceRecord(
+            contestation_id=report.contestation_id,
+            installation_id=self.installation_id,
+            original_tx_id=report.original_tx_id,
+            victim_account=report.victim_account,
+            total_stolen_amount=report.total_stolen_amount,
+            total_clawback_holds_placed=report.total_clawback_holds_placed,
+            recovery_rate_pct=report.recovery_rate_pct,
+            reported_at=report.reported_at,
+            hops_payload=[h.to_dict() for h in report.hops],
+            status="RESOLVED",
+        )
+        self.session.add(trace_rec)
+        self.session.commit()
+
+        return Med2CascadeTraceResponse(
+            contestation_id=report.contestation_id,
+            original_tx_id=report.original_tx_id,
+            victim_account=report.victim_account,
+            total_stolen_amount=str(report.total_stolen_amount),
+            reported_at=report.reported_at.isoformat(),
+            is_within_80_day_window=report.is_within_80_day_window,
+            total_clawback_holds_placed=str(report.total_clawback_holds_placed),
+            recovery_rate_pct=report.recovery_rate_pct,
+            hops=[h.to_dict() for h in report.hops],
+            statutory_basis=report.statutory_basis,
+        )
+
+    # ==============================================================================
+    # Phase 16.3: India I4C Helpline 1930 Golden Hour Methods
+    # ==============================================================================
+
+    def submit_golden_hour_report(
+        self,
+        request: GoldenHourReportCreateRequest,
+        actor_subject: str,
+    ) -> GoldenHourReportResponse:
+        inc_dt = datetime.fromisoformat(request.incident_timestamp.replace("Z", "+00:00"))
+        targets = [
+            TargetRecipientDirective(
+                recipient_account=t.recipient_account,
+                recipient_institution_bic=t.recipient_institution_bic,
+                amount_flagged=t.amount_flagged,
+                freeze_action=t.freeze_action,
+            )
+            for t in request.target_recipients
+        ]
+
+        report = GoldenHourInterceptorEngine.ingest_emergency_report(
+            victim_account_id=request.victim_account_id,
+            victim_phone=request.victim_phone,
+            scam_category=request.scam_category,
+            incident_time=inc_dt,
+            reported_time=datetime.now(timezone.utc),
+            total_amount_lost=request.total_amount_lost,
+            transaction_references=request.transaction_references,
+            target_recipients=targets,
+        )
+
+        rec = GoldenHourReportRecord(
+            report_id=report.report_id,
+            installation_id=self.installation_id,
+            victim_account_id=report.victim_account_id,
+            victim_phone=report.victim_phone,
+            scam_category=report.scam_category,
+            incident_timestamp=report.incident_timestamp,
+            reported_timestamp=report.reported_timestamp,
+            elapsed_minutes=report.elapsed_minutes,
+            is_golden_hour=report.is_golden_hour,
+            total_amount_lost=report.total_amount_lost,
+            transaction_references=report.transaction_references,
+            switch_freeze_broadcast_id=report.switch_freeze_broadcast_id,
+            switch_status=report.switch_status.value,
+        )
+        self.session.add(rec)
+        self.session.commit()
+
+        return GoldenHourReportResponse(
+            report_id=report.report_id,
+            victim_account_id=report.victim_account_id,
+            victim_phone=report.victim_phone,
+            scam_category=report.scam_category,
+            incident_timestamp=report.incident_timestamp.isoformat(),
+            reported_timestamp=report.reported_timestamp.isoformat(),
+            elapsed_minutes=report.elapsed_minutes,
+            is_golden_hour=report.is_golden_hour,
+            status=report.status.value,
+            total_amount_lost=str(report.total_amount_lost),
+            transaction_references=report.transaction_references,
+            target_recipients_count=len(report.target_recipients),
+            switch_freeze_broadcast_id=report.switch_freeze_broadcast_id,
+            switch_status=report.switch_status.value,
+            statutory_authority=report.statutory_authority,
+        )
+
+    # ==============================================================================
+    # Phase 16.4: Hong Kong FPS Scameter Methods
+    # ==============================================================================
+
+    def lookup_scameter_proxy(
+        self,
+        request: ScameterLookupRequest,
+        actor_subject: str,
+    ) -> ScameterLookupResponse:
+        engine = FpsScameterShieldEngine()
+        engine.register_police_proxy("0712345678", ScameterRiskLevel.HIGH_RISK_POLICE_RECORD, "HKPF-CR-2026-9921")
+        engine.register_police_proxy("suspect@scam.com", ScameterRiskLevel.HIGH_RISK_POLICE_RECORD, "HKPF-CR-2026-1188")
+        engine.register_police_proxy("0722000000", ScameterRiskLevel.SUSPICIOUS_HIGH_FREQUENCY, "HKPF-WARN-8842")
+
+        res = engine.lookup_proxy(request.proxy_id, request.proxy_type)
+        return ScameterLookupResponse(
+            proxy_id=res.proxy_id,
+            proxy_type=res.proxy_type,
+            risk_level=res.risk_level.value,
+            police_report_reference=res.police_report_reference,
+            unskippable_warning_required=res.unskippable_warning_required,
+            warning_title=res.warning_title,
+            warning_body=res.warning_body,
+            requires_liability_waiver=res.requires_liability_waiver,
+        )
+
+    def execute_scameter_waiver(
+        self,
+        request: ScameterWaiverCreateRequest,
+        actor_subject: str,
+    ) -> ScameterWaiverResponse:
+        engine = FpsScameterShieldEngine()
+        waiver = engine.execute_statutory_waiver(
+            account_id=request.account_id,
+            customer_id=request.customer_id,
+            proxy_id=request.proxy_id,
+            risk_level=ScameterRiskLevel(request.risk_level),
+            transfer_amount=request.transfer_amount,
+            customer_consent_ack=request.customer_consent_ack,
+        )
+
+        rec = ScameterShieldWaiverRecord(
+            waiver_id=waiver.waiver_id,
+            installation_id=self.installation_id,
+            account_id=waiver.account_id,
+            customer_id=waiver.customer_id,
+            proxy_id=waiver.proxy_id,
+            risk_level=waiver.risk_level.value,
+            transfer_amount=waiver.transfer_amount,
+            signed_timestamp=waiver.signed_timestamp,
+            waiver_hash=waiver.waiver_hash,
+            is_institution_shielded=True,
+        )
+        self.session.add(rec)
+        self.session.commit()
+
+        return ScameterWaiverResponse(
+            waiver_id=waiver.waiver_id,
+            account_id=waiver.account_id,
+            customer_id=waiver.customer_id,
+            proxy_id=waiver.proxy_id,
+            risk_level=waiver.risk_level.value,
+            transfer_amount=str(waiver.transfer_amount),
+            signed_timestamp=waiver.signed_timestamp.isoformat(),
+            waiver_hash=waiver.waiver_hash,
+            is_institution_shielded=waiver.is_institution_shielded,
+            statutory_framework=waiver.statutory_framework,
+        )
+
 

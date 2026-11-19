@@ -577,6 +577,21 @@ class InflightPaymentEvaluationRequest(BaseModel):
     biometrics_is_remote_software: bool | None = None
     biometrics_hesitation_ms: int | None = None
     biometrics_backspaces: int | None = None
+    # Phase 16.0 Global Frontier Defenses Complete Extensions
+    check_kill_switch: bool = True
+    enforce_safe_accounts: bool = False
+    check_ip_ingress: bool = False
+    client_ip: str | None = None
+    client_country_code: str | None = None
+    is_vpn: bool = False
+    is_tor: bool = False
+    is_datacenter_proxy: bool = False
+    registered_overseas_travel: bool = False
+    enforce_accord_delay: bool = False
+    is_first_time_payee: bool = False
+    check_scameter: bool = False
+    scameter_proxy_id: str | None = None
+    scameter_waiver_id: str | None = None
 
 
 class InflightPaymentEvaluationResponse(BaseModel):
@@ -620,6 +635,15 @@ class InflightPaymentEvaluationResponse(BaseModel):
     biometrics_verdict: str | None = None
     biometrics_risk_score: float | None = None
     is_rat_detected: bool = False
+    # Phase 16 Global Frontier Complete Outputs
+    is_kill_switch_active: bool = False
+    is_designated_safe_payee: bool | None = None
+    safe_accounts_breach: bool = False
+    ip_ingress_verdict: str | None = None
+    accord_delay_hours: int = 0
+    accord_warning_message: str | None = None
+    scameter_risk_level: str | None = None
+    is_scameter_shielded: bool = False
 
 
 # ==============================================================================
@@ -931,6 +955,234 @@ class SimBindingEnrollResponse(BaseModel):
     enrolled_at: str
 
 
+# ==============================================================================
+# Phase 16.0: Singapore SRF & 24/7 Customer Kill Switch Schemas
+# ==============================================================================
+
+class SrfAdjudicationRequest(BaseModel):
+    account_id: str
+    disputed_amount: Decimal
+    enforced_token_cooling_12h: bool = True
+    real_time_alert_dispatched: bool = True
+    kill_switch_available_24_7: bool = True
+    fraud_surveillance_active: bool = True
+    checked_ssir_registry: bool = True
+    blocked_sender_id_spoofing: bool = True
+    filtered_malicious_urls: bool = True
+    consumer_gross_negligence: bool = False
 
 
+class SrfAdjudicationResponse(BaseModel):
+    claim_id: str
+    account_id: str
+    disputed_amount: str
+    liability_verdict: str
+    primary_liable_party: str
+    reimbursement_bank_amount: str
+    reimbursement_telco_amount: str
+    consumer_liability_amount: str
+    identified_breaches: list[str]
+    adjudication_timestamp: str
+    statutory_reference: str
+
+
+class CustomerKillSwitchActivateRequest(BaseModel):
+    channel: Literal["MOBILE_PANIC_BUTTON", "WEB_EMERGENCY_PORTAL", "IVR_HOTLINE_AUTO", "BRANCH_OFFICER_OVERRIDE"] = "MOBILE_PANIC_BUTTON"
+    reason: str = "Suspected unauthorized account access / remote takeover"
+    active_sessions_to_revoke: int = 1
+
+
+class CustomerKillSwitchDeactivateRequest(BaseModel):
+    maker_officer: str
+    checker_officer: str
+    branch_code: str
+    notes: str = "Physical customer in-branch identity verification passed"
+
+
+class CustomerKillSwitchResponse(BaseModel):
+    account_id: str
+    customer_id: str
+    installation_id: str
+    status: str
+    activated_at: str | None = None
+    channel_initiated: str | None = None
+    activation_reason: str | None = None
+    revoked_sessions_count: int = 0
+    deactivated_at: str | None = None
+    deactivation_maker_officer: str | None = None
+    deactivation_checker_officer: str | None = None
+    deactivation_branch_code: str | None = None
+
+
+# ==============================================================================
+# Phase 16.1: South Korea FSS Designated Safe Accounts & Delayed ATM Schemas
+# ==============================================================================
+
+class SafeAccountRegisterRequest(BaseModel):
+    payee_account: str
+    payee_institution: str = "Safaricom"
+    label: str
+
+
+class SafeAccountResponse(BaseModel):
+    registration_id: str
+    account_id: str
+    installation_id: str
+    payee_account: str
+    payee_institution: str
+    label: str
+    is_active: bool
+    registered_at: str
+
+
+class AtmDepositInboundRequest(BaseModel):
+    amount: Decimal
+    reference: str
+
+
+class AtmWithdrawalEvaluateRequest(BaseModel):
+    amount: Decimal
+
+
+class AtmWithdrawalEvaluateResponse(BaseModel):
+    account_id: str
+    allowed: bool
+    reason: str
+    hold_id: str | None = None
+    inbound_amount: str | None = None
+    hold_expiry_timestamp: str | None = None
+
+
+# ==============================================================================
+# Phase 16.2: Brazil BCB Limit Increase Cooling-off & Pix MED 2.0 Schemas
+# ==============================================================================
+
+class LimitIncreaseRequestCreate(BaseModel):
+    limit_type: Literal["DAILY_P2P", "NIGHTTIME", "SINGLE_TX"] = "DAILY_P2P"
+    requested_limit: Decimal
+
+
+class LimitIncreaseResponse(BaseModel):
+    request_id: str
+    account_id: str
+    limit_type: str
+    current_limit: str
+    requested_limit: str
+    requested_at: str
+    effective_at: str
+    is_cooling: bool
+    status_message: str
+
+
+class Med2HopEdgeInput(BaseModel):
+    edge_id: str
+    source_account: str
+    target_account: str
+    target_institution_bic: str
+    amount: Decimal
+    hop_tier: int  # 1 to 5
+    timestamp: str | None = None
+
+
+class Med2CascadeTraceRequest(BaseModel):
+    original_tx_id: str
+    victim_account: str
+    total_stolen_amount: Decimal
+    incident_timestamp: str
+    edges: list[Med2HopEdgeInput]
+    account_balances: dict[str, Decimal]
+
+
+class Med2CascadeTraceResponse(BaseModel):
+    contestation_id: str
+    original_tx_id: str
+    victim_account: str
+    total_stolen_amount: str
+    reported_at: str
+    is_within_80_day_window: bool
+    total_clawback_holds_placed: str
+    recovery_rate_pct: float
+    hops: list[dict[str, Any]]
+    statutory_basis: str
+
+
+# ==============================================================================
+# Phase 16.3: India I4C Helpline 1930 Golden Hour Schemas
+# ==============================================================================
+
+class TargetRecipientInput(BaseModel):
+    recipient_account: str
+    recipient_institution_bic: str
+    amount_flagged: Decimal
+    freeze_action: str = "LOCK_ALL_OUTBOUND_AND_ATM"
+
+
+class GoldenHourReportCreateRequest(BaseModel):
+    victim_account_id: str
+    victim_phone: str
+    scam_category: str
+    incident_timestamp: str
+    total_amount_lost: Decimal
+    transaction_references: list[str]
+    target_recipients: list[TargetRecipientInput]
+
+
+class GoldenHourReportResponse(BaseModel):
+    report_id: str
+    victim_account_id: str
+    victim_phone: str
+    scam_category: str
+    incident_timestamp: str
+    reported_timestamp: str
+    elapsed_minutes: float
+    is_golden_hour: bool
+    status: str
+    total_amount_lost: str
+    transaction_references: list[str]
+    target_recipients_count: int
+    switch_freeze_broadcast_id: str | None = None
+    switch_status: str
+    statutory_authority: str
+
+
+# ==============================================================================
+# Phase 16.4: Hong Kong FPS Scameter Schemas
+# ==============================================================================
+
+class ScameterLookupRequest(BaseModel):
+    proxy_id: str
+    proxy_type: Literal["PHONE", "EMAIL", "ACCOUNT", "NATIONAL_ID"] = "PHONE"
+
+
+class ScameterLookupResponse(BaseModel):
+    proxy_id: str
+    proxy_type: str
+    risk_level: str
+    police_report_reference: str | None = None
+    unskippable_warning_required: bool
+    warning_title: str
+    warning_body: str
+    requires_liability_waiver: bool
+
+
+class ScameterWaiverCreateRequest(BaseModel):
+    account_id: str
+    customer_id: str
+    proxy_id: str
+    risk_level: str
+    transfer_amount: Decimal
+    customer_consent_ack: bool = True
+
+
+class ScameterWaiverResponse(BaseModel):
+    waiver_id: str
+    account_id: str
+    customer_id: str
+    proxy_id: str
+    risk_level: str
+    transfer_amount: str
+    signed_timestamp: str
+    waiver_hash: str
+    is_institution_shielded: bool
+    statutory_framework: str
 

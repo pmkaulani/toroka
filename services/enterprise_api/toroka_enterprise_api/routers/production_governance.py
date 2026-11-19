@@ -62,6 +62,26 @@ from ..governance_schemas import (
     SignArtifactRequest,
     SimBindingEnrollRequest,
     SimBindingEnrollResponse,
+    SrfAdjudicationRequest,
+    SrfAdjudicationResponse,
+    CustomerKillSwitchActivateRequest,
+    CustomerKillSwitchDeactivateRequest,
+    CustomerKillSwitchResponse,
+    SafeAccountRegisterRequest,
+    SafeAccountResponse,
+    AtmDepositInboundRequest,
+    AtmWithdrawalEvaluateRequest,
+    AtmWithdrawalEvaluateResponse,
+    LimitIncreaseRequestCreate,
+    LimitIncreaseResponse,
+    Med2CascadeTraceRequest,
+    Med2CascadeTraceResponse,
+    GoldenHourReportCreateRequest,
+    GoldenHourReportResponse,
+    ScameterLookupRequest,
+    ScameterLookupResponse,
+    ScameterWaiverCreateRequest,
+    ScameterWaiverResponse,
     SuspendComponentRequest,
     SuspensionRecordResponse,
     SystemHealthOverviewResponse,
@@ -1535,6 +1555,241 @@ def get_sim_binding(
     effective_inst = principal.installation_id or installation_id
     service = ProductionGovernanceService(db, effective_inst)
     return service.get_sim_binding(account_id=account_id)
+
+
+# ==============================================================================
+# Phase 16.0: Singapore SRF & 24/7 Customer Emergency Kill Switch Endpoints
+# ==============================================================================
+
+@router.post(
+    "/srf/adjudicate",
+    response_model=SrfAdjudicationResponse,
+    dependencies=[
+        Depends(require_roles(ROLE_INVESTIGATOR, ROLE_AUTHORISER, ROLE_SYSTEM_ADMINISTRATOR, ROLE_AUDITOR))
+    ],
+)
+def adjudicate_srf_claim(
+    request: SrfAdjudicationRequest,
+    principal: EnterprisePrincipal = Depends(get_current_principal),
+    installation_id: str = Depends(get_installation_id),
+    db: Session = Depends(get_db),
+) -> SrfAdjudicationResponse:
+    effective_inst = principal.installation_id or installation_id
+    service = ProductionGovernanceService(db, effective_inst)
+    return service.adjudicate_srf_claim(request=request, actor_subject=principal.subject)
+
+
+@router.post(
+    "/customer-kill-switch/accounts/{account_id}/activate",
+    response_model=CustomerKillSwitchResponse,
+)
+def activate_customer_kill_switch(
+    account_id: str,
+    request: CustomerKillSwitchActivateRequest,
+    principal: EnterprisePrincipal = Depends(get_current_principal),
+    installation_id: str = Depends(get_installation_id),
+    db: Session = Depends(get_db),
+) -> CustomerKillSwitchResponse:
+    effective_inst = principal.installation_id or installation_id
+    service = ProductionGovernanceService(db, effective_inst)
+    return service.activate_customer_kill_switch(account_id=account_id, request=request, actor_subject=principal.subject)
+
+
+@router.post(
+    "/customer-kill-switch/accounts/{account_id}/deactivate",
+    response_model=CustomerKillSwitchResponse,
+    dependencies=[
+        Depends(require_roles(ROLE_AUTHORISER, ROLE_SYSTEM_ADMINISTRATOR))
+    ],
+)
+def deactivate_customer_kill_switch(
+    account_id: str,
+    request: CustomerKillSwitchDeactivateRequest,
+    principal: EnterprisePrincipal = Depends(get_current_principal),
+    installation_id: str = Depends(get_installation_id),
+    db: Session = Depends(get_db),
+) -> CustomerKillSwitchResponse:
+    effective_inst = principal.installation_id or installation_id
+    service = ProductionGovernanceService(db, effective_inst)
+    return service.deactivate_customer_kill_switch(account_id=account_id, request=request, actor_subject=principal.subject)
+
+
+@router.get(
+    "/customer-kill-switch/accounts/{account_id}",
+    response_model=CustomerKillSwitchResponse,
+)
+def get_customer_kill_switch(
+    account_id: str,
+    principal: EnterprisePrincipal = Depends(get_current_principal),
+    installation_id: str = Depends(get_installation_id),
+    db: Session = Depends(get_db),
+) -> CustomerKillSwitchResponse:
+    effective_inst = principal.installation_id or installation_id
+    service = ProductionGovernanceService(db, effective_inst)
+    return service.get_customer_kill_switch(account_id=account_id)
+
+
+# ==============================================================================
+# Phase 16.1: South Korea FSS Designated Safe Accounts & Delayed ATM Endpoints
+# ==============================================================================
+
+@router.post(
+    "/safe-accounts/accounts/{account_id}",
+    response_model=SafeAccountResponse,
+)
+def register_designated_safe_account(
+    account_id: str,
+    request: SafeAccountRegisterRequest,
+    principal: EnterprisePrincipal = Depends(get_current_principal),
+    installation_id: str = Depends(get_installation_id),
+    db: Session = Depends(get_db),
+) -> SafeAccountResponse:
+    effective_inst = principal.installation_id or installation_id
+    service = ProductionGovernanceService(db, effective_inst)
+    return service.register_designated_safe_account(account_id=account_id, request=request, actor_subject=principal.subject)
+
+
+@router.get(
+    "/safe-accounts/accounts/{account_id}",
+    response_model=list[SafeAccountResponse],
+)
+def list_designated_safe_accounts(
+    account_id: str,
+    principal: EnterprisePrincipal = Depends(get_current_principal),
+    installation_id: str = Depends(get_installation_id),
+    db: Session = Depends(get_db),
+) -> list[SafeAccountResponse]:
+    effective_inst = principal.installation_id or installation_id
+    service = ProductionGovernanceService(db, effective_inst)
+    return service.list_designated_safe_accounts(account_id=account_id)
+
+
+@router.post(
+    "/delayed-atm/inbound-deposit/{account_id}",
+    response_model=AtmWithdrawalEvaluateResponse,
+)
+def record_atm_inbound_deposit(
+    account_id: str,
+    request: AtmDepositInboundRequest,
+    principal: EnterprisePrincipal = Depends(get_current_principal),
+    installation_id: str = Depends(get_installation_id),
+    db: Session = Depends(get_db),
+) -> AtmWithdrawalEvaluateResponse:
+    effective_inst = principal.installation_id or installation_id
+    service = ProductionGovernanceService(db, effective_inst)
+    return service.record_atm_inbound_deposit(account_id=account_id, request=request, actor_subject=principal.subject)
+
+
+@router.post(
+    "/delayed-atm/evaluate-withdrawal/{account_id}",
+    response_model=AtmWithdrawalEvaluateResponse,
+)
+def evaluate_atm_withdrawal(
+    account_id: str,
+    request: AtmWithdrawalEvaluateRequest,
+    principal: EnterprisePrincipal = Depends(get_current_principal),
+    installation_id: str = Depends(get_installation_id),
+    db: Session = Depends(get_db),
+) -> AtmWithdrawalEvaluateResponse:
+    effective_inst = principal.installation_id or installation_id
+    service = ProductionGovernanceService(db, effective_inst)
+    return service.evaluate_atm_withdrawal(account_id=account_id, request=request, actor_subject=principal.subject)
+
+
+# ==============================================================================
+# Phase 16.2: Brazil BCB Limit Increase Cooling-off & Pix MED 2.0 Endpoints
+# ==============================================================================
+
+@router.post(
+    "/transfer-limits/accounts/{account_id}/increase-request",
+    response_model=LimitIncreaseResponse,
+)
+def request_limit_increase(
+    account_id: str,
+    request: LimitIncreaseRequestCreate,
+    principal: EnterprisePrincipal = Depends(get_current_principal),
+    installation_id: str = Depends(get_installation_id),
+    db: Session = Depends(get_db),
+) -> LimitIncreaseResponse:
+    effective_inst = principal.installation_id or installation_id
+    service = ProductionGovernanceService(db, effective_inst)
+    return service.request_limit_increase(account_id=account_id, request=request, actor_subject=principal.subject)
+
+
+@router.post(
+    "/med2/cascade-clawback",
+    response_model=Med2CascadeTraceResponse,
+    dependencies=[
+        Depends(require_roles(ROLE_INVESTIGATOR, ROLE_AUTHORISER, ROLE_SYSTEM_ADMINISTRATOR))
+    ],
+)
+def execute_med2_cascade_clawback(
+    request: Med2CascadeTraceRequest,
+    principal: EnterprisePrincipal = Depends(get_current_principal),
+    installation_id: str = Depends(get_installation_id),
+    db: Session = Depends(get_db),
+) -> Med2CascadeTraceResponse:
+    effective_inst = principal.installation_id or installation_id
+    service = ProductionGovernanceService(db, effective_inst)
+    return service.execute_med2_cascade_clawback(request=request, actor_subject=principal.subject)
+
+
+# ==============================================================================
+# Phase 16.3: India I4C Helpline 1930 Golden Hour Endpoints
+# ==============================================================================
+
+@router.post(
+    "/golden-hour/reports",
+    response_model=GoldenHourReportResponse,
+    dependencies=[
+        Depends(require_roles(ROLE_INVESTIGATOR, ROLE_AUTHORISER, ROLE_SYSTEM_ADMINISTRATOR))
+    ],
+)
+def submit_golden_hour_report(
+    request: GoldenHourReportCreateRequest,
+    principal: EnterprisePrincipal = Depends(get_current_principal),
+    installation_id: str = Depends(get_installation_id),
+    db: Session = Depends(get_db),
+) -> GoldenHourReportResponse:
+    effective_inst = principal.installation_id or installation_id
+    service = ProductionGovernanceService(db, effective_inst)
+    return service.submit_golden_hour_report(request=request, actor_subject=principal.subject)
+
+
+# ==============================================================================
+# Phase 16.4: Hong Kong FPS Scameter Endpoints
+# ==============================================================================
+
+@router.post(
+    "/scameter/lookup",
+    response_model=ScameterLookupResponse,
+)
+def lookup_scameter_proxy(
+    request: ScameterLookupRequest,
+    principal: EnterprisePrincipal = Depends(get_current_principal),
+    installation_id: str = Depends(get_installation_id),
+    db: Session = Depends(get_db),
+) -> ScameterLookupResponse:
+    effective_inst = principal.installation_id or installation_id
+    service = ProductionGovernanceService(db, effective_inst)
+    return service.lookup_scameter_proxy(request=request, actor_subject=principal.subject)
+
+
+@router.post(
+    "/scameter/waivers",
+    response_model=ScameterWaiverResponse,
+)
+def execute_scameter_waiver(
+    request: ScameterWaiverCreateRequest,
+    principal: EnterprisePrincipal = Depends(get_current_principal),
+    installation_id: str = Depends(get_installation_id),
+    db: Session = Depends(get_db),
+) -> ScameterWaiverResponse:
+    effective_inst = principal.installation_id or installation_id
+    service = ProductionGovernanceService(db, effective_inst)
+    return service.execute_scameter_waiver(request=request, actor_subject=principal.subject)
+
+
 
 
 

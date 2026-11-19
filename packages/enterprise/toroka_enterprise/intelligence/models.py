@@ -1488,16 +1488,132 @@ class SimBindingRecord(IntelligenceBase):
     last_verified_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
 
 
+# ==============================================================================
+# Phase 16.0 Models: Singapore SRF Kill Switch & Global Frontier Defenses
+# ==============================================================================
+
+class CustomerKillSwitchRecord(IntelligenceBase):
+    """Singapore MAS 24/7 Customer Emergency Kill Switch record."""
+    __tablename__ = "enterprise_customer_kill_switches"
+
+    account_id: Mapped[str] = mapped_column(String(100), primary_key=True)
+    installation_id: Mapped[str] = mapped_column(String(100), primary_key=True, index=True)
+
+    customer_id: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(50), nullable=False, default="ACTIVE", index=True)
+    channel_initiated: Mapped[str] = mapped_column(String(50), nullable=False, default="MOBILE_PANIC_BUTTON")
+    activation_reason: Mapped[str] = mapped_column(Text, nullable=False)
+    revoked_sessions_count: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+
+    activated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+    deactivated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    deactivation_maker_officer: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    deactivation_checker_officer: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    deactivation_branch_code: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    deactivation_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now, onupdate=utc_now)
 
 
+class DesignatedSafeAccountRecord(IntelligenceBase):
+    """South Korea FSS Designated Safe Accounts registry record."""
+    __tablename__ = "enterprise_designated_safe_accounts"
+
+    registration_id: Mapped[str] = mapped_column(String(100), primary_key=True)
+    installation_id: Mapped[str] = mapped_column(String(100), primary_key=True, index=True)
+
+    account_id: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    payee_account: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    payee_institution: Mapped[str] = mapped_column(String(100), nullable=False, default="Safaricom")
+    label: Mapped[str] = mapped_column(String(100), nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+
+    registered_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
 
 
+class AtmDelayedWithdrawalRecord(IntelligenceBase):
+    """South Korea FSS Delayed ATM Cash-Out hold record (지연인출제도)."""
+    __tablename__ = "enterprise_atm_delayed_withdrawals"
+
+    hold_id: Mapped[str] = mapped_column(String(100), primary_key=True)
+    installation_id: Mapped[str] = mapped_column(String(100), primary_key=True, index=True)
+
+    account_id: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    inbound_amount: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False)
+    inbound_reference: Mapped[str] = mapped_column(String(100), nullable=False)
+    credit_timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+    hold_expiry_timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    status: Mapped[str] = mapped_column(String(50), nullable=False, default="ACTIVE_HOLD", index=True)
 
 
+class LimitIncreaseRequestRecord(IntelligenceBase):
+    """Brazil BCB Transfer Limit Increase Cooling-off record."""
+    __tablename__ = "enterprise_limit_increase_requests"
+
+    request_id: Mapped[str] = mapped_column(String(100), primary_key=True)
+    installation_id: Mapped[str] = mapped_column(String(100), primary_key=True, index=True)
+
+    account_id: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    limit_type: Mapped[str] = mapped_column(String(50), nullable=False, default="DAILY_P2P")
+    current_limit: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False)
+    requested_limit: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False)
+    requested_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+    effective_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    is_cancelled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
 
+class Med2ClawbackTraceRecord(IntelligenceBase):
+    """Brazil BCB Pix MED 2.0 5-Layer Cascading Clawback Trace record."""
+    __tablename__ = "enterprise_med2_clawback_traces"
+
+    contestation_id: Mapped[str] = mapped_column(String(100), primary_key=True)
+    installation_id: Mapped[str] = mapped_column(String(100), primary_key=True, index=True)
+
+    original_tx_id: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    victim_account: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    total_stolen_amount: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False)
+    total_clawback_holds_placed: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False)
+    recovery_rate_pct: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    reported_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+    hops_payload: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False, default=list)
+    status: Mapped[str] = mapped_column(String(50), nullable=False, default="RESOLVED")
 
 
+class GoldenHourReportRecord(IntelligenceBase):
+    """India I4C Helpline 1930 / CFCFRMS Golden Hour emergency intake record."""
+    __tablename__ = "enterprise_golden_hour_reports"
 
+    report_id: Mapped[str] = mapped_column(String(100), primary_key=True)
+    installation_id: Mapped[str] = mapped_column(String(100), primary_key=True, index=True)
+
+    victim_account_id: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    victim_phone: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+    scam_category: Mapped[str] = mapped_column(String(100), nullable=False)
+    incident_timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    reported_timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+    elapsed_minutes: Mapped[float] = mapped_column(Float, nullable=False)
+    is_golden_hour: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    total_amount_lost: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False)
+    transaction_references: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    switch_freeze_broadcast_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    switch_status: Mapped[str] = mapped_column(String(50), nullable=False, default="BROADCAST_DISPATCHED")
+
+
+class ScameterShieldWaiverRecord(IntelligenceBase):
+    """Hong Kong HKMA FPS Scameter Statutory Liability Shield Waiver record."""
+    __tablename__ = "enterprise_scameter_waivers"
+
+    waiver_id: Mapped[str] = mapped_column(String(100), primary_key=True)
+    installation_id: Mapped[str] = mapped_column(String(100), primary_key=True, index=True)
+
+    account_id: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    customer_id: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    proxy_id: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    risk_level: Mapped[str] = mapped_column(String(50), nullable=False)
+    transfer_amount: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False)
+    signed_timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+    waiver_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    is_institution_shielded: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 
 
