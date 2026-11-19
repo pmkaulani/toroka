@@ -555,7 +555,7 @@ class InflightPaymentEvaluationRequest(BaseModel):
     telecom_call_status: Literal["IDLE", "CALL_IN_PROGRESS", "RECENT_CALL", "UNKNOWN"] | None = None
     telecom_coercion_score: float | None = None
     # Phase 14.2 Extensions: Federated Mule Directory & Hash-Linked Interbank Blacklist
-    check_federated_mule_directory: bool = True
+    check_federated_mule_directory: bool = False
     # Phase 14.4 Extensions: Swiss SIC5 Sub-50ms Parallel Clearing Engine
     use_parallel_pipeline: bool = True
     sla_budget_ms: float = 45.0

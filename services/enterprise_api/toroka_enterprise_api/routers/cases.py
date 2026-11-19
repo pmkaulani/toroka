@@ -83,9 +83,10 @@ def get_case(
     case_id: str,
     principal: EnterprisePrincipal = Depends(get_current_principal),
     case_service: CaseService = Depends(get_case_service),
+    installation_id: str = Depends(get_installation_id),
 ):
     try:
-        case = case_service.get_case(principal, case_id)
+        case = case_service.get_case(principal, case_id, installation_id=installation_id)
         return CaseDetailResponse.model_validate(case)
     except LookupError:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Case not found")
@@ -98,9 +99,10 @@ def get_case_evidence(
     case_id: str,
     principal: EnterprisePrincipal = Depends(get_current_principal),
     case_service: CaseService = Depends(get_case_service),
+    installation_id: str = Depends(get_installation_id),
 ) -> dict[str, Any]:
     try:
-        case = case_service.get_case(principal, case_id)
+        case = case_service.get_case(principal, case_id, installation_id=installation_id)
         return {
             "case_id": case.id,
             "snapshot_sha256": case.snapshot_sha256,
@@ -117,11 +119,12 @@ def list_case_notes(
     case_id: str,
     principal: EnterprisePrincipal = Depends(get_current_principal),
     case_service: CaseService = Depends(get_case_service),
+    installation_id: str = Depends(get_installation_id),
 ):
     try:
-        # Verify access to case first
-        case_service.get_case(principal, case_id)
-        notes = case_service.notes.list_notes_for_case(case_id)
+        # Verify access to case first with installation scope
+        case_service.get_case(principal, case_id, installation_id=installation_id)
+        notes = case_service.notes.list_notes_for_case(case_id, installation_id=installation_id)
         return [NoteResponse.model_validate(n) for n in notes]
     except LookupError:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Case not found")
@@ -135,6 +138,7 @@ def add_case_note(
     req: NoteCreateRequest,
     principal: EnterprisePrincipal = Depends(get_current_principal),
     case_service: CaseService = Depends(get_case_service),
+    installation_id: str = Depends(get_installation_id),
 ):
     try:
         note = case_service.add_note(principal, case_id, req.body)
@@ -153,6 +157,7 @@ def assign_case(
     req: CaseAssignRequest,
     principal: EnterprisePrincipal = Depends(get_current_principal),
     case_service: CaseService = Depends(get_case_service),
+    installation_id: str = Depends(get_installation_id),
 ):
     try:
         assignment = case_service.assign_case(
@@ -160,6 +165,7 @@ def assign_case(
             case_id,
             req.assignee_subject,
             req.assignment_role,
+            installation_id=installation_id,
         )
         return CaseAssignmentResponse.model_validate(assignment)
     except LookupError:
@@ -176,6 +182,7 @@ def close_case(
     req: CaseCloseRequest,
     principal: EnterprisePrincipal = Depends(get_current_principal),
     case_service: CaseService = Depends(get_case_service),
+    installation_id: str = Depends(get_installation_id),
 ):
     try:
         case = case_service.close_case(
@@ -185,6 +192,7 @@ def close_case(
             closing_note=req.closing_note,
             alternatives_considered=req.alternatives_considered,
             expected_version=req.expected_version,
+            installation_id=installation_id,
         )
         return CaseDetailResponse.model_validate(case)
     except LookupError:
@@ -205,8 +213,11 @@ def propose_case_closure(
     req: ClosureProposalCreate,
     principal: EnterprisePrincipal = Depends(get_current_principal),
     case_service: CaseService = Depends(get_case_service),
+    installation_id: str = Depends(get_installation_id),
 ):
     try:
+        # Verify access within installation
+        case_service.get_case(principal, case_id, installation_id=installation_id)
         proposal = case_service.propose_closure(
             principal,
             case_id,
@@ -232,9 +243,12 @@ def list_case_closure_proposals(
     case_id: str,
     principal: EnterprisePrincipal = Depends(get_current_principal),
     case_service: CaseService = Depends(get_case_service),
+    installation_id: str = Depends(get_installation_id),
 ):
     try:
-        proposals = case_service.list_case_closure_proposals(principal, case_id)
+        proposals = case_service.list_case_closure_proposals(
+            principal, case_id, installation_id=installation_id
+        )
         return [ClosureProposalResponse.model_validate(p) for p in proposals]
     except LookupError:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Case not found")

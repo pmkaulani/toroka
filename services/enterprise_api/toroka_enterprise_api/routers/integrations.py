@@ -394,20 +394,35 @@ def get_ingestion_quality(
     if "customer_change" in record_types:
         available_feeds.add("account_changes")
 
+    # Derive absent fields from rejection records and connector schema metadata
+    rejections = db.query(IntegrationRejectedRecord).filter_by(installation_id=installation_id).all()
+    absent_fields = set()
+    for r in rejections:
+        if "missing_field" in r.reason_code.lower() or "absent" in r.reason_code.lower():
+            if r.source_record_id:
+                absent_fields.add(r.source_record_id)
+            elif ":" in r.reason_message:
+                absent_fields.add(r.reason_message.split(":")[-1].strip())
+
     detector_impact = assess_detector_readiness_from_integration(
         available_feeds=available_feeds,
-        absent_fields=set(),
+        absent_fields=absent_fields,
     )
 
     total_records = db.query(IntegrationRecord).filter_by(installation_id=installation_id).count()
-    rejected_records = db.query(IntegrationRejectedRecord).filter_by(installation_id=installation_id).count()
+    rejected_records = len(rejections)
+    valid_records = max(0, total_records)
+    issues_list = [
+        f"{r.connector_id}: {r.reason_code} - {r.reason_message}"
+        for r in rejections[:10]
+    ]
 
     return QualityAssessmentResponse(
-        total_records=total_records,
-        valid_records=total_records,
+        total_records=total_records + rejected_records,
+        valid_records=valid_records,
         rejected_records=rejected_records,
         issues_count=rejected_records,
-        issues=[],
+        issues=issues_list,
         detector_impact=[
             {
                 "detector_id": r.detector_id,

@@ -226,3 +226,125 @@ def test_audit_checkpoint_signing_and_verification():
         valid_tampered, msg_tampered = AuditCheckpointManager.verify_checkpoint(checkpoint, verifier, db)
         assert valid_tampered is False
         assert "tampering detected" in msg_tampered
+
+
+def test_production_requires_strong_vault_service_token():
+    settings = EnterpriseSettings(
+        environment="production",
+        auth_mode="oidc",
+        oidc_issuer="https://idp.example.com",
+        oidc_audience="toroka-enterprise",
+        oidc_jwks_url="https://idp.example.com/jwks",
+        database_url="postgresql+psycopg://user:pass@db/enterprise",
+        vault_service_url="https://vault.internal",
+        vault_service_token="short-token",
+        expected_schema_revision="rev-001",
+    )
+    with pytest.raises(RuntimeError, match="at least 32 characters"):
+        settings.validate()
+
+
+def test_production_rejects_sample_federation_salt(monkeypatch):
+    monkeypatch.setenv("TOROKA_FEDERATED_MULE_SALT", "TOROKA_CONSORTIUM_MULE_SALT_KENYA_CBK_2026_V1")
+    settings = EnterpriseSettings(
+        environment="production",
+        auth_mode="oidc",
+        oidc_issuer="https://idp.example.com",
+        oidc_audience="toroka-enterprise",
+        oidc_jwks_url="https://idp.example.com/jwks",
+        database_url="postgresql+psycopg://user:pass@db/enterprise",
+        vault_service_url="https://vault.internal",
+        vault_service_token="a" * 32,
+        expected_schema_revision="rev-001",
+    )
+    with pytest.raises(RuntimeError, match="default sample federation salt"):
+        settings.validate()
+
+
+def test_vault_production_validations():
+    from toroka_identity_vault.config import VaultSettings
+
+    # 1. Rejects short service token
+    v1 = VaultSettings(
+        environment="production",
+        database_url="postgresql+psycopg://user:pass@db/vault",
+        service_token="short",
+        master_kek="a" * 32,
+    )
+    with pytest.raises(RuntimeError, match="at least 32 characters"):
+        v1.validate()
+
+    # 2. Rejects raw Fernet key
+    v2 = VaultSettings(
+        environment="production",
+        database_url="postgresql+psycopg://user:pass@db/vault",
+        service_token="a" * 32,
+        master_kek="a" * 32,
+        vault_key="raw-fernet-key",
+    )
+    with pytest.raises(RuntimeError, match="must not use raw Fernet key"):
+        v2.validate()
+
+    # 3. Rejects missing master_kek / LocalKMS
+    v3 = VaultSettings(
+        environment="production",
+        database_url="postgresql+psycopg://user:pass@db/vault",
+        service_token="a" * 32,
+        master_kek="",
+    )
+    with pytest.raises(RuntimeError, match="durable KMS master key"):
+        v3.validate()
+
+
+def test_integration_cursor_lease_concurrency_and_expiry():
+    from datetime import datetime, timezone, timedelta
+    from toroka_enterprise.integrations.models import IntegrationBase, IntegrationCursor
+    from toroka_enterprise.integrations.ingestion import acquire_cursor_lease, release_cursor_lease
+
+    engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    IntegrationBase.metadata.create_all(engine)
+
+    with Session(engine) as db:
+        inst_id = "inst-pilot-01"
+        conn_id = "core-banking-feed"
+        worker_a = "worker-node-a"
+        worker_b = "worker-node-b"
+
+        # 1. Worker A acquires lease
+        acquired_a = acquire_cursor_lease(db, installation_id=inst_id, connector_id=conn_id, worker_id=worker_a, lease_seconds=60)
+        assert acquired_a is True
+        db.commit()
+
+        # 2. Worker B attempts to acquire while active -> blocked
+        acquired_b = acquire_cursor_lease(db, installation_id=inst_id, connector_id=conn_id, worker_id=worker_b, lease_seconds=60)
+        assert acquired_b is False
+        db.rollback()
+
+        # 3. Worker A releases lease
+        release_cursor_lease(db, installation_id=inst_id, connector_id=conn_id, worker_id=worker_a)
+        db.commit()
+
+        # 4. Worker B acquires successfully after release
+        acquired_b_after = acquire_cursor_lease(db, installation_id=inst_id, connector_id=conn_id, worker_id=worker_b, lease_seconds=60)
+        assert acquired_b_after is True
+        db.commit()
+
+        # 5. Simulate crash recovery: lease expires in the past
+        cursor = db.query(IntegrationCursor).filter_by(installation_id=inst_id, connector_id=conn_id).one()
+        cursor.lease_expires_at = datetime.now(timezone.utc) - timedelta(seconds=10)
+        db.commit()
+
+        # 6. Worker A can steal / acquire expired lease
+        acquired_a_expired = acquire_cursor_lease(db, installation_id=inst_id, connector_id=conn_id, worker_id=worker_a, lease_seconds=60)
+        assert acquired_a_expired is True
+        db.commit()
+
+        # 6. Worker A can steal / acquire expired lease
+        acquired_a_expired = acquire_cursor_lease(db, installation_id=inst_id, connector_id=conn_id, worker_id=worker_a, lease_seconds=60)
+        assert acquired_a_expired is True
+        db.commit()
+

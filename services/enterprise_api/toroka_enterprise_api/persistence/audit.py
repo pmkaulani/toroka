@@ -108,6 +108,12 @@ ALLOWED_METADATA_KEYS = frozenset({
     "proposed_by",
     "first_reviewed_by",
     "second_reviewed_by",
+    # Investigation Intelligence & Referral Pack
+    "pack_hash",
+    "recipient_org",
+    "sha256",
+    "source_type",
+    "approver",
 })
 
 

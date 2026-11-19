@@ -29,6 +29,7 @@ class VaultSettings:
     kms_key_id: str = "alias/toroka-enterprise-identity-vault"
     vault_key: str = ""
     vault_key_version: str = "v1"
+    master_kek: str = ""
     host: str = "0.0.0.0"
     port: int = 8200
 
@@ -42,6 +43,7 @@ class VaultSettings:
             kms_key_id=os.getenv("TOROKA_VAULT_KMS_KEY_ID", "alias/toroka-enterprise-identity-vault"),
             vault_key=read_setting("TOROKA_VAULT_KEY", ""),
             vault_key_version=os.getenv("TOROKA_VAULT_KEY_VERSION", "v1"),
+            master_kek=read_setting("TOROKA_VAULT_MASTER_KEK", ""),
             host=os.getenv("TOROKA_VAULT_HOST", "0.0.0.0"),
             port=int(os.getenv("TOROKA_VAULT_PORT", "8200")),
         )
@@ -60,3 +62,5 @@ class VaultSettings:
                 raise RuntimeError("Production Identity Vault must not use raw Fernet key")
             if not self.kms_key_id:
                 raise RuntimeError("Production Identity Vault requires a configured KMS key ID")
+            if not self.master_kek or len(self.master_kek.encode("utf-8")) < 32:
+                raise RuntimeError("Production Identity Vault requires durable KMS master key material (at least 32 bytes). Ephemeral LocalKMS keys are refused in production.")

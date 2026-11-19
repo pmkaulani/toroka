@@ -18,10 +18,40 @@ from enum import StrEnum
 from typing import Any
 
 
-DEFAULT_FEDERATION_SALT = os.environ.get(
-    "TOROKA_FEDERATED_MULE_SALT",
-    "TOROKA_CONSORTIUM_MULE_SALT_KENYA_CBK_2026_V1",
-)
+def is_federation_enabled() -> bool:
+    """Returns True only if federation is explicitly enabled via environment."""
+    return os.environ.get("TOROKA_ENABLE_FEDERATION", "false").lower() in ("true", "1", "yes")
+
+
+def get_federation_salt() -> str:
+    """Retrieve consortium federation salt or fail closed in production.
+    
+    In production, a configured non-default salt or KMS-backed key is mandatory.
+    Default federation salt fallback is strictly prohibited.
+    """
+    salt = os.environ.get("TOROKA_FEDERATED_MULE_SALT")
+    is_prod = (
+        os.environ.get("TOROKA_ENV", "").lower() == "production"
+        or os.environ.get("ENVIRONMENT", "").lower() == "production"
+        or os.environ.get("TOROKA_ENT_ENV", "").lower() == "production"
+    )
+    if not salt:
+        if is_prod:
+            raise RuntimeError(
+                "Production federation requires explicit TOROKA_FEDERATED_MULE_SALT or KMS-backed key. "
+                "Default federation salt fallback is strictly prohibited in production."
+            )
+        return "TOROKA_CONSORTIUM_MULE_SALT_KENYA_CBK_2026_DEV"
+    if is_prod and salt == "TOROKA_CONSORTIUM_MULE_SALT_KENYA_CBK_2026_V1":
+        raise RuntimeError(
+            "Production cannot use the default or sample consortium salt. "
+            "A distinct, KMS-backed consortium key is required."
+        )
+    return salt
+
+
+DEFAULT_FEDERATION_SALT = os.environ.get("TOROKA_FEDERATED_MULE_SALT", "TOROKA_CONSORTIUM_MULE_SALT_KENYA_CBK_2026_DEV")
+
 
 
 class MuleEntityType(StrEnum):
@@ -138,7 +168,8 @@ class FederatedMuleEngine:
     ) -> str:
         """Computes keyed HMAC-SHA256 blinded token over normalized identifier."""
         canonical = cls.normalize_identifier(raw, entity_type)
-        actual_salt = (salt or DEFAULT_FEDERATION_SALT).encode("utf-8")
+        salt_val = salt if salt is not None else get_federation_salt()
+        actual_salt = salt_val.encode("utf-8")
         token = hmac.new(actual_salt, canonical.encode("utf-8"), hashlib.sha256).hexdigest()
         return token
 

@@ -137,6 +137,13 @@ class EnterpriseSettings:
                 parsed = urlparse(origin)
                 if parsed.scheme != "https" or not parsed.netloc or origin == "*":
                     raise RuntimeError("Production CORS origins must use HTTPS and specify a valid host")
+            if len(self.vault_service_token) < 32:
+                raise RuntimeError("Production Identity Vault service token must be at least 32 characters")
+            if not self.oidc_issuer.startswith("https://") or not self.oidc_jwks_url.startswith("https://"):
+                raise RuntimeError("Production OIDC issuer and JWKS URL must use HTTPS")
+            fed_salt = os.environ.get("TOROKA_FEDERATED_MULE_SALT", "")
+            if fed_salt == "TOROKA_CONSORTIUM_MULE_SALT_KENYA_CBK_2026_V1":
+                raise RuntimeError("Production cannot use the default sample federation salt")
         if self.auth_mode not in {"oidc", "development"}:
             raise ValueError("Unsupported authentication mode")
         if self.auth_mode == "oidc":

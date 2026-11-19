@@ -1132,4 +1132,34 @@ export const api = {
         body: JSON.stringify(payload),
       }
     ),
+
+  // Investigation Intelligence & Referral Pack
+  getInvestigationGraph: (caseId: string, maxHops = 3, maxNodes = 50): Promise<any> =>
+    request<any>(`/api/enterprise/v1/cases/${encodeURIComponent(caseId)}/intelligence/graph?max_hops=${maxHops}&max_nodes=${maxNodes}`),
+
+  runInvestigationFindings: (caseId: string): Promise<any[]> =>
+    request<any[]>(`/api/enterprise/v1/cases/${encodeURIComponent(caseId)}/intelligence/findings/run`, {
+      method: "POST",
+    }),
+
+  getInvestigationTimeline: (caseId: string): Promise<any> =>
+    request<any>(`/api/enterprise/v1/cases/${encodeURIComponent(caseId)}/intelligence/timeline`),
+
+  getInvestigationMoneyFlow: (caseId: string, rootEntityId: string, maxHops = 5, maxNodes = 50): Promise<any> =>
+    request<any>(`/api/enterprise/v1/cases/${encodeURIComponent(caseId)}/intelligence/money-flow?root_entity_id=${encodeURIComponent(rootEntityId)}&max_hops=${maxHops}&max_nodes=${maxNodes}`),
+
+  previewReferralPack: (caseId: string, payload: { recipient_org: string; purpose: string; legal_basis: string }): Promise<any> =>
+    request<any>(`/api/enterprise/v1/cases/${encodeURIComponent(caseId)}/referral-packs/preview`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  approveReferralPack: (caseId: string, payload: { pack_id: string; expected_pack_hash: string }): Promise<any> =>
+    request<any>(`/api/enterprise/v1/cases/${encodeURIComponent(caseId)}/referral-packs`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  getReferralPack: (packId: string): Promise<any> =>
+    request<any>(`/api/enterprise/v1/referral-packs/${encodeURIComponent(packId)}`),
 };

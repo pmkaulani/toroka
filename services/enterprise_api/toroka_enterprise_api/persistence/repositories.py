@@ -20,8 +20,16 @@ class CaseRepository:
     def __init__(self, db: Session):
         self.db = db
 
-    def get_by_id(self, case_id: str, *, for_update: bool = False) -> EnterpriseCase | None:
+    def get_by_id(
+        self,
+        case_id: str,
+        installation_id: str | None = None,
+        *,
+        for_update: bool = False,
+    ) -> EnterpriseCase | None:
         stmt = select(EnterpriseCase).where(EnterpriseCase.id == case_id)
+        if installation_id is not None:
+            stmt = stmt.where(EnterpriseCase.installation_id == installation_id)
         if for_update:
             stmt = stmt.with_for_update()
         return self.db.execute(stmt).scalar_one_or_none()
@@ -82,22 +90,30 @@ class CaseAssignmentRepository:
         self.db = db
 
     def get_active_assignment(
-        self, case_id: str, subject: str
+        self, case_id: str, subject: str, installation_id: str | None = None
     ) -> CaseAssignment | None:
         stmt = select(CaseAssignment).where(
             CaseAssignment.case_id == case_id,
             CaseAssignment.assigned_subject == subject,
             CaseAssignment.status == "active",
         )
+        if installation_id is not None:
+            stmt = stmt.join(EnterpriseCase, CaseAssignment.case_id == EnterpriseCase.id).where(
+                EnterpriseCase.installation_id == installation_id
+            )
         return self.db.execute(stmt).scalar_one_or_none()
 
     def list_active_assignments_for_case(
-        self, case_id: str
+        self, case_id: str, installation_id: str | None = None
     ) -> list[CaseAssignment]:
         stmt = select(CaseAssignment).where(
             CaseAssignment.case_id == case_id,
             CaseAssignment.status == "active",
         )
+        if installation_id is not None:
+            stmt = stmt.join(EnterpriseCase, CaseAssignment.case_id == EnterpriseCase.id).where(
+                EnterpriseCase.installation_id == installation_id
+            )
         return list(self.db.execute(stmt).scalars().all())
 
     def list_assigned_case_ids(self, subject: str) -> set[str]:
@@ -117,12 +133,18 @@ class CaseNoteRepository:
     def __init__(self, db: Session):
         self.db = db
 
-    def list_notes_for_case(self, case_id: str) -> list[CaseNote]:
+    def list_notes_for_case(
+        self, case_id: str, installation_id: str | None = None
+    ) -> list[CaseNote]:
         stmt = (
             select(CaseNote)
             .where(CaseNote.case_id == case_id)
             .order_by(CaseNote.created_at.asc())
         )
+        if installation_id is not None:
+            stmt = stmt.join(EnterpriseCase, CaseNote.case_id == EnterpriseCase.id).where(
+                EnterpriseCase.installation_id == installation_id
+            )
         return list(self.db.execute(stmt).scalars().all())
 
     def create(self, note: CaseNote) -> CaseNote:
@@ -136,18 +158,32 @@ class ClosureProposalRepository:
         self.db = db
 
     def get_by_id(
-        self, proposal_id: str, *, for_update: bool = False
+        self,
+        proposal_id: str,
+        installation_id: str | None = None,
+        *,
+        for_update: bool = False,
     ) -> CaseClosureProposal | None:
         stmt = select(CaseClosureProposal).where(CaseClosureProposal.id == proposal_id)
+        if installation_id is not None:
+            stmt = stmt.join(EnterpriseCase, CaseClosureProposal.case_id == EnterpriseCase.id).where(
+                EnterpriseCase.installation_id == installation_id
+            )
         if for_update:
             stmt = stmt.with_for_update()
         return self.db.execute(stmt).scalar_one_or_none()
 
-    def get_pending_for_case(self, case_id: str) -> CaseClosureProposal | None:
+    def get_pending_for_case(
+        self, case_id: str, installation_id: str | None = None
+    ) -> CaseClosureProposal | None:
         stmt = select(CaseClosureProposal).where(
             CaseClosureProposal.case_id == case_id,
             CaseClosureProposal.status == "pending",
         )
+        if installation_id is not None:
+            stmt = stmt.join(EnterpriseCase, CaseClosureProposal.case_id == EnterpriseCase.id).where(
+                EnterpriseCase.installation_id == installation_id
+            )
         return self.db.execute(stmt).scalar_one_or_none()
 
     def list_pending(
@@ -165,12 +201,18 @@ class ClosureProposalRepository:
         stmt = stmt.order_by(CaseClosureProposal.requested_at.asc()).limit(limit).offset(offset)
         return list(self.db.execute(stmt).scalars().all())
 
-    def list_by_case(self, case_id: str) -> list[CaseClosureProposal]:
+    def list_by_case(
+        self, case_id: str, installation_id: str | None = None
+    ) -> list[CaseClosureProposal]:
         stmt = (
             select(CaseClosureProposal)
             .where(CaseClosureProposal.case_id == case_id)
             .order_by(CaseClosureProposal.requested_at.desc())
         )
+        if installation_id is not None:
+            stmt = stmt.join(EnterpriseCase, CaseClosureProposal.case_id == EnterpriseCase.id).where(
+                EnterpriseCase.installation_id == installation_id
+            )
         return list(self.db.execute(stmt).scalars().all())
 
     def create(self, proposal: CaseClosureProposal) -> CaseClosureProposal:
@@ -184,9 +226,17 @@ class RevealRepository:
         self.db = db
 
     def get_by_id(
-        self, request_id: str, *, for_update: bool = False
+        self,
+        request_id: str,
+        installation_id: str | None = None,
+        *,
+        for_update: bool = False,
     ) -> RevealRequest | None:
         stmt = select(RevealRequest).where(RevealRequest.id == request_id)
+        if installation_id is not None:
+            stmt = stmt.join(EnterpriseCase, RevealRequest.case_id == EnterpriseCase.id).where(
+                EnterpriseCase.installation_id == installation_id
+            )
         if for_update:
             stmt = stmt.with_for_update()
         return self.db.execute(stmt).scalar_one_or_none()
@@ -213,12 +263,18 @@ class RevealRepository:
         )
         return list(self.db.execute(stmt).scalars().all())
 
-    def list_by_case(self, case_id: str) -> list[RevealRequest]:
+    def list_by_case(
+        self, case_id: str, installation_id: str | None = None
+    ) -> list[RevealRequest]:
         stmt = (
             select(RevealRequest)
             .where(RevealRequest.case_id == case_id)
             .order_by(RevealRequest.created_at.desc())
         )
+        if installation_id is not None:
+            stmt = stmt.join(EnterpriseCase, RevealRequest.case_id == EnterpriseCase.id).where(
+                EnterpriseCase.installation_id == installation_id
+            )
         return list(self.db.execute(stmt).scalars().all())
 
     def create(self, request: RevealRequest) -> RevealRequest:

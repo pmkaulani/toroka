@@ -138,9 +138,18 @@ class LocalVaultClient:
     ) -> str:
         if self.session_factory is None:
             raise RuntimeError("Vault session factory is not configured")
+        if reveal_token:
+            from .grants import verify_signed_reveal_grant
+            verify_signed_reveal_grant(
+                reveal_token,
+                expected_installation_id=installation_id,
+                expected_requester_subject=requester_subject,
+                expected_pseudonym=pseudonym,
+                expected_grant_id=request_id,
+            )
         with self.session_factory() as db:
             repo = IdentityVaultRepository(db, self.cipher)
-            plaintext = repo.retrieve_and_decrypt(pseudonym)
+            plaintext = repo.retrieve_and_decrypt(pseudonym, installation_id=installation_id)
             if plaintext is None:
                 raise LookupError(f"Pseudonym '{pseudonym}' could not be resolved in the identity vault")
             return plaintext
@@ -165,5 +174,5 @@ class LocalVaultClient:
             raise RuntimeError("Vault session factory is not configured")
         with self.session_factory() as db:
             repo = IdentityVaultRepository(db, self.cipher)
-            repo.store(pseudonym, plaintext_identity)
+            repo.store(pseudonym, plaintext_identity, installation_id=installation_id)
             db.commit()

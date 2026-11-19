@@ -42,6 +42,21 @@ VALID_DISPOSITIONS = {
 }
 
 
+def resolve_installation_id(
+    principal: EnterprisePrincipal,
+    supplied_installation_id: str | None = None,
+) -> str:
+    """Derives installation identity consistently from principal, strictly rejecting conflicts."""
+    if principal.installation_id:
+        if supplied_installation_id and principal.installation_id != supplied_installation_id:
+            raise PermissionError(
+                f"Installation mismatch: principal installation '{principal.installation_id}' "
+                f"conflicts with requested installation '{supplied_installation_id}'"
+            )
+        return principal.installation_id
+    return supplied_installation_id or "toroka-default-installation"
+
+
 class CaseService:
     def __init__(self, db: Session):
         self.db = db
@@ -75,13 +90,14 @@ class CaseService:
     def list_cases(
         self,
         principal: EnterprisePrincipal,
-        installation_id: str,
+        installation_id: str | None = None,
         *,
         status: str | None = None,
         limit: int = 50,
         offset: int = 0,
     ) -> tuple[list[EnterpriseCase], int]:
         self._assert_can_access_cases(principal)
+        effective_inst = resolve_installation_id(principal, installation_id)
 
         case_ids_filter = None
         # Strict assignment filter for pure investigators
@@ -95,7 +111,7 @@ class CaseService:
             )
 
         return self.cases.list_cases(
-            installation_id,
+            effective_inst,
             case_ids_filter=case_ids_filter,
             status=status,
             limit=limit,
@@ -106,9 +122,11 @@ class CaseService:
         self,
         principal: EnterprisePrincipal,
         case_id: str,
+        installation_id: str | None = None,
     ) -> EnterpriseCase:
         self._assert_can_access_cases(principal)
-        case = self.cases.get_by_id(case_id)
+        effective_inst = resolve_installation_id(principal, installation_id)
+        case = self.cases.get_by_id(case_id, installation_id=effective_inst)
         if case is None:
             raise LookupError("Case not found")
 
@@ -119,7 +137,7 @@ class CaseService:
             and ROLE_AUTHORISER not in principal.roles
         ):
             assignment = self.assignments.get_active_assignment(
-                case_id, principal.subject
+                case_id, principal.subject, installation_id=effective_inst
             )
             if assignment is None:
                 raise LookupError("Case not found")
@@ -130,7 +148,7 @@ class CaseService:
         self,
         principal: EnterprisePrincipal,
         *,
-        installation_id: str,
+        installation_id: str | None = None,
         label: str,
         focus: str,
         snapshot: dict[str, Any],
@@ -138,17 +156,18 @@ class CaseService:
         assign_to_subject: str | None = None,
     ) -> EnterpriseCase:
         self._assert_can_access_cases(principal)
+        effective_inst = resolve_installation_id(principal, installation_id)
 
         snapshot_canon = json.dumps(snapshot, sort_keys=True, separators=(",", ":"))
         snapshot_hash = hashlib.sha256(snapshot_canon.encode("utf-8")).hexdigest()
-        dedupe = calculate_dedupe_key(installation_id, manifest_id or "", focus)
+        dedupe = calculate_dedupe_key(effective_inst, manifest_id or "", focus)
 
-        existing = self.cases.get_by_dedupe_key(installation_id, dedupe)
+        existing = self.cases.get_by_dedupe_key(effective_inst, dedupe)
         if existing:
             return existing
 
         case = EnterpriseCase(
-            installation_id=installation_id,
+            installation_id=effective_inst,
             dedupe_key=dedupe,
             label=label,
             focus=focus,
@@ -226,14 +245,13 @@ class CaseService:
         case_id: str,
         assignee_subject: str,
         assignment_role: str = "investigator",
+        installation_id: str | None = None,
     ) -> CaseAssignment:
         self._assert_can_access_cases(principal)
         if ROLE_AUTHORISER not in principal.roles and ROLE_SYSTEM_ADMINISTRATOR not in principal.roles:
             raise PermissionError("Only authorisers or administrators can delegate case assignments.")
 
-        case = self.cases.get_by_id(case_id)
-        if case is None:
-            raise LookupError("Case not found")
+        case = self.get_case(principal, case_id, installation_id=installation_id)
 
         assignment = CaseAssignment(
             case_id=case_id,
@@ -269,9 +287,11 @@ class CaseService:
         closing_note: str,
         alternatives_considered: str,
         expected_version: int,
+        installation_id: str | None = None,
     ) -> EnterpriseCase:
         self._assert_can_access_cases(principal)
-        case = self.cases.get_by_id(case_id, for_update=True)
+        effective_inst = resolve_installation_id(principal, installation_id)
+        case = self.cases.get_by_id(case_id, installation_id=effective_inst, for_update=True)
         if case is None:
             raise LookupError("Case not found")
 
@@ -399,12 +419,14 @@ class CaseService:
         *,
         approve: bool,
         review_note: str | None = None,
+        installation_id: str | None = None,
     ) -> CaseClosureProposal:
         self._assert_can_access_cases(principal)
         if ROLE_AUTHORISER not in principal.roles:
             raise PermissionError("Only authorisers can review case closure proposals.")
 
-        proposal = self.closure_proposals.get_by_id(proposal_id, for_update=True)
+        effective_inst = resolve_installation_id(principal, installation_id)
+        proposal = self.closure_proposals.get_by_id(proposal_id, installation_id=effective_inst, for_update=True)
         if proposal is None:
             raise LookupError("Closure proposal not found")
 
@@ -418,7 +440,7 @@ class CaseService:
             action_name="case closure proposal",
         )
 
-        case = self.cases.get_by_id(proposal.case_id, for_update=True)
+        case = self.cases.get_by_id(proposal.case_id, installation_id=effective_inst, for_update=True)
         if case is None:
             raise LookupError("Associated case not found")
 
@@ -489,7 +511,7 @@ class CaseService:
     def list_pending_closure_proposals(
         self,
         principal: EnterprisePrincipal,
-        installation_id: str,
+        installation_id: str | None = None,
         *,
         limit: int = 50,
         offset: int = 0,
@@ -497,22 +519,25 @@ class CaseService:
         self._assert_can_access_cases(principal)
         if ROLE_AUTHORISER not in principal.roles:
             raise PermissionError("Only authorisers can view the pending closure review queue.")
-        return self.closure_proposals.list_pending(installation_id, limit=limit, offset=offset)
+        effective_inst = resolve_installation_id(principal, installation_id)
+        return self.closure_proposals.list_pending(effective_inst, limit=limit, offset=offset)
 
     def list_case_closure_proposals(
         self,
         principal: EnterprisePrincipal,
         case_id: str,
+        installation_id: str | None = None,
     ) -> list[CaseClosureProposal]:
         self._assert_can_access_cases(principal)
-        self.get_case(principal, case_id)
-        return self.closure_proposals.list_by_case(case_id)
+        self.get_case(principal, case_id, installation_id=installation_id)
+        effective_inst = resolve_installation_id(principal, installation_id)
+        return self.closure_proposals.list_by_case(case_id, installation_id=effective_inst)
 
     def intake_from_run(
         self,
         principal: EnterprisePrincipal,
         *,
-        installation_id: str,
+        installation_id: str | None = None,
         manifest_id: str,
         leads: list[dict[str, Any]] | None = None,
         assign_to_subject: str | None = None,
@@ -520,7 +545,8 @@ class CaseService:
         if not principal.roles.intersection(CASEWORK_ROLES) and ROLE_SYSTEM_ADMINISTRATOR not in principal.roles:
             raise PermissionError("Permission denied.")
 
-        run = self.runs.get_by_manifest_id(manifest_id)
+        effective_inst = resolve_installation_id(principal, installation_id)
+        run = self.runs.get_by_manifest_id(manifest_id, installation_id=effective_inst)
         if run is None:
             raise LookupError(f"Run manifest '{manifest_id}' not found. Cannot intake cases from an unverified run.")
 
@@ -544,9 +570,9 @@ class CaseService:
         for lead in intake_leads:
             focus = lead.get("focus") or lead.get("target") or "unknown_focus"
             label = lead.get("label") or lead.get("verdict") or "REVIEW"
-            dedupe = calculate_dedupe_key(installation_id, manifest_id, focus)
+            dedupe = calculate_dedupe_key(effective_inst, manifest_id, focus)
 
-            existing = self.cases.get_by_dedupe_key(installation_id, dedupe)
+            existing = self.cases.get_by_dedupe_key(effective_inst, dedupe)
             if existing:
                 existing_count += 1
                 case_ids.append(existing.id)

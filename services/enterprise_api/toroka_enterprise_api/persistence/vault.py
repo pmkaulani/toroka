@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from typing import Protocol
 
 from cryptography.fernet import Fernet, InvalidToken
-from sqlalchemy import DateTime, LargeBinary, String
+from sqlalchemy import DateTime, LargeBinary, PrimaryKeyConstraint, String, select
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
 
 
@@ -20,7 +20,13 @@ class VaultBase(DeclarativeBase):
 
 class VaultRecord(VaultBase):
     __tablename__ = "enterprise_identity_vault"
+    __table_args__ = (
+        PrimaryKeyConstraint("installation_id", "pseudonym", name="pk_enterprise_identity_vault"),
+    )
 
+    installation_id: Mapped[str] = mapped_column(
+        String(128), primary_key=True, default="toroka-default-installation"
+    )
     pseudonym: Mapped[str] = mapped_column(
         String(255), primary_key=True
     )
@@ -114,11 +120,17 @@ class IdentityVaultRepository:
         pseudonym: str,
         plaintext_identity: str,
         key_version: str | None = None,
+        installation_id: str = "toroka-default-installation",
     ) -> VaultRecord:
         ciphertext, version = self.cipher.encrypt(plaintext_identity, key_version)
-        record = self.db.get(VaultRecord, pseudonym)
+        stmt = select(VaultRecord).where(
+            VaultRecord.installation_id == installation_id,
+            VaultRecord.pseudonym == pseudonym,
+        )
+        record = self.db.execute(stmt).scalar_one_or_none()
         if record is None:
             record = VaultRecord(
+                installation_id=installation_id,
                 pseudonym=pseudonym,
                 ciphertext=ciphertext,
                 key_version=version,
@@ -131,23 +143,52 @@ class IdentityVaultRepository:
         self.db.flush()
         return record
 
-    def retrieve_and_decrypt(self, pseudonym: str) -> str | None:
-        record = self.db.get(VaultRecord, pseudonym)
+    def retrieve_and_decrypt(
+        self,
+        pseudonym: str,
+        installation_id: str = "toroka-default-installation",
+    ) -> str | None:
+        stmt = select(VaultRecord).where(
+            VaultRecord.installation_id == installation_id,
+            VaultRecord.pseudonym == pseudonym,
+        )
+        record = self.db.execute(stmt).scalar_one_or_none()
         if record is None:
             return None
         return self.cipher.decrypt(record.ciphertext, record.key_version)
 
-    def has_pseudonym(self, pseudonym: str) -> bool:
-        return self.db.get(VaultRecord, pseudonym) is not None
+    def has_pseudonym(
+        self,
+        pseudonym: str,
+        installation_id: str = "toroka-default-installation",
+    ) -> bool:
+        stmt = select(VaultRecord).where(
+            VaultRecord.installation_id == installation_id,
+            VaultRecord.pseudonym == pseudonym,
+        )
+        return self.db.execute(stmt).scalar_one_or_none() is not None
 
     def rotate_key(
         self,
         pseudonym: str,
         new_key_version: str,
+        installation_id: str = "toroka-default-installation",
     ) -> VaultRecord:
-        record = self.db.get(VaultRecord, pseudonym)
+        stmt = select(VaultRecord).where(
+            VaultRecord.installation_id == installation_id,
+            VaultRecord.pseudonym == pseudonym,
+        )
+        record = self.db.execute(stmt).scalar_one_or_none()
         if record is None:
             raise LookupError(f"Pseudonym '{pseudonym}' not found in vault")
+        new_ciphertext, version = self.cipher.rotate(
+            record.ciphertext, record.key_version, new_key_version
+        )
+        record.ciphertext = new_ciphertext
+        record.key_version = version
+        record.rotated_at = utc_now()
+        self.db.flush()
+        return record
         new_ciphertext, version = self.cipher.rotate(
             record.ciphertext, record.key_version, new_key_version
         )

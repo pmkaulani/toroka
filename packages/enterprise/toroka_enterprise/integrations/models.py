@@ -60,6 +60,8 @@ class IntegrationCursor(IntegrationBase):
     installation_id: Mapped[str] = mapped_column(String(100), primary_key=True)
     connector_id: Mapped[str] = mapped_column(String(100), primary_key=True)
     cursor: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    lease_holder: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_success_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_error_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_error_message: Mapped[str | None] = mapped_column(Text, nullable=True)

@@ -9,6 +9,7 @@ from sqlalchemy.orm import sessionmaker
 
 from .config import VaultSettings
 from .crypto import (
+    DurableKMSKeyProvider,
     EnvelopeVaultCipher,
     FernetVaultCipher,
     LocalKMSKeyProvider,
@@ -59,7 +60,15 @@ def create_app(settings: VaultSettings | None = None) -> FastAPI:
 
     # Configure encryption cipher
     if settings.encryption_mode == "envelope":
-        kms_provider = LocalKMSKeyProvider()
+        if settings.environment == "production":
+            if not settings.master_kek or len(settings.master_kek.encode("utf-8")) < 32:
+                raise RuntimeError("Production Identity Vault refuses LocalKMSKeyProvider with ephemeral keys. A durable KMS provider must be configured.")
+            kms_provider = DurableKMSKeyProvider(
+                master_kek=settings.master_kek.encode("utf-8") if isinstance(settings.master_kek, str) else settings.master_kek,
+                key_version=settings.vault_key_version,
+            )
+        else:
+            kms_provider = LocalKMSKeyProvider()
         key_id_map = {settings.vault_key_version: settings.kms_key_id}
         app.state.cipher = EnvelopeVaultCipher(
             key_provider=kms_provider,

@@ -25,7 +25,11 @@ class IdentityVaultRepository:
         aad = f"{installation_id}:{pseudonym}".encode("utf-8")
         ciphertext, version = self.cipher.encrypt(plaintext_identity, key_version, aad=aad)
 
-        record = self.db.get(VaultRecord, pseudonym)
+        stmt = select(VaultRecord).where(
+            VaultRecord.installation_id == installation_id,
+            VaultRecord.pseudonym == pseudonym,
+        )
+        record = self.db.execute(stmt).scalar_one_or_none()
         if record is None:
             record = VaultRecord(
                 installation_id=installation_id,
@@ -35,7 +39,6 @@ class IdentityVaultRepository:
             )
             self.db.add(record)
         else:
-            record.installation_id = installation_id
             record.ciphertext = ciphertext
             record.key_version = version
             record.rotated_at = utc_now()
@@ -43,11 +46,12 @@ class IdentityVaultRepository:
         return record
 
     def retrieve_and_decrypt(self, installation_id: str, pseudonym: str) -> str | None:
-        record = self.db.get(VaultRecord, pseudonym)
+        stmt = select(VaultRecord).where(
+            VaultRecord.installation_id == installation_id,
+            VaultRecord.pseudonym == pseudonym,
+        )
+        record = self.db.execute(stmt).scalar_one_or_none()
         if record is None:
-            return None
-        # Verify installation isolation
-        if record.installation_id != installation_id:
             return None
 
         aad = f"{installation_id}:{pseudonym}".encode("utf-8")
@@ -62,8 +66,8 @@ class IdentityVaultRepository:
 
     def has_pseudonym(self, installation_id: str, pseudonym: str) -> bool:
         stmt = select(VaultRecord).where(
-            VaultRecord.pseudonym == pseudonym,
             VaultRecord.installation_id == installation_id,
+            VaultRecord.pseudonym == pseudonym,
         )
         return self.db.execute(stmt).scalar_one_or_none() is not None
 
@@ -73,8 +77,12 @@ class IdentityVaultRepository:
         pseudonym: str,
         new_key_version: str,
     ) -> VaultRecord:
-        record = self.db.get(VaultRecord, pseudonym)
-        if record is None or record.installation_id != installation_id:
+        stmt = select(VaultRecord).where(
+            VaultRecord.installation_id == installation_id,
+            VaultRecord.pseudonym == pseudonym,
+        )
+        record = self.db.execute(stmt).scalar_one_or_none()
+        if record is None:
             raise LookupError(f"Pseudonym '{pseudonym}' not found in vault for installation '{installation_id}'")
 
         aad = f"{installation_id}:{pseudonym}".encode("utf-8")

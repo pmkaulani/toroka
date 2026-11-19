@@ -6,8 +6,10 @@ from collections.abc import Generator
 from fastapi import Depends, Request
 from sqlalchemy.orm import Session
 
+from .persistence.repositories import AuditRepository
 from .persistence.vault import FernetVaultCipher, IdentityVaultRepository, VaultCipher
 from .services.cases import CaseService
+from .services.investigations import InvestigationService
 from .services.reveals import RevealService
 from .services.runs import RunService
 
@@ -86,3 +88,11 @@ def get_installation_id(request: Request) -> str:
     if settings is not None and hasattr(settings, "installation_id"):
         return settings.installation_id
     return "toroka-default-installation"
+
+
+def get_investigation_service(
+    db: Session = Depends(get_db),
+) -> InvestigationService:
+    audit_repo = AuditRepository(db)
+    return InvestigationService(db, audit_repo)
+

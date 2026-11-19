@@ -185,3 +185,86 @@ def record_rejection(
     db.add(rej)
     db.flush()
     return rej
+
+
+def acquire_cursor_lease(
+    db: Session,
+    *,
+    installation_id: str,
+    connector_id: str,
+    worker_id: str,
+    lease_seconds: int = 300,
+) -> bool:
+    """Acquires an exclusive timed lease on the connector cursor with crash recovery.
+    
+    Returns True if lease acquired or already held, False if held by another active worker.
+    """
+    now = utc_now()
+    cursor_stmt = (
+        select(IntegrationCursor)
+        .where(
+            and_(
+                IntegrationCursor.installation_id == installation_id,
+                IntegrationCursor.connector_id == connector_id,
+            )
+        )
+        .with_for_update()
+    )
+    cursor_row = db.execute(cursor_stmt).scalar_one_or_none()
+
+    if cursor_row is None:
+        cursor_row = IntegrationCursor(
+            installation_id=installation_id,
+            connector_id=connector_id,
+            lease_holder=worker_id,
+            lease_expires_at=datetime.fromtimestamp(now.timestamp() + lease_seconds, tz=timezone.utc),
+            updated_at=now,
+        )
+        db.add(cursor_row)
+        db.flush()
+        return True
+
+    expires_at = cursor_row.lease_expires_at
+    if expires_at and expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+
+    if (
+        cursor_row.lease_holder
+        and cursor_row.lease_holder != worker_id
+        and expires_at
+        and expires_at > now
+    ):
+        return False
+
+    cursor_row.lease_holder = worker_id
+    cursor_row.lease_expires_at = datetime.fromtimestamp(now.timestamp() + lease_seconds, tz=timezone.utc)
+    cursor_row.updated_at = now
+    db.flush()
+    return True
+
+
+def release_cursor_lease(
+    db: Session,
+    *,
+    installation_id: str,
+    connector_id: str,
+    worker_id: str,
+) -> None:
+    """Releases the cursor lease if held by worker."""
+    cursor_row = db.execute(
+        select(IntegrationCursor)
+        .where(
+            and_(
+                IntegrationCursor.installation_id == installation_id,
+                IntegrationCursor.connector_id == connector_id,
+            )
+        )
+        .with_for_update()
+    ).scalar_one_or_none()
+
+    if cursor_row and cursor_row.lease_holder == worker_id:
+        cursor_row.lease_holder = None
+        cursor_row.lease_expires_at = None
+        cursor_row.updated_at = utc_now()
+        db.flush()
+

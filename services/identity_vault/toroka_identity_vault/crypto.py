@@ -67,6 +67,39 @@ class LocalKMSKeyProvider:
             raise ValueError(f"Failed to unwrap data key with KMS key '{key_id}': {exc}") from exc
 
 
+class DurableKMSKeyProvider:
+    """Production-grade durable KMS Key Provider using a versioned master key encryption key (KEK).
+    
+    Requires an explicit 256-bit (32 bytes) master key loaded from bank secret stores or KMS.
+    Refuses ephemeral in-memory generation to ensure key durability across replicas and restarts.
+    """
+
+    def __init__(self, master_kek: bytes, key_version: str = "v1"):
+        if not master_kek or len(master_kek) < 32:
+            raise ValueError("Durable master KEK must be at least 256 bits (32 bytes)")
+        self.master_kek = master_kek
+        self.key_version = key_version
+        self._kek_cipher = AESGCM(self.master_kek)
+
+    def generate_data_key(self, key_id: str) -> tuple[bytes, bytes]:
+        plaintext_dek = os.urandom(32)
+        nonce = os.urandom(12)
+        aad = f"{key_id}:{self.key_version}".encode("utf-8")
+        wrapped = nonce + self._kek_cipher.encrypt(nonce, plaintext_dek, aad)
+        return plaintext_dek, wrapped
+
+    def decrypt_data_key(self, key_id: str, encrypted_data_key: bytes) -> bytes:
+        if len(encrypted_data_key) < 28:
+            raise ValueError("Invalid wrapped data key payload")
+        nonce = encrypted_data_key[:12]
+        ciphertext = encrypted_data_key[12:]
+        aad = f"{key_id}:{self.key_version}".encode("utf-8")
+        try:
+            return self._kek_cipher.decrypt(nonce, ciphertext, aad)
+        except Exception as exc:
+            raise ValueError(f"Failed to unwrap data key with durable KMS key '{key_id}': {exc}") from exc
+
+
 class VaultCipher(Protocol):
     """Encryption abstraction for identity vault at-rest protection."""
 

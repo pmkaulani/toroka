@@ -6,6 +6,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy.orm import Session
 
 from ..auth import EnterprisePrincipal
+from ..grants import create_signed_reveal_grant
 from ..permissions import (
     ROLE_AUTHORISER,
     ROLE_INVESTIGATOR,
@@ -147,6 +148,16 @@ class RevealService:
         case = self.cases.get_by_id(req.case_id)
         inst_id = case.installation_id if case else "default"
 
+        req.reveal_token = create_signed_reveal_grant(
+            grant_id=req.id,
+            installation_id=inst_id,
+            case_id=req.case_id,
+            requester_subject=req.requested_by,
+            approver_subject=principal.subject,
+            pseudonym=req.pseudonym,
+            expires_at=req.expires_at,
+        )
+
         append_audit(
             self.db,
             installation_id=inst_id,
@@ -246,9 +257,10 @@ class RevealService:
                 pseudonym=req.pseudonym,
                 request_id=req.id,
                 requester_subject=principal.subject,
+                reveal_token=getattr(req, "reveal_token", None),
             )
         else:
-            plaintext = self.vault_repo.retrieve_and_decrypt(req.pseudonym)
+            plaintext = self.vault_repo.retrieve_and_decrypt(req.pseudonym, installation_id=inst_id)
 
         if plaintext is None:
             # If vault retrieval fails, do NOT mark consumed!

@@ -2,12 +2,15 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
-from sqlalchemy import text
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from ..auth import require_internal_service_auth
+from ..grants import verify_signed_reveal_grant
+from ..models import VaultConsumedGrant
 from ..repository import IdentityVaultRepository
 
 logger = logging.getLogger(__name__)
@@ -65,12 +68,57 @@ def consume_reveal(
 ):
     """Internal identity retrieval for approved, single-use reveal requests.
     
-    Independently validates installation boundary. Never outputs plaintext identities into logs.
+    Independently validates cryptographic approval grant, scope, and single-use consumption.
+    Never outputs plaintext identities into logs.
     """
+    if not body.reveal_token:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Reveal token with signed approval grant is required to consume identity",
+        )
+
+    try:
+        grant_payload = verify_signed_reveal_grant(
+            body.reveal_token,
+            expected_installation_id=body.installation_id,
+            expected_requester_subject=body.requester_subject,
+            expected_pseudonym=body.pseudonym,
+            expected_grant_id=body.request_id,
+        )
+    except ValueError as exc:
+        logger.warning(
+            "Internal reveal approval grant validation failed: %s",
+            exc,
+            extra={
+                "installation_id": body.installation_id,
+                "request_id": body.request_id,
+            },
+        )
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Reveal approval grant invalid or expired: {exc}",
+        )
+
     session_factory = request.app.state.session_factory
     cipher = request.app.state.cipher
 
     with session_factory() as db:
+        # Atomic single-use consumption check
+        stmt = (
+            select(VaultConsumedGrant)
+            .where(
+                VaultConsumedGrant.installation_id == body.installation_id,
+                VaultConsumedGrant.grant_id == body.request_id,
+            )
+            .with_for_update()
+        )
+        consumed = db.execute(stmt).scalar_one_or_none()
+        if consumed is not None:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Reveal approval grant has already been consumed (single-use only)",
+            )
+
         repo = IdentityVaultRepository(db, cipher)
         plaintext = repo.retrieve_and_decrypt(body.installation_id, body.pseudonym)
         if plaintext is None:
@@ -85,6 +133,18 @@ def consume_reveal(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Pseudonym '{body.pseudonym}' could not be resolved in the vault",
             )
+
+        # Mark grant consumed atomically alongside retrieval
+        now = datetime.now(timezone.utc)
+        record = VaultConsumedGrant(
+            installation_id=body.installation_id,
+            grant_id=body.request_id,
+            case_id=grant_payload.get("case_id", ""),
+            requester_subject=body.requester_subject,
+            consumed_at=now,
+        )
+        db.add(record)
+        db.commit()
 
         logger.info(
             "Internal reveal consumed successfully",

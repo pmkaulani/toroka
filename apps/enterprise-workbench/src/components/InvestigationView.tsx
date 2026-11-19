@@ -27,8 +27,21 @@ export const InvestigationView: React.FC<InvestigationViewProps> = ({
   const [correlating, setCorrelating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeSection, setActiveSection] = useState<
-    "overview" | "timeline" | "signals" | "hypotheses" | "evidence" | "relationships" | "baselines" | "reconstruction"
+    "overview" | "timeline" | "signals" | "hypotheses" | "evidence" | "relationships" | "baselines" | "reconstruction" | "money_flow" | "referral_pack"
   >("overview");
+
+  // Money Flow State
+  const [moneyFlowData, setMoneyFlowData] = useState<any | null>(null);
+  const [loadingMoneyFlow, setLoadingMoneyFlow] = useState(false);
+  const [moneyFlowRootId, setMoneyFlowRootId] = useState("");
+
+  // Referral Pack State
+  const [recipientOrg, setRecipientOrg] = useState("Central Bank of Kenya - Banking Fraud Investigations");
+  const [packPurpose, setPackPurpose] = useState("Interbank evidence coordination and funds recovery chronology");
+  const [legalBasis, setLegalBasis] = useState("Kenya National Payment System Act s.31 / CBK Fraud Guidelines");
+  const [packPreview, setPackPreview] = useState<any | null>(null);
+  const [approvingPack, setApprovingPack] = useState(false);
+  const [packApprovalMsg, setPackApprovalMsg] = useState<string | null>(null);
 
   // Phase 6 Behavioral Baselines & Priority State
   const [priority, setPriority] = useState<InvestigationPriority | null>(null);
@@ -344,6 +357,29 @@ export const InvestigationView: React.FC<InvestigationViewProps> = ({
             style={{ fontWeight: 600, color: activeSection === "reconstruction" ? "var(--accent-blue)" : "inherit" }}
           >
             ⚔ Attack Reconstruction {reconstruction ? `(${reconstruction.steps.length} Steps)` : ""}
+          </button>
+          <button
+            className={`wb-tab ${activeSection === "money_flow" ? "active" : ""}`}
+            onClick={() => {
+              setActiveSection("money_flow");
+              if (selectedCaseId && moneyFlowRootId) {
+                setLoadingMoneyFlow(true);
+                api.getInvestigationMoneyFlow(selectedCaseId, moneyFlowRootId)
+                  .then(data => setMoneyFlowData(data))
+                  .catch(() => setMoneyFlowData(null))
+                  .finally(() => setLoadingMoneyFlow(false));
+              }
+            }}
+            style={{ fontWeight: 600, color: activeSection === "money_flow" ? "var(--accent-blue)" : "inherit" }}
+          >
+            💸 Money-Flow Reconstruction
+          </button>
+          <button
+            className={`wb-tab ${activeSection === "referral_pack" ? "active" : ""}`}
+            onClick={() => setActiveSection("referral_pack")}
+            style={{ fontWeight: 600, color: activeSection === "referral_pack" ? "var(--accent-blue)" : "inherit" }}
+          >
+            📑 Referral Pack &amp; Integrity
           </button>
         </div>
       </div>
@@ -1578,6 +1614,235 @@ export const InvestigationView: React.FC<InvestigationViewProps> = ({
               )}
             </div>
             )
+          )}
+
+          {/* Section 8: Money Flow Reconstruction */}
+          {activeSection === "money_flow" && (
+            <div className="wb-card">
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
+                <div>
+                  <h3 className="wb-card-title" style={{ fontSize: 16, margin: 0 }}>
+                    Bounded Temporal Money-Flow Reconstruction
+                  </h3>
+                  <p style={{ fontSize: 13, color: "var(--text-muted)", margin: "4px 0 0" }}>
+                    Follows authorized transactions from root originators through intermediary hops, refunds, and reversals. Does NOT infer unobserved hops.
+                  </p>
+                </div>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <input
+                    type="text"
+                    className="wb-input"
+                    placeholder="Root Entity UUID (e.g. sender)"
+                    value={moneyFlowRootId}
+                    onChange={(e) => setMoneyFlowRootId(e.target.value)}
+                    style={{ width: 300, fontSize: 12 }}
+                  />
+                  <button
+                    className="wb-btn wb-btn-primary"
+                    disabled={!moneyFlowRootId || loadingMoneyFlow}
+                    onClick={() => {
+                      if (!selectedCaseId || !moneyFlowRootId) return;
+                      setLoadingMoneyFlow(true);
+                      api.getInvestigationMoneyFlow(selectedCaseId, moneyFlowRootId)
+                        .then(data => setMoneyFlowData(data))
+                        .catch(err => setError(err.message))
+                        .finally(() => setLoadingMoneyFlow(false));
+                    }}
+                  >
+                    {loadingMoneyFlow ? "Tracing..." : "Trace Money Flow"}
+                  </button>
+                </div>
+              </div>
+
+              {moneyFlowData ? (
+                <div>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 16 }}>
+                    <div style={{ padding: 12, background: "var(--bg-secondary)", borderRadius: 6 }}>
+                      <div style={{ fontSize: 11, color: "var(--text-muted)" }}>Traversed Nodes</div>
+                      <div style={{ fontSize: 18, fontWeight: 700 }}>{moneyFlowData.nodes?.length || 0}</div>
+                    </div>
+                    <div style={{ padding: 12, background: "var(--bg-secondary)", borderRadius: 6 }}>
+                      <div style={{ fontSize: 11, color: "var(--text-muted)" }}>Total Transactions</div>
+                      <div style={{ fontSize: 18, fontWeight: 700 }}>{moneyFlowData.edges?.length || 0}</div>
+                    </div>
+                    <div style={{ padding: 12, background: "var(--bg-secondary)", borderRadius: 6 }}>
+                      <div style={{ fontSize: 11, color: "var(--text-muted)" }}>Reversals / Refunds</div>
+                      <div style={{ fontSize: 18, fontWeight: 700, color: "var(--accent-orange)" }}>
+                        {Object.entries(moneyFlowData.reversal_totals || {}).map(([c, a]) => `${a} ${c}`).join(", ") || "None"}
+                      </div>
+                    </div>
+                    <div style={{ padding: 12, background: "var(--bg-secondary)", borderRadius: 6 }}>
+                      <div style={{ fontSize: 11, color: "var(--text-muted)" }}>Net Transferred</div>
+                      <div style={{ fontSize: 18, fontWeight: 700, color: "var(--accent-green)" }}>
+                        {Object.entries(moneyFlowData.net_by_currency || {}).map(([c, a]) => `${a} ${c}`).join(", ") || "0.00"}
+                      </div>
+                    </div>
+                  </div>
+
+                  <table className="wb-table" style={{ width: "100%", fontSize: 12 }}>
+                    <thead>
+                      <tr>
+                        <th>Time (UTC)</th>
+                        <th>Source Entity</th>
+                        <th>Destination Entity</th>
+                        <th>Amount &amp; Currency</th>
+                        <th>Event Type</th>
+                        <th>Channel</th>
+                        <th>Evidence ID</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {moneyFlowData.edges?.map((edge: any, idx: number) => (
+                        <tr key={idx} style={{ background: edge.is_reversal ? "rgba(255, 165, 0, 0.05)" : "inherit" }}>
+                          <td>{new Date(edge.occurred_at).toLocaleString()}</td>
+                          <td><code>{edge.source_entity_id?.slice(0, 8)}...</code></td>
+                          <td><code>{edge.destination_entity_id?.slice(0, 8)}...</code></td>
+                          <td style={{ fontWeight: 600 }}>{edge.amount} {edge.currency}</td>
+                          <td>
+                            <span className={`wb-badge ${edge.is_reversal ? "wb-badge-warning" : edge.is_refund ? "wb-badge-info" : "wb-badge-success"}`}>
+                              {edge.event_type}
+                            </span>
+                          </td>
+                          <td>{edge.channel}</td>
+                          <td><code>{edge.evidence_id?.slice(0, 8)}...</code></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div style={{ padding: 30, textAlign: "center", color: "var(--text-muted)" }}>
+                  Enter a root entity UUID above and click "Trace Money Flow" to reconstruct fund paths.
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Section 9: Referral Pack & Integrity */}
+          {activeSection === "referral_pack" && (
+            <div className="wb-card">
+              <div style={{ marginBottom: 16 }}>
+                <h3 className="wb-card-title" style={{ fontSize: 16, margin: 0 }}>
+                  Evidence-Backed Case Referral Package
+                </h3>
+                <p style={{ fontSize: 13, color: "var(--text-muted)", margin: "4px 0 0" }}>
+                  Generate preview, verify cryptographic manifest SHA-256, and enforce dual-authorizer sign-off.
+                </p>
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 16 }}>
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 600 }}>Recipient Organisation</label>
+                  <input
+                    type="text"
+                    className="wb-input"
+                    value={recipientOrg}
+                    onChange={(e) => setRecipientOrg(e.target.value)}
+                    style={{ width: "100%", marginTop: 4 }}
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 600 }}>Legal / Administrative Basis</label>
+                  <input
+                    type="text"
+                    className="wb-input"
+                    value={legalBasis}
+                    onChange={(e) => setLegalBasis(e.target.value)}
+                    style={{ width: "100%", marginTop: 4 }}
+                  />
+                </div>
+                <div style={{ gridColumn: "1 / -1" }}>
+                  <label style={{ fontSize: 12, fontWeight: 600 }}>Investigation &amp; Sharing Purpose</label>
+                  <input
+                    type="text"
+                    className="wb-input"
+                    value={packPurpose}
+                    onChange={(e) => setPackPurpose(e.target.value)}
+                    style={{ width: "100%", marginTop: 4 }}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: "flex", gap: 12, marginBottom: 20 }}>
+                <button
+                  className="wb-btn wb-btn-primary"
+                  onClick={() => {
+                    if (!selectedCaseId) return;
+                    api.previewReferralPack(selectedCaseId, {
+                      recipient_org: recipientOrg,
+                      purpose: packPurpose,
+                      legal_basis: legalBasis,
+                    })
+                      .then((prev) => {
+                        setPackPreview(prev);
+                        setPackApprovalMsg(null);
+                      })
+                      .catch((err) => setError(err.message));
+                  }}
+                >
+                  Generate Referral Preview
+                </button>
+
+                {packPreview && packPreview.status === "preview" && (
+                  <button
+                    className="wb-btn"
+                    style={{ background: "var(--accent-green)", color: "#fff" }}
+                    disabled={approvingPack}
+                    onClick={() => {
+                      if (!selectedCaseId || !packPreview) return;
+                      setApprovingPack(true);
+                      api.approveReferralPack(selectedCaseId, {
+                        pack_id: packPreview.pack_id,
+                        expected_pack_hash: packPreview.pack_hash,
+                      })
+                        .then((res) => {
+                          setPackApprovalMsg(`Pack approved successfully! Authorizer signed: ${res.approving_principals.join(", ")}`);
+                          setPackPreview({ ...packPreview, status: "approved" });
+                        })
+                        .catch((err) => setError(err.message))
+                        .finally(() => setApprovingPack(false));
+                    }}
+                  >
+                    {approvingPack ? "Authorising..." : "Approve & Sign Off Referral Pack"}
+                  </button>
+                )}
+              </div>
+
+              {packApprovalMsg && (
+                <div style={{ padding: 12, background: "rgba(0, 200, 83, 0.1)", color: "var(--accent-green)", borderRadius: 6, marginBottom: 16 }}>
+                  {packApprovalMsg}
+                </div>
+              )}
+
+              {packPreview && (
+                <div style={{ background: "var(--bg-secondary)", padding: 16, borderRadius: 8 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                    <div>
+                      <span style={{ fontSize: 12, color: "var(--text-muted)" }}>Pack ID:</span> <code>{packPreview.pack_id}</code>
+                    </div>
+                    <span className={`wb-badge ${packPreview.status === "approved" ? "wb-badge-success" : "wb-badge-warning"}`}>
+                      {packPreview.status.toUpperCase()}
+                    </span>
+                  </div>
+
+                  <div style={{ marginBottom: 12 }}>
+                    <div style={{ fontSize: 12, color: "var(--text-muted)" }}>Pack Integrity Root Hash (SHA-256):</div>
+                    <code style={{ fontSize: 13, wordBreak: "break-all" }}>{packPreview.pack_hash}</code>
+                  </div>
+
+                  <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 6 }}>Included Artefacts:</div>
+                  <ul style={{ fontSize: 12, margin: 0, paddingLeft: 20 }}>
+                    {packPreview.file_names?.map((fn: string) => (
+                      <li key={fn}>{fn}</li>
+                    ))}
+                  </ul>
+
+                  <div style={{ marginTop: 16, padding: 12, background: "rgba(255, 165, 0, 0.08)", borderRadius: 6, fontSize: 11, color: "var(--text-muted)" }}>
+                    {packPreview.manifest?.disclaimer}
+                  </div>
+                </div>
+              )}
+            </div>
           )}
         </div>
       ) : (

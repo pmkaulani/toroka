@@ -6,6 +6,8 @@ import hmac
 import uuid
 from datetime import datetime, timezone
 
+from decimal import Decimal
+
 from sqlalchemy import (
     CheckConstraint,
     DateTime,
@@ -13,6 +15,7 @@ from sqlalchemy import (
     Index,
     Integer,
     JSON,
+    Numeric,
     String,
     Text,
     UniqueConstraint,
@@ -234,6 +237,9 @@ class RevealRequest(Base):
     used_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    reveal_token: Mapped[str | None] = mapped_column(
+        Text, nullable=True
+    )
 
     case: Mapped[EnterpriseCase] = relationship(
         "EnterpriseCase", back_populates="reveal_requests"
@@ -312,9 +318,15 @@ class AuditHead(Base):
 
 class AuditRecord(Base):
     __tablename__ = "enterprise_audit_records"
+    __table_args__ = (
+        UniqueConstraint("installation_id", "sequence", name="uq_audit_installation_sequence"),
+    )
 
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=new_id
+    )
     sequence: Mapped[int] = mapped_column(
-        Integer, primary_key=True
+        Integer, nullable=False, index=True
     )
     installation_id: Mapped[str] = mapped_column(
         String(100), nullable=False, index=True
@@ -353,6 +365,9 @@ class AuditRecord(Base):
 
 class RunRecord(Base):
     __tablename__ = "enterprise_runs"
+    __table_args__ = (
+        UniqueConstraint("installation_id", "manifest_id", name="uq_run_installation_manifest"),
+    )
 
     id: Mapped[str] = mapped_column(
         String(36), primary_key=True, default=new_id
@@ -361,7 +376,7 @@ class RunRecord(Base):
         String(100), nullable=False, default="toroka-default-installation", index=True
     )
     manifest_id: Mapped[str] = mapped_column(
-        String(64), unique=True, nullable=False
+        String(64), nullable=False
     )
     manifest: Mapped[dict] = mapped_column(
         JSON, nullable=False
@@ -378,3 +393,280 @@ class RunRecord(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utc_now, nullable=False
     )
+
+
+class InvestigationEvidenceArtifact(Base):
+    __tablename__ = "enterprise_evidence_artifacts"
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=new_id
+    )
+    installation_id: Mapped[str] = mapped_column(
+        String(100), nullable=False, index=True
+    )
+    case_id: Mapped[str] = mapped_column(
+        ForeignKey("enterprise_cases.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    source_type: Mapped[str] = mapped_column(
+        String(40), nullable=False
+    )
+    source_system: Mapped[str] = mapped_column(
+        String(120), nullable=False
+    )
+    source_record_ref: Mapped[str | None] = mapped_column(
+        String(300), nullable=True
+    )
+    source_locator_ciphertext: Mapped[str | None] = mapped_column(
+        Text, nullable=True
+    )
+    observed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    collected_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    collected_by: Mapped[str] = mapped_column(
+        String(160), nullable=False
+    )
+    source_timezone: Mapped[str] = mapped_column(
+        String(80), nullable=False
+    )
+    sha256: Mapped[str] = mapped_column(
+        String(64), nullable=False
+    )
+    media_type: Mapped[str | None] = mapped_column(
+        String(120), nullable=True
+    )
+    extractor_name: Mapped[str | None] = mapped_column(
+        String(120), nullable=True
+    )
+    extractor_version: Mapped[str | None] = mapped_column(
+        String(80), nullable=True
+    )
+    state: Mapped[str] = mapped_column(
+        String(30), nullable=False, default="observed"
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, nullable=False
+    )
+
+
+class InvestigationEntity(Base):
+    __tablename__ = "enterprise_investigation_entities"
+    __table_args__ = (
+        UniqueConstraint("installation_id", "case_id", "identifier_token", name="uq_entity_inst_case_token"),
+    )
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=new_id
+    )
+    installation_id: Mapped[str] = mapped_column(
+        String(100), nullable=False, index=True
+    )
+    case_id: Mapped[str] = mapped_column(
+        ForeignKey("enterprise_cases.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    kind: Mapped[str] = mapped_column(
+        String(40), nullable=False
+    )
+    identifier_token: Mapped[str] = mapped_column(
+        String(180), nullable=False
+    )
+    display_label: Mapped[str | None] = mapped_column(
+        String(180), nullable=True
+    )
+    first_seen_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    last_seen_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    sensitivity: Mapped[str] = mapped_column(
+        String(30), nullable=False, default="restricted"
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, nullable=False
+    )
+
+
+class InvestigationRelationship(Base):
+    __tablename__ = "enterprise_investigation_relationships"
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=new_id
+    )
+    installation_id: Mapped[str] = mapped_column(
+        String(100), nullable=False, index=True
+    )
+    case_id: Mapped[str] = mapped_column(
+        ForeignKey("enterprise_cases.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    source_entity_id: Mapped[str] = mapped_column(
+        ForeignKey("enterprise_investigation_entities.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    target_entity_id: Mapped[str] = mapped_column(
+        ForeignKey("enterprise_investigation_entities.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    relationship_type: Mapped[str] = mapped_column(
+        String(80), nullable=False
+    )
+    state: Mapped[str] = mapped_column(
+        String(30), nullable=False, default="hypothesis"
+    )
+    evidence_ids: Mapped[list] = mapped_column(
+        JSON, nullable=False
+    )
+    valid_from: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    valid_to: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    explanation: Mapped[str] = mapped_column(
+        Text, nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, nullable=False
+    )
+
+
+class InvestigationTransaction(Base):
+    __tablename__ = "enterprise_investigation_transactions"
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=new_id
+    )
+    installation_id: Mapped[str] = mapped_column(
+        String(100), nullable=False, index=True
+    )
+    case_id: Mapped[str] = mapped_column(
+        ForeignKey("enterprise_cases.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    source_entity_id: Mapped[str] = mapped_column(
+        ForeignKey("enterprise_investigation_entities.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    destination_entity_id: Mapped[str] = mapped_column(
+        ForeignKey("enterprise_investigation_entities.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    amount: Mapped[Decimal] = mapped_column(
+        Numeric(20, 4), nullable=False
+    )
+    currency: Mapped[str] = mapped_column(
+        String(3), nullable=False
+    )
+    occurred_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, index=True
+    )
+    source_timezone: Mapped[str] = mapped_column(
+        String(80), nullable=False
+    )
+    channel: Mapped[str] = mapped_column(
+        String(80), nullable=False
+    )
+    source_system: Mapped[str] = mapped_column(
+        String(120), nullable=False
+    )
+    source_record_ref: Mapped[str] = mapped_column(
+        String(300), nullable=False
+    )
+    evidence_id: Mapped[str] = mapped_column(
+        ForeignKey("enterprise_evidence_artifacts.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    reference_token: Mapped[str | None] = mapped_column(
+        String(180), nullable=True
+    )
+    event_type: Mapped[str] = mapped_column(
+        String(40), nullable=False, default="transfer"
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, nullable=False
+    )
+
+
+class InvestigationFinding(Base):
+    __tablename__ = "enterprise_investigation_findings"
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=new_id
+    )
+    installation_id: Mapped[str] = mapped_column(
+        String(100), nullable=False, index=True
+    )
+    case_id: Mapped[str] = mapped_column(
+        ForeignKey("enterprise_cases.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    rule_id: Mapped[str] = mapped_column(
+        String(100), nullable=False
+    )
+    rule_version: Mapped[str] = mapped_column(
+        String(40), nullable=False
+    )
+    title: Mapped[str] = mapped_column(
+        String(180), nullable=False
+    )
+    explanation: Mapped[str] = mapped_column(
+        Text, nullable=False
+    )
+    state: Mapped[str] = mapped_column(
+        String(30), nullable=False, default="hypothesis"
+    )
+    evidence_ids: Mapped[list] = mapped_column(
+        JSON, nullable=False
+    )
+    counter_evidence_ids: Mapped[list] = mapped_column(
+        JSON, nullable=False, default=list
+    )
+    unresolved_questions: Mapped[list] = mapped_column(
+        JSON, nullable=False, default=list
+    )
+    recommended_human_action: Mapped[str] = mapped_column(
+        Text, nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, nullable=False
+    )
+
+
+class ReferralPackRecord(Base):
+    __tablename__ = "enterprise_referral_packs"
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=new_id
+    )
+    installation_id: Mapped[str] = mapped_column(
+        String(100), nullable=False, index=True
+    )
+    case_id: Mapped[str] = mapped_column(
+        ForeignKey("enterprise_cases.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    status: Mapped[str] = mapped_column(
+        String(30), nullable=False, default="preview"
+    )
+    pack_hash: Mapped[str] = mapped_column(
+        String(64), nullable=False
+    )
+    recipient_org: Mapped[str] = mapped_column(
+        String(200), nullable=False
+    )
+    purpose: Mapped[str] = mapped_column(
+        String(500), nullable=False
+    )
+    legal_basis: Mapped[str] = mapped_column(
+        String(500), nullable=False
+    )
+    generating_principal: Mapped[str] = mapped_column(
+        String(255), nullable=False
+    )
+    approving_principals: Mapped[list] = mapped_column(
+        JSON, nullable=False, default=list
+    )
+    manifest_data: Mapped[dict] = mapped_column(
+        JSON, nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, nullable=False
+    )
+    approved_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
