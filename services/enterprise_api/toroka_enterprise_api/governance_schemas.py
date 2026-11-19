@@ -735,4 +735,55 @@ class UpdateFederatedMuleStatusRequest(BaseModel):
     justification: str
 
 
+# ==============================================================================
+# Phase 14.3: Multi-Tiered Mule Tracing & Graph Cascade Schemas (PBOC / UK PSR)
+# ==============================================================================
+
+class TriggerMuleCascadeTraceRequest(BaseModel):
+    root_account: str
+    root_fraud_amount: Decimal
+    currency: str = "KES"
+    root_transaction_id: str | None = None
+    anchor_time: str | None = None
+    max_hops: int = 3
+    time_window_hours: int = 72
+    local_bank_bic: str = "KCBKKENA"
+    transfers: list[dict[str, Any]] | None = None
+    account_metadata: dict[str, dict[str, Any]] | None = None
+
+
+class MuleCascadeTraceResponse(BaseModel):
+    trace_id: str
+    installation_id: str
+    root_account: str
+    root_transaction_id: str | None = None
+    root_fraud_amount: str
+    currency: str
+    max_depth_reached: int
+    nodes: list[dict[str, Any]]
+    edges: list[dict[str, Any]]
+    total_nodes_identified: int
+    total_frozen_or_held_amount: str
+    recovery_potential_ratio: float
+    created_at: str
+    status: str
+    directives: list[dict[str, Any]]
+
+
+class ExecuteCascadeDirectiveRequest(BaseModel):
+    directive_id: str
+    action: Literal["EXECUTE_LOCAL_HOLD", "DISPATCH_CAMT056", "REJECT"]
+    justification: str | None = None
+
+
+class ExecuteCascadeDirectiveResponse(BaseModel):
+    directive_id: str
+    trace_id: str
+    status: str
+    action_taken: str
+    camt056_xml: str | None = None
+    executed_at: str
+
+
+
 

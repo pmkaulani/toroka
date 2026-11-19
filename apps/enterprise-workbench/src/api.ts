@@ -72,6 +72,10 @@ import {
   TelecomSignalResponse,
   FederatedMuleEntry,
   QueryFederatedMuleResponse,
+  MuleCascadeTrace,
+  TriggerMuleCascadeTracePayload,
+  ExecuteCascadeDirectivePayload,
+  ExecuteCascadeDirectiveResponse,
 } from "./types";
 
 export const BANK_PERSONAS: Persona[] = [
@@ -1100,4 +1104,28 @@ export const api = {
       method: "PATCH",
       body: JSON.stringify(payload),
     }),
+
+  triggerMuleCascadeTrace: (payload: TriggerMuleCascadeTracePayload): Promise<MuleCascadeTrace> =>
+    request<MuleCascadeTrace>("/api/enterprise/v1/governance/intelligence/mule-cascade/trace", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  listMuleCascadeTraces: (): Promise<MuleCascadeTrace[]> =>
+    request<MuleCascadeTrace[]>("/api/enterprise/v1/governance/intelligence/mule-cascade/traces"),
+
+  getMuleCascadeTrace: (traceId: string): Promise<MuleCascadeTrace> =>
+    request<MuleCascadeTrace>(`/api/enterprise/v1/governance/intelligence/mule-cascade/traces/${encodeURIComponent(traceId)}`),
+
+  executeCascadeDirective: (
+    traceId: string,
+    payload: ExecuteCascadeDirectivePayload
+  ): Promise<ExecuteCascadeDirectiveResponse> =>
+    request<ExecuteCascadeDirectiveResponse>(
+      `/api/enterprise/v1/governance/intelligence/mule-cascade/traces/${encodeURIComponent(traceId)}/directives/${encodeURIComponent(payload.directive_id)}/execute`,
+      {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }
+    ),
 };

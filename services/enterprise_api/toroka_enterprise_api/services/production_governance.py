@@ -11,6 +11,7 @@ from typing import Any
 from fastapi import HTTPException, status
 from sqlalchemy import and_, desc, select
 from sqlalchemy.orm import Session
+from sqlalchemy.orm.attributes import flag_modified
 
 from toroka_enterprise.governance.approval import (
     ApprovalDecision,
@@ -145,6 +146,11 @@ from toroka_enterprise.integrations.federated_mule import (
     MuleEntryStatus,
     MuleSeverityTier,
 )
+from toroka_enterprise.intelligence.mule_cascade import (
+    MuleCascadeTracerEngine,
+    MuleCascadeTraceResult,
+    CascadeHoldDirectiveType,
+)
 from toroka_enterprise.intelligence.copilot.contracts import (
     ClaimKind,
     EvidenceContext,
@@ -172,6 +178,7 @@ from toroka_enterprise.intelligence.models import (
     InflightPaymentRiskRecord,
     IntelligenceEventRecord,
     IntelligenceSignalRecord,
+    MuleCascadeTraceRecord,
     NetworkFindingRecord,
     ProductionReleaseRecord,
     QuantitativeDriftEvaluationRecord,
@@ -198,6 +205,8 @@ from ..governance_schemas import (
     EvaluateQuantitativeDriftRequest,
     EvaluateReadinessGatesRequest,
     EvidencePassportResponse,
+    ExecuteCascadeDirectiveRequest,
+    ExecuteCascadeDirectiveResponse,
     ExecuteTrustedValidationRequest,
     FederatedMuleEntryResponse,
     ForensicDossierResponse,
@@ -206,6 +215,7 @@ from ..governance_schemas import (
     GovernedComponentResponse,
     InflightPaymentEvaluationRequest,
     InflightPaymentEvaluationResponse,
+    MuleCascadeTraceResponse,
     ProductionReleaseResponse,
     QuantitativeDriftEvaluationResponse,
     QueryFederatedMuleRequest,
@@ -226,6 +236,7 @@ from ..governance_schemas import (
     SystemHealthOverviewResponse,
     TelecomSignalRequest,
     TelecomSignalResponse,
+    TriggerMuleCascadeTraceRequest,
     TrustedSignerResponse,
     UpdateFederatedMuleStatusRequest,
     UpdateIncidentStatusRequest,
@@ -3844,6 +3855,191 @@ class ProductionGovernanceService:
             registered_at=r.registered_at.isoformat(),
             expires_at=r.expires_at.isoformat() if r.expires_at else None,
         )
+
+    # =========================================================================
+    # Phase 14.3: Multi-Tiered Mule Tracing & Graph Cascade
+    # =========================================================================
+
+    def trigger_mule_cascade_trace(
+        self,
+        request: TriggerMuleCascadeTraceRequest,
+        actor_subject: str,
+    ) -> MuleCascadeTraceResponse:
+        """Traces the downstream mule dispersion cascade and persists the graph and hold directives."""
+        engine = MuleCascadeTracerEngine(local_bank_bic=request.local_bank_bic)
+
+        anchor_dt = None
+        if request.anchor_time:
+            anchor_dt = datetime.fromisoformat(request.anchor_time.replace("Z", "+00:00"))
+
+        transfers = list(request.transfers or [])
+        if not transfers:
+            stmt = select(InflightPaymentRiskRecord).where(
+                InflightPaymentRiskRecord.installation_id == self.installation_id
+            ).order_by(InflightPaymentRiskRecord.evaluated_at.desc()).limit(100)
+            records = self.session.execute(stmt).scalars().all()
+            for rec in records:
+                transfers.append({
+                    "source_account": rec.debtor_account,
+                    "target_account": rec.creditor_account,
+                    "amount": rec.payment_amount,
+                    "currency": rec.payment_currency,
+                    "timestamp": rec.evaluated_at,
+                    "transaction_id": rec.end_to_end_id,
+                    "payment_rail": rec.clearing_rail,
+                    "source_bic": rec.debtor_bic,
+                    "target_bic": rec.creditor_bic,
+                })
+
+        trace_res = engine.trace_cascade(
+            installation_id=self.installation_id,
+            root_account=request.root_account,
+            root_fraud_amount=request.root_fraud_amount,
+            currency=request.currency,
+            root_transaction_id=request.root_transaction_id,
+            anchor_time=anchor_dt,
+            transfers=transfers,
+            max_hops=request.max_hops,
+            time_window_hours=request.time_window_hours,
+            account_metadata=request.account_metadata,
+        )
+
+        now = _utc_now()
+        record = MuleCascadeTraceRecord(
+            trace_id=trace_res.trace_id,
+            installation_id=self.installation_id,
+            root_account=request.root_account,
+            root_transaction_id=request.root_transaction_id,
+            root_fraud_amount=request.root_fraud_amount,
+            currency=request.currency,
+            max_depth_reached=trace_res.max_depth_reached,
+            total_nodes_identified=trace_res.total_nodes_identified,
+            total_frozen_or_held_amount=trace_res.total_frozen_or_held_amount,
+            recovery_potential_ratio=trace_res.recovery_potential_ratio,
+            graph_topology={
+                "nodes": [n.to_dict() for n in trace_res.nodes],
+                "edges": [e.to_dict() for e in trace_res.edges],
+            },
+            directives=trace_res.directives_generated,
+            status="ACTIVE",
+            initiated_by=actor_subject,
+            created_at=now,
+            updated_at=now,
+        )
+        self.session.add(record)
+        self.session.commit()
+        self.session.refresh(record)
+
+        return self._to_mule_cascade_response(record)
+
+    def list_mule_cascade_traces(self) -> list[MuleCascadeTraceResponse]:
+        stmt = select(MuleCascadeTraceRecord).where(
+            MuleCascadeTraceRecord.installation_id == self.installation_id
+        ).order_by(MuleCascadeTraceRecord.created_at.desc())
+        records = self.session.execute(stmt).scalars().all()
+        return [self._to_mule_cascade_response(r) for r in records]
+
+    def get_mule_cascade_trace(self, trace_id: str) -> MuleCascadeTraceResponse:
+        record = self.session.execute(
+            select(MuleCascadeTraceRecord).where(
+                MuleCascadeTraceRecord.installation_id == self.installation_id,
+                MuleCascadeTraceRecord.trace_id == trace_id,
+            )
+        ).scalar_one_or_none()
+        if not record:
+            raise HTTPException(status_code=404, detail=f"Mule cascade trace '{trace_id}' not found")
+        return self._to_mule_cascade_response(record)
+
+    def execute_cascade_directive(
+        self,
+        trace_id: str,
+        request: ExecuteCascadeDirectiveRequest,
+        actor_subject: str,
+    ) -> ExecuteCascadeDirectiveResponse:
+        record = self.session.execute(
+            select(MuleCascadeTraceRecord).where(
+                MuleCascadeTraceRecord.installation_id == self.installation_id,
+                MuleCascadeTraceRecord.trace_id == trace_id,
+            )
+        ).scalar_one_or_none()
+        if not record:
+            raise HTTPException(status_code=404, detail=f"Mule cascade trace '{trace_id}' not found")
+
+        directives = list(record.directives)
+        matched_dir = None
+        for d in directives:
+            if d.get("directive_id") == request.directive_id:
+                matched_dir = d
+                break
+        if not matched_dir:
+            raise HTTPException(status_code=404, detail=f"Directive '{request.directive_id}' not found in trace")
+
+        now = _utc_now()
+        new_status = "EXECUTED" if request.action in ("EXECUTE_LOCAL_HOLD", "DISPATCH_CAMT056") else "REJECTED"
+        matched_dir["status"] = new_status
+        matched_dir["executed_by"] = actor_subject
+        matched_dir["executed_at"] = now.isoformat()
+        if request.justification:
+            matched_dir["justification"] = request.justification
+
+        topology = dict(record.graph_topology)
+        nodes = list(topology.get("nodes", []))
+        for n in nodes:
+            if n.get("node_key") == matched_dir.get("node_key"):
+                n["directive_status"] = new_status
+                break
+        topology["nodes"] = nodes
+
+        camt056_xml = None
+        if request.action == "DISPATCH_CAMT056":
+            engine = MuleCascadeTracerEngine(local_bank_bic="KCBKKENA")
+            camt056_xml = engine.generate_camt056_xml(
+                trace_id=record.trace_id,
+                original_txn_id=record.root_transaction_id or f"TX_{record.trace_id[:8]}",
+                instructed_amount=Decimal(str(matched_dir.get("target_amount", record.root_fraud_amount))),
+                currency=record.currency,
+                counterparty_bic=matched_dir.get("bank_bic", "EQUAKENA"),
+                mule_account=matched_dir.get("node_key", ""),
+                cancellation_reason_code="FRAD",
+            )
+            matched_dir["camt056_xml"] = camt056_xml
+
+        record.directives = directives
+        record.graph_topology = topology
+        record.updated_at = now
+        flag_modified(record, "directives")
+        flag_modified(record, "graph_topology")
+        self.session.commit()
+
+        return ExecuteCascadeDirectiveResponse(
+            directive_id=request.directive_id,
+            trace_id=trace_id,
+            status=new_status,
+            action_taken=request.action,
+            camt056_xml=camt056_xml,
+            executed_at=now.isoformat(),
+        )
+
+    def _to_mule_cascade_response(self, r: MuleCascadeTraceRecord) -> MuleCascadeTraceResponse:
+        topology = r.graph_topology or {}
+        return MuleCascadeTraceResponse(
+            trace_id=r.trace_id,
+            installation_id=r.installation_id,
+            root_account=r.root_account,
+            root_transaction_id=r.root_transaction_id,
+            root_fraud_amount=str(r.root_fraud_amount),
+            currency=r.currency,
+            max_depth_reached=r.max_depth_reached,
+            nodes=topology.get("nodes", []),
+            edges=topology.get("edges", []),
+            total_nodes_identified=r.total_nodes_identified,
+            total_frozen_or_held_amount=str(r.total_frozen_or_held_amount),
+            recovery_potential_ratio=r.recovery_potential_ratio,
+            created_at=r.created_at.isoformat(),
+            status=r.status,
+            directives=r.directives or [],
+        )
+
 
     def verify_copilot_semantics(
         self,

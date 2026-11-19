@@ -20,6 +20,7 @@ import {
   TelecomSignalResponse,
   FederatedMuleEntry,
   QueryFederatedMuleResponse,
+  MuleCascadeTrace,
   Persona,
 } from "../types";
 
@@ -130,11 +131,21 @@ export const ProductionGovernanceView: React.FC<Props> = ({ currentPersona }) =>
   const [fedNewReason, setFedNewReason] = useState("HIGH_VELOCITY_RAPID_CASHOUT");
   const [fedRegistering, setFedRegistering] = useState(false);
 
+  // Phase 14.3 Multi-Tiered Mule Tracing & Graph Cascade state
+  const [muleTraces, setMuleTraces] = useState<MuleCascadeTrace[]>([]);
+  const [activeTrace, setActiveTrace] = useState<MuleCascadeTrace | null>(null);
+  const [traceRootAccount, setTraceRootAccount] = useState("01199887766");
+  const [traceRootAmount, setTraceRootAmount] = useState("500000");
+  const [traceRootTxId, setTraceRootTxId] = useState("TX-PESA-882299");
+  const [traceMaxHops, setTraceMaxHops] = useState(3);
+  const [traceRunning, setTraceRunning] = useState(false);
+  const [selectedXmlNotice, setSelectedXmlNotice] = useState<string | null>(null);
+
   const fetchData = async () => {
     setLoading(true);
     setError(null);
     try {
-      const [h, comps, vRuns, rels, susps, incs, drifts, pass, providers, qDrifts, ccRuns, fedMules] = await Promise.all([
+      const [h, comps, vRuns, rels, susps, incs, drifts, pass, providers, qDrifts, ccRuns, fedMules, cascades] = await Promise.all([
         api.getSystemHealthOverview().catch(() => null),
         api.listGovernedComponents().catch(() => []),
         api.listValidationRuns().catch(() => []),
@@ -147,6 +158,7 @@ export const ProductionGovernanceView: React.FC<Props> = ({ currentPersona }) =>
         api.listQuantitativeDriftEvaluations().catch(() => []),
         api.listChampionChallengerRuns().catch(() => []),
         api.listFederatedMules().catch(() => []),
+        api.listMuleCascadeTraces().catch(() => []),
       ]);
 
       setHealth(h);
@@ -161,6 +173,10 @@ export const ProductionGovernanceView: React.FC<Props> = ({ currentPersona }) =>
       setQuantDrifts(qDrifts);
       setChampionChallengerRuns(ccRuns);
       setFedMuleEntries(fedMules);
+      setMuleTraces(cascades);
+      if (cascades && cascades.length > 0) {
+        setActiveTrace(cascades[0]);
+      }
 
       // Attempt to load default validation package
       try {
@@ -409,6 +425,52 @@ export const ProductionGovernanceView: React.FC<Props> = ({ currentPersona }) =>
       alert(`Enrollment failed: ${err.message}`);
     } finally {
       setFedRegistering(false);
+    }
+  };
+
+  const handleTriggerMuleCascadeTrace = async () => {
+    if (!traceRootAccount.trim()) return;
+    setTraceRunning(true);
+    try {
+      const trace = await api.triggerMuleCascadeTrace({
+        root_account: traceRootAccount.trim(),
+        root_fraud_amount: traceRootAmount.trim(),
+        root_transaction_id: traceRootTxId.trim() || undefined,
+        max_hops: traceMaxHops,
+        local_bank_bic: "KCBKKENA",
+      });
+      setMuleTraces((prev) => [trace, ...prev]);
+      setActiveTrace(trace);
+      alert(`Mule Cascade Trace completed: ${trace.total_nodes_identified} nodes mapped across ${trace.max_depth_reached} hops. Recovery potential: ${(trace.recovery_potential_ratio * 100).toFixed(1)}%`);
+    } catch (err: any) {
+      alert(`Cascade Trace failed: ${err.message}`);
+    } finally {
+      setTraceRunning(false);
+    }
+  };
+
+  const handleExecuteDirective = async (
+    directiveId: string,
+    action: "EXECUTE_LOCAL_HOLD" | "DISPATCH_CAMT056" | "REJECT"
+  ) => {
+    if (!activeTrace) return;
+    try {
+      const res = await api.executeCascadeDirective(activeTrace.trace_id, {
+        directive_id: directiveId,
+        action,
+        justification: `Directive action executed by ${currentPersona.name}`,
+      });
+      const updated = await api.getMuleCascadeTrace(activeTrace.trace_id);
+      setActiveTrace(updated);
+      setMuleTraces((prev) => prev.map((t) => (t.trace_id === updated.trace_id ? updated : t)));
+
+      if (action === "DISPATCH_CAMT056" && res.camt056_xml) {
+        setSelectedXmlNotice(res.camt056_xml);
+      } else {
+        alert(`Directive ${directiveId} updated to ${res.status}`);
+      }
+    } catch (err: any) {
+      alert(`Failed to execute directive: ${err.message}`);
     }
   };
 
@@ -2201,6 +2263,330 @@ export const ProductionGovernanceView: React.FC<Props> = ({ currentPersona }) =>
                   </div>
                 </div>
               </div>
+            </div>
+
+            {/* Section 6: Multi-Tiered Mule Tracing & Graph Cascade (China PBOC / UK PSR Interbank Rapid Freezing) */}
+            <div className="p-5 rounded-lg bg-slate-900 border border-slate-800 space-y-6">
+              <div className="border-b border-slate-800 pb-3 flex flex-wrap items-center justify-between gap-4">
+                <div>
+                  <h3 className="text-sm font-bold text-white flex items-center">
+                    <span className="mr-2">🕸️</span> Multi-Tiered Mule Tracing & Graph Cascade (China PBOC / UK PSR Rapid Freeze)
+                  </h3>
+                  <p className="text-xs text-slate-400 mt-1">
+                    Causal breadth-first-search tracing of downstream money laundering hops (Tier 1 Direct Recipient &rarr; Tier 2 Layering Mules &rarr; Tier 3 Cashout Gateways) with automated interbank holds.
+                  </p>
+                </div>
+                <div className="flex items-center space-x-3">
+                  {muleTraces.length > 0 && (
+                    <div className="flex items-center space-x-2">
+                      <label className="text-slate-400 text-xs">History:</label>
+                      <select
+                        value={activeTrace?.trace_id || ""}
+                        onChange={(e) => {
+                          const found = muleTraces.find((t) => t.trace_id === e.target.value);
+                          if (found) setActiveTrace(found);
+                        }}
+                        className="bg-slate-950 border border-slate-800 rounded px-2 py-1 text-xs text-white font-mono"
+                      >
+                        {muleTraces.map((t) => (
+                          <option key={t.trace_id} value={t.trace_id}>
+                            {t.trace_id.substring(0, 10)}... ({t.root_account})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                  {activeTrace && (
+                    <div className="flex items-center space-x-3 bg-slate-950 px-3 py-1.5 rounded border border-slate-800 text-xs">
+                      <span className="text-slate-400">Trace: <span className="font-mono text-white">{activeTrace.trace_id}</span></span>
+                      <span className="text-emerald-400 font-semibold">
+                        {(activeTrace.recovery_potential_ratio * 100).toFixed(1)}% Recovery Potential
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Trace Trigger Form */}
+              <div className="p-4 rounded bg-slate-950 border border-slate-800 space-y-3">
+                <span className="text-xs font-semibold text-slate-200">Initiate Rapid Dispersion Incident Trace</span>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 text-xs">
+                  <div>
+                    <label className="text-slate-400 block mb-1">Root Fraud Account</label>
+                    <input
+                      value={traceRootAccount}
+                      onChange={(e) => setTraceRootAccount(e.target.value)}
+                      placeholder="01199887766"
+                      className="w-full bg-slate-900 border border-slate-800 rounded px-2.5 py-1.5 text-white font-mono"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-slate-400 block mb-1">Stolen Amount (KES)</label>
+                    <input
+                      value={traceRootAmount}
+                      onChange={(e) => setTraceRootAmount(e.target.value)}
+                      placeholder="500000"
+                      className="w-full bg-slate-900 border border-slate-800 rounded px-2.5 py-1.5 text-white font-mono"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-slate-400 block mb-1">Root Transaction Ref</label>
+                    <input
+                      value={traceRootTxId}
+                      onChange={(e) => setTraceRootTxId(e.target.value)}
+                      placeholder="TX-PESA-882299"
+                      className="w-full bg-slate-900 border border-slate-800 rounded px-2.5 py-1.5 text-white font-mono"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-slate-400 block mb-1">Max Graph Hops</label>
+                    <select
+                      value={traceMaxHops}
+                      onChange={(e) => setTraceMaxHops(Number(e.target.value))}
+                      className="w-full bg-slate-900 border border-slate-800 rounded px-2.5 py-1.5 text-white"
+                    >
+                      <option value={1}>1 Hop (Direct Beneficiary)</option>
+                      <option value={2}>2 Hops (Secondary Dispersion)</option>
+                      <option value={3}>3 Hops (Full Syndicate Tree)</option>
+                    </select>
+                  </div>
+                  <div className="flex items-end">
+                    <button
+                      onClick={handleTriggerMuleCascadeTrace}
+                      disabled={traceRunning}
+                      className="w-full py-1.5 px-3 bg-red-600 hover:bg-red-500 font-semibold text-white rounded transition shadow-sm"
+                    >
+                      {traceRunning ? "Tracing..." : "Execute Graph Trace"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Recovery Potential Progress Meter */}
+              {activeTrace && (
+                <div className="p-4 rounded bg-slate-950 border border-slate-800 space-y-2">
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="text-slate-300 font-semibold">Consortium Recovery Potential Meter</span>
+                    <span className="text-slate-400 font-mono">
+                      Frozen/Held: <span className="text-emerald-400 font-bold">KES {Number(activeTrace.total_frozen_or_held_amount).toLocaleString()}</span> / KES {Number(activeTrace.root_fraud_amount).toLocaleString()}
+                    </span>
+                  </div>
+                  <div className="w-full bg-slate-800 rounded-full h-2.5 overflow-hidden">
+                    <div
+                      className="bg-emerald-500 h-2.5 rounded-full transition-all duration-500"
+                      style={{ width: `${Math.min(100, Math.max(0, activeTrace.recovery_potential_ratio * 100))}%` }}
+                    />
+                  </div>
+                  <div className="flex justify-between text-[11px] text-slate-500">
+                    <span>{activeTrace.total_nodes_identified} Nodes Identified</span>
+                    <span>Max Depth: Tier {activeTrace.max_depth_reached}</span>
+                    <span>{activeTrace.edges.length} Dispersal Edges</span>
+                  </div>
+                </div>
+              )}
+
+              {/* Visual Hop Cards: Tier 1 -> Tier 2 -> Tier 3 */}
+              {activeTrace && activeTrace.nodes.length > 0 && (
+                <div className="space-y-3">
+                  <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider">Mule Network Topology & Tiers</h4>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    {/* Tier 1 Direct Beneficiary */}
+                    <div className="p-4 rounded bg-red-950/20 border border-red-900/50 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-red-400 flex items-center">
+                          <span className="w-2 h-2 rounded-full bg-red-500 mr-2" /> Tier 1: Direct Beneficiary
+                        </span>
+                        <span className="text-[10px] bg-red-900/60 text-red-200 px-1.5 py-0.5 rounded font-mono">Hop 1</span>
+                      </div>
+                      {activeTrace.nodes.filter(n => n.tier_level === 1).map(n => (
+                        <div key={n.node_key} className="p-2.5 bg-slate-950 rounded border border-red-900/30 text-xs space-y-1">
+                          <div className="flex justify-between font-mono">
+                            <span className="text-white font-bold">{n.node_key}</span>
+                            <span className="text-red-400">{n.bank_bic}</span>
+                          </div>
+                          <div className="text-[11px] text-slate-400 flex justify-between">
+                            <span>Retained: KES {Number(n.retained_balance_estimate).toLocaleString()}</span>
+                            <span>Velocity: {n.velocity_minutes}m</span>
+                          </div>
+                          <div className="text-[10px] text-red-300 font-semibold">
+                            Directive: {n.recommended_directive} ({n.directive_status})
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Tier 2 Secondary Dispersion */}
+                    <div className="p-4 rounded bg-amber-950/20 border border-amber-900/50 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-amber-400 flex items-center">
+                          <span className="w-2 h-2 rounded-full bg-amber-500 mr-2" /> Tier 2: Layering Mules
+                        </span>
+                        <span className="text-[10px] bg-amber-900/60 text-amber-200 px-1.5 py-0.5 rounded font-mono">Hop 2</span>
+                      </div>
+                      {activeTrace.nodes.filter(n => n.tier_level === 2).length === 0 ? (
+                        <div className="text-xs text-slate-500 italic p-3 text-center">No Tier 2 dispersion detected</div>
+                      ) : (
+                        activeTrace.nodes.filter(n => n.tier_level === 2).map(n => (
+                          <div key={n.node_key} className="p-2.5 bg-slate-950 rounded border border-amber-900/30 text-xs space-y-1">
+                            <div className="flex justify-between font-mono">
+                              <span className="text-white font-bold">{n.node_key}</span>
+                              <span className="text-amber-400">{n.bank_bic}</span>
+                            </div>
+                            <div className="text-[11px] text-slate-400 flex justify-between">
+                              <span>Inflow: KES {Number(n.total_inflow).toLocaleString()}</span>
+                              <span>Dispersion: {(n.dispersion_ratio * 100).toFixed(0)}%</span>
+                            </div>
+                            <div className="text-[10px] text-amber-300 font-semibold">
+                              Directive: {n.recommended_directive} ({n.directive_status})
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+
+                    {/* Tier 3 Cashout Gateway */}
+                    <div className="p-4 rounded bg-purple-950/20 border border-purple-900/50 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-purple-400 flex items-center">
+                          <span className="w-2 h-2 rounded-full bg-purple-500 mr-2" /> Tier 3: Cashout Gateways
+                        </span>
+                        <span className="text-[10px] bg-purple-900/60 text-purple-200 px-1.5 py-0.5 rounded font-mono">Hop 3</span>
+                      </div>
+                      {activeTrace.nodes.filter(n => n.tier_level === 3).length === 0 ? (
+                        <div className="text-xs text-slate-500 italic p-3 text-center">No Tier 3 exit nodes detected</div>
+                      ) : (
+                        activeTrace.nodes.filter(n => n.tier_level === 3).map(n => (
+                          <div key={n.node_key} className="p-2.5 bg-slate-950 rounded border border-purple-900/30 text-xs space-y-1">
+                            <div className="flex justify-between font-mono">
+                              <span className="text-white font-bold">{n.node_key}</span>
+                              <span className="text-purple-400">{n.bank_bic}</span>
+                            </div>
+                            <div className="text-[11px] text-slate-400 flex justify-between">
+                              <span>Exit Inflow: KES {Number(n.total_inflow).toLocaleString()}</span>
+                              <span>Risk: {(n.risk_score * 100).toFixed(0)}%</span>
+                            </div>
+                            <div className="text-[10px] text-purple-300 font-semibold">
+                              Directive: {n.recommended_directive} ({n.directive_status})
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Directives Table with Execution Controls */}
+              {activeTrace && activeTrace.directives.length > 0 && (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider">Automated Interbank Freezing Directives</h4>
+                    <span className="text-xs text-slate-500">{activeTrace.directives.length} Actionable Directives</span>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs border border-slate-800 rounded">
+                      <thead className="bg-slate-950 text-slate-400 border-b border-slate-800">
+                        <tr>
+                          <th className="p-2.5">Target Node</th>
+                          <th className="p-2.5">Tier</th>
+                          <th className="p-2.5">Bank BIC</th>
+                          <th className="p-2.5">Action Directive</th>
+                          <th className="p-2.5">Target Amount</th>
+                          <th className="p-2.5">Status</th>
+                          <th className="p-2.5 text-right">Execution Action</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-800">
+                        {activeTrace.directives.map((dir) => (
+                          <tr key={dir.directive_id} className="hover:bg-slate-950/60 transition">
+                            <td className="p-2.5 font-mono text-white font-semibold">{dir.node_key}</td>
+                            <td className="p-2.5">
+                              <span className={`px-2 py-0.5 rounded text-[10px] font-semibold ${
+                                dir.tier_level === 1 ? "bg-red-900/60 text-red-200" :
+                                dir.tier_level === 2 ? "bg-amber-900/60 text-amber-200" : "bg-purple-900/60 text-purple-200"
+                              }`}>
+                                Tier {dir.tier_level}
+                              </span>
+                            </td>
+                            <td className="p-2.5 font-mono text-slate-300">{dir.bank_bic}</td>
+                            <td className="p-2.5">
+                              <span className="text-slate-200 font-semibold">{dir.directive_type}</span>
+                              <div className="text-[10px] text-slate-400 mt-0.5">{dir.recommended_action}</div>
+                            </td>
+                            <td className="p-2.5 font-mono text-emerald-400">
+                              KES {Number(dir.target_amount).toLocaleString()}
+                            </td>
+                            <td className="p-2.5">
+                              <span className={`px-2 py-0.5 rounded text-[10px] font-semibold ${
+                                dir.status === "EXECUTED" ? "bg-emerald-900/60 text-emerald-300" :
+                                dir.status === "REJECTED" ? "bg-slate-800 text-slate-400" : "bg-amber-900/60 text-amber-200"
+                              }`}>
+                                {dir.status}
+                              </span>
+                            </td>
+                            <td className="p-2.5 text-right space-x-1.5 whitespace-nowrap">
+                              {dir.status === "PENDING" ? (
+                                <>
+                                  {dir.is_internal ? (
+                                    <button
+                                      onClick={() => handleExecuteDirective(dir.directive_id, "EXECUTE_LOCAL_HOLD")}
+                                      className="px-2.5 py-1 bg-red-600 hover:bg-red-500 font-semibold text-white rounded text-[11px] transition"
+                                    >
+                                      Execute Freeze
+                                    </button>
+                                  ) : (
+                                    <button
+                                      onClick={() => handleExecuteDirective(dir.directive_id, "DISPATCH_CAMT056")}
+                                      className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-500 font-semibold text-white rounded text-[11px] transition"
+                                    >
+                                      Dispatch camt.056
+                                    </button>
+                                  )}
+                                  <button
+                                    onClick={() => handleExecuteDirective(dir.directive_id, "REJECT")}
+                                    className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white rounded text-[11px] transition"
+                                  >
+                                    Dismiss
+                                  </button>
+                                </>
+                              ) : dir.camt056_xml ? (
+                                <button
+                                  onClick={() => setSelectedXmlNotice(dir.camt056_xml || "")}
+                                  className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-indigo-300 rounded text-[11px] font-mono transition"
+                                >
+                                  View camt.056 XML
+                                </button>
+                              ) : (
+                                <span className="text-[11px] text-slate-500 font-mono">Done</span>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* ISO 20022 camt.056 Modal / XML Viewer */}
+              {selectedXmlNotice && (
+                <div className="p-4 rounded bg-slate-950 border border-indigo-900/50 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-indigo-300 flex items-center">
+                      <span className="mr-2">📄</span> ISO 20022 camt.056.001.10 FIToFIPaymentCancellationRequest Dispatched
+                    </span>
+                    <button
+                      onClick={() => setSelectedXmlNotice(null)}
+                      className="text-xs text-slate-400 hover:text-white px-2 py-0.5 rounded bg-slate-900"
+                    >
+                      Close Viewer
+                    </button>
+                  </div>
+                  <pre className="p-3 bg-slate-900 rounded text-[11px] text-emerald-400 font-mono overflow-x-auto max-h-60 border border-slate-800">
+                    {selectedXmlNotice}
+                  </pre>
+                </div>
+              )}
             </div>
           </div>
         )}

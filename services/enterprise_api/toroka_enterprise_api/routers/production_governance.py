@@ -23,6 +23,8 @@ from ..governance_schemas import (
     EvaluateQuantitativeDriftRequest,
     EvaluateReadinessGatesRequest,
     EvidencePassportResponse,
+    ExecuteCascadeDirectiveRequest,
+    ExecuteCascadeDirectiveResponse,
     ExecuteTrustedValidationRequest,
     FederatedMuleEntryResponse,
     ForensicDossierResponse,
@@ -32,6 +34,7 @@ from ..governance_schemas import (
     GovernedComponentResponse,
     InflightPaymentEvaluationRequest,
     InflightPaymentEvaluationResponse,
+    MuleCascadeTraceResponse,
     ProductionReleaseResponse,
     PromoteReleaseRequest,
     QuantitativeDriftEvaluationResponse,
@@ -54,6 +57,7 @@ from ..governance_schemas import (
     SystemHealthOverviewResponse,
     TelecomSignalRequest,
     TelecomSignalResponse,
+    TriggerMuleCascadeTraceRequest,
     TrustedSignerResponse,
     UpdateFederatedMuleStatusRequest,
     UpdateIncidentStatusRequest,
@@ -1214,6 +1218,89 @@ def update_federated_mule_status(
     effective_inst = principal.installation_id or installation_id
     service = ProductionGovernanceService(db, effective_inst)
     return service.update_federated_mule_status(entry_id=entry_id, request=request, actor_subject=principal.subject)
+
+
+# =============================================================================
+# Phase 14.3: Multi-Tiered Mule Tracing & Graph Cascade Endpoints (PBOC / UK PSR)
+# =============================================================================
+
+@router.post(
+    "/intelligence/mule-cascade/trace",
+    response_model=MuleCascadeTraceResponse,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[
+        Depends(require_roles(ROLE_INVESTIGATOR, ROLE_AUTHORISER, ROLE_SYSTEM_ADMINISTRATOR))
+    ],
+)
+def trigger_mule_cascade_trace(
+    request: TriggerMuleCascadeTraceRequest,
+    principal: EnterprisePrincipal = Depends(get_current_principal),
+    installation_id: str = Depends(get_installation_id),
+    db: Session = Depends(get_db),
+) -> MuleCascadeTraceResponse:
+    effective_inst = principal.installation_id or installation_id
+    service = ProductionGovernanceService(db, effective_inst)
+    return service.trigger_mule_cascade_trace(request=request, actor_subject=principal.subject)
+
+
+@router.get(
+    "/intelligence/mule-cascade/traces",
+    response_model=list[MuleCascadeTraceResponse],
+    dependencies=[
+        Depends(require_roles(ROLE_INVESTIGATOR, ROLE_AUTHORISER, ROLE_AUDITOR, ROLE_SYSTEM_ADMINISTRATOR))
+    ],
+)
+def list_mule_cascade_traces(
+    principal: EnterprisePrincipal = Depends(get_current_principal),
+    installation_id: str = Depends(get_installation_id),
+    db: Session = Depends(get_db),
+) -> list[MuleCascadeTraceResponse]:
+    effective_inst = principal.installation_id or installation_id
+    service = ProductionGovernanceService(db, effective_inst)
+    return service.list_mule_cascade_traces()
+
+
+@router.get(
+    "/intelligence/mule-cascade/traces/{trace_id}",
+    response_model=MuleCascadeTraceResponse,
+    dependencies=[
+        Depends(require_roles(ROLE_INVESTIGATOR, ROLE_AUTHORISER, ROLE_AUDITOR, ROLE_SYSTEM_ADMINISTRATOR))
+    ],
+)
+def get_mule_cascade_trace(
+    trace_id: str,
+    principal: EnterprisePrincipal = Depends(get_current_principal),
+    installation_id: str = Depends(get_installation_id),
+    db: Session = Depends(get_db),
+) -> MuleCascadeTraceResponse:
+    effective_inst = principal.installation_id or installation_id
+    service = ProductionGovernanceService(db, effective_inst)
+    return service.get_mule_cascade_trace(trace_id=trace_id)
+
+
+@router.post(
+    "/intelligence/mule-cascade/traces/{trace_id}/directives/{directive_id}/execute",
+    response_model=ExecuteCascadeDirectiveResponse,
+    dependencies=[
+        Depends(require_roles(ROLE_AUTHORISER, ROLE_SYSTEM_ADMINISTRATOR))
+    ],
+)
+def execute_cascade_directive(
+    trace_id: str,
+    directive_id: str,
+    request: ExecuteCascadeDirectiveRequest,
+    principal: EnterprisePrincipal = Depends(get_current_principal),
+    installation_id: str = Depends(get_installation_id),
+    db: Session = Depends(get_db),
+) -> ExecuteCascadeDirectiveResponse:
+    effective_inst = principal.installation_id or installation_id
+    service = ProductionGovernanceService(db, effective_inst)
+    return service.execute_cascade_directive(
+        trace_id=trace_id,
+        request=request,
+        actor_subject=principal.subject,
+    )
+
 
 
 

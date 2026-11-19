@@ -346,4 +346,21 @@ __all__ = [
     "build_safe_evidence_prompt_block",
     "sanitize_and_wrap_evidence",
     "scan_for_prompt_injection",
+    # Phase 14.3 Multi-Tiered Mule Tracing & Graph Cascade
+    "MuleCascadeTier",
+    "CascadeHoldDirectiveType",
+    "MuleCascadeNode",
+    "MuleCascadeEdge",
+    "MuleCascadeTraceResult",
+    "MuleCascadeTracerEngine",
 ]
+
+from .mule_cascade import (
+    MuleCascadeTier,
+    CascadeHoldDirectiveType,
+    MuleCascadeNode,
+    MuleCascadeEdge,
+    MuleCascadeTraceResult,
+    MuleCascadeTracerEngine,
+)
+

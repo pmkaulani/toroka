@@ -1419,6 +1419,102 @@ export interface QueryFederatedMuleResponse {
   recommended_action: string;
 }
 
+// Phase 14.3 Multi-Tiered Mule Tracing & Graph Cascade
+export interface MuleCascadeNode {
+  node_key: string;
+  tier_level: number;
+  tier_name: string;
+  bank_bic: string;
+  account_name?: string | null;
+  total_inflow: string;
+  total_outflow: string;
+  retained_balance_estimate: string;
+  velocity_minutes: number;
+  dispersion_ratio: number;
+  risk_score: number;
+  recommended_directive: string;
+  directive_status: string;
+  first_inflow_time?: string | null;
+  last_outflow_time?: string | null;
+}
+
+export interface MuleCascadeEdge {
+  edge_id: string;
+  source_node: string;
+  target_node: string;
+  amount: string;
+  currency: string;
+  timestamp: string;
+  payment_rail: string;
+  transaction_id: string;
+  hop_number: number;
+  transfer_delay_minutes: number;
+}
+
+export interface CascadeDirective {
+  directive_id: string;
+  node_key: string;
+  tier_level: number;
+  bank_bic: string;
+  is_internal: boolean;
+  directive_type: string;
+  target_amount: string;
+  currency: string;
+  status: "PENDING" | "EXECUTED" | "REJECTED" | string;
+  recommended_action: string;
+  executed_by?: string | null;
+  executed_at?: string | null;
+  justification?: string | null;
+  camt056_xml?: string | null;
+}
+
+export interface MuleCascadeTrace {
+  trace_id: string;
+  installation_id: string;
+  root_account: string;
+  root_transaction_id?: string | null;
+  root_fraud_amount: string;
+  currency: string;
+  max_depth_reached: number;
+  nodes: MuleCascadeNode[];
+  edges: MuleCascadeEdge[];
+  total_nodes_identified: number;
+  total_frozen_or_held_amount: string;
+  recovery_potential_ratio: number;
+  created_at: string;
+  status: string;
+  directives: CascadeDirective[];
+}
+
+export interface TriggerMuleCascadeTracePayload {
+  root_account: string;
+  root_fraud_amount: string | number;
+  currency?: string;
+  root_transaction_id?: string | null;
+  anchor_time?: string | null;
+  max_hops?: number;
+  time_window_hours?: number;
+  local_bank_bic?: string;
+  transfers?: Array<Record<string, unknown>>;
+  account_metadata?: Record<string, Record<string, unknown>>;
+}
+
+export interface ExecuteCascadeDirectivePayload {
+  directive_id: string;
+  action: "EXECUTE_LOCAL_HOLD" | "DISPATCH_CAMT056" | "REJECT";
+  justification?: string;
+}
+
+export interface ExecuteCascadeDirectiveResponse {
+  directive_id: string;
+  trace_id: string;
+  status: string;
+  action_taken: string;
+  camt056_xml?: string | null;
+  executed_at: string;
+}
+
+
 
 
 

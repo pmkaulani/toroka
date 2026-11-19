@@ -1365,6 +1365,37 @@ class FederatedMuleRecord(IntelligenceBase):
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
+# ==============================================================================
+# Phase 14.3 Models: Multi-Tiered Mule Tracing & Graph Cascade
+# ==============================================================================
+
+class MuleCascadeTraceRecord(IntelligenceBase):
+    """Downstream mule dispersion cascade trace with graph topology and directives (PBOC / UK PSR)."""
+    __tablename__ = "enterprise_mule_cascade_traces"
+
+    trace_id: Mapped[str] = mapped_column(String(100), primary_key=True)
+    installation_id: Mapped[str] = mapped_column(String(100), primary_key=True, index=True)
+
+    root_account: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    root_transaction_id: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
+    root_fraud_amount: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False)
+    currency: Mapped[str] = mapped_column(String(10), nullable=False, default="KES")
+
+    max_depth_reached: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    total_nodes_identified: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    total_frozen_or_held_amount: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False, default=Decimal("0.0"))
+    recovery_potential_ratio: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+
+    graph_topology: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    directives: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False, default=list)
+
+    status: Mapped[str] = mapped_column(String(50), nullable=False, default="ACTIVE", index=True)
+    initiated_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now, onupdate=utc_now)
+
+
+
 
 
 
