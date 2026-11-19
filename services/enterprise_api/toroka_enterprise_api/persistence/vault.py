@@ -20,15 +20,12 @@ class VaultBase(DeclarativeBase):
 
 class VaultRecord(VaultBase):
     __tablename__ = "enterprise_identity_vault"
-    __table_args__ = (
-        PrimaryKeyConstraint("installation_id", "pseudonym", name="pk_enterprise_identity_vault"),
-    )
 
-    installation_id: Mapped[str] = mapped_column(
-        String(128), primary_key=True, default="toroka-default-installation"
-    )
     pseudonym: Mapped[str] = mapped_column(
         String(255), primary_key=True
+    )
+    installation_id: Mapped[str] = mapped_column(
+        String(128), nullable=False, default="toroka-default-installation", index=True
     )
     ciphertext: Mapped[bytes] = mapped_column(
         LargeBinary, nullable=False
