@@ -8,8 +8,11 @@ from sqlalchemy.orm import Session
 from ..auth import EnterprisePrincipal, get_current_principal, require_roles
 from ..dependencies import get_db, get_installation_id
 from ..governance_schemas import (
+    ApproveAIProviderRequest,
     ApproveComponentRequest,
     ChampionChallengerRunResponse,
+    CopVerifyRequest,
+    CopVerifyResponse,
     CreateComponentRequest,
     CreateForensicDossierRequest,
     CreateIncidentRequest,
@@ -20,6 +23,10 @@ from ..governance_schemas import (
     EvaluateQuantitativeDriftRequest,
     EvaluateReadinessGatesRequest,
     EvidencePassportResponse,
+    ExecuteCascadeDirectiveRequest,
+    ExecuteCascadeDirectiveResponse,
+    ExecuteTrustedValidationRequest,
+    FederatedMuleEntryResponse,
     ForensicDossierResponse,
     GenerateEvidencePassportRequest,
     GovernanceIncidentResponse,
@@ -27,22 +34,62 @@ from ..governance_schemas import (
     GovernedComponentResponse,
     InflightPaymentEvaluationRequest,
     InflightPaymentEvaluationResponse,
+    MoneyLockAccountResponse,
+    MoneyLockBranchUnlockRequest,
+    MoneyLockLockRequest,
+    MuleCascadeTraceResponse,
+    PrecautionaryHoldCreateRequest,
+    PrecautionaryHoldEscalateRequest,
+    PrecautionaryHoldRecallRequest,
+    PrecautionaryHoldReleaseRequest,
+    PrecautionaryHoldResponse,
     ProductionReleaseResponse,
     PromoteReleaseRequest,
     QuantitativeDriftEvaluationResponse,
+    QueryFederatedMuleRequest,
+    QueryFederatedMuleResponse,
     ReadinessAssessmentResponse,
     ReadinessAttestationResponse,
     RecordDriftRequest,
     RecordReadinessAttestationRequest,
     RegisterAIProviderRequest,
+    RegisterFederatedMuleRequest,
+    RegisterTrustedSignerRequest,
     ResumeComponentRequest,
     RollbackReleaseRequest,
     SemanticVerifyRequest,
     SemanticVerifyResponse,
     SignArtifactRequest,
+    SimBindingEnrollRequest,
+    SimBindingEnrollResponse,
+    SrfAdjudicationRequest,
+    SrfAdjudicationResponse,
+    CustomerKillSwitchActivateRequest,
+    CustomerKillSwitchDeactivateRequest,
+    CustomerKillSwitchResponse,
+    SafeAccountRegisterRequest,
+    SafeAccountResponse,
+    AtmDepositInboundRequest,
+    AtmWithdrawalEvaluateRequest,
+    AtmWithdrawalEvaluateResponse,
+    LimitIncreaseRequestCreate,
+    LimitIncreaseResponse,
+    Med2CascadeTraceRequest,
+    Med2CascadeTraceResponse,
+    GoldenHourReportCreateRequest,
+    GoldenHourReportResponse,
+    ScameterLookupRequest,
+    ScameterLookupResponse,
+    ScameterWaiverCreateRequest,
+    ScameterWaiverResponse,
     SuspendComponentRequest,
     SuspensionRecordResponse,
     SystemHealthOverviewResponse,
+    TelecomSignalRequest,
+    TelecomSignalResponse,
+    TriggerMuleCascadeTraceRequest,
+    TrustedSignerResponse,
+    UpdateFederatedMuleStatusRequest,
     UpdateIncidentStatusRequest,
     ValidationPackageResponse,
     ValidationRunResponse,
@@ -197,6 +244,27 @@ def list_validation_runs(
     return service.list_validation_runs(component_id=component_id)
 
 
+@router.post(
+    "/validation-runs/execute-trusted",
+    response_model=ValidationRunResponse,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_roles(ROLE_AUTHORISER, ROLE_SYSTEM_ADMINISTRATOR))],
+)
+def execute_trusted_validation(
+    request: ExecuteTrustedValidationRequest,
+    principal: EnterprisePrincipal = Depends(get_current_principal),
+    installation_id: str = Depends(get_installation_id),
+    db: Session = Depends(get_db),
+) -> ValidationRunResponse:
+    effective_inst = principal.installation_id or installation_id
+    service = ProductionGovernanceService(db, effective_inst)
+    return service.execute_trusted_validation(
+        request=request,
+        actor_subject=principal.subject,
+        actor_role=_primary_role(principal),
+    )
+
+
 # =============================================================================
 # 3. Production Release Manager & Deployment
 # =============================================================================
@@ -258,6 +326,7 @@ def promote_release(
         target_environment=request.target_environment,
         actor_subject=principal.subject,
         actor_role=_primary_role(principal),
+        signature_bundle=request.signature_bundle,
     )
 
 
@@ -577,6 +646,28 @@ def list_ai_providers(
     return service.list_ai_providers()
 
 
+@router.post(
+    "/ai-providers/{provider_id}/approve",
+    response_model=GovernedAIProviderResponse,
+    dependencies=[Depends(require_roles(ROLE_AUTHORISER, ROLE_SYSTEM_ADMINISTRATOR))],
+)
+def approve_ai_provider(
+    provider_id: str,
+    request: ApproveAIProviderRequest,
+    principal: EnterprisePrincipal = Depends(get_current_principal),
+    installation_id: str = Depends(get_installation_id),
+    db: Session = Depends(get_db),
+) -> GovernedAIProviderResponse:
+    effective_inst = principal.installation_id or installation_id
+    service = ProductionGovernanceService(db, effective_inst)
+    return service.approve_ai_provider(
+        provider_id=provider_id,
+        request=request,
+        actor_subject=principal.subject,
+        actor_role=_primary_role(principal),
+    )
+
+
 # =============================================================================
 # 9. Production Readiness Assessment & Bank Validation Package
 # =============================================================================
@@ -845,7 +936,11 @@ def create_forensic_dossier(
 ) -> ForensicDossierResponse:
     effective_inst = principal.installation_id or installation_id
     service = ProductionGovernanceService(db, effective_inst)
-    return service.create_forensic_dossier(request=request, actor_subject=principal.subject)
+    return service.create_forensic_dossier(
+        request=request,
+        actor_subject=principal.subject,
+        actor_role=_primary_role(principal),
+    )
 
 
 @router.get(
@@ -967,5 +1062,738 @@ def verify_copilot_semantics(
     effective_inst = principal.installation_id or installation_id
     service = ProductionGovernanceService(db, effective_inst)
     return service.verify_copilot_semantics(request=request)
+
+
+# =============================================================================
+# 15. Signer Trust Registry
+# =============================================================================
+
+@router.post(
+    "/trust-registry/signers",
+    response_model=TrustedSignerResponse,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_roles(ROLE_AUTHORISER, ROLE_SYSTEM_ADMINISTRATOR))],
+)
+def register_trusted_signer(
+    request: RegisterTrustedSignerRequest,
+    principal: EnterprisePrincipal = Depends(get_current_principal),
+    installation_id: str = Depends(get_installation_id),
+    db: Session = Depends(get_db),
+) -> TrustedSignerResponse:
+    effective_inst = principal.installation_id or installation_id
+    service = ProductionGovernanceService(db, effective_inst)
+    return service.register_trusted_signer(
+        request=request,
+        actor_subject=principal.subject,
+        actor_role=_primary_role(principal),
+    )
+
+
+@router.get(
+    "/trust-registry/signers",
+    response_model=list[TrustedSignerResponse],
+    dependencies=[
+        Depends(require_roles(ROLE_AUTHORISER, ROLE_AUDITOR, ROLE_INVESTIGATOR, ROLE_SYSTEM_ADMINISTRATOR))
+    ],
+)
+def list_trusted_signers(
+    principal: EnterprisePrincipal = Depends(get_current_principal),
+    installation_id: str = Depends(get_installation_id),
+    db: Session = Depends(get_db),
+) -> list[TrustedSignerResponse]:
+    effective_inst = principal.installation_id or installation_id
+    service = ProductionGovernanceService(db, effective_inst)
+    return service.list_trusted_signers()
+
+
+@router.post(
+    "/trust-registry/signers/{key_id}/revoke",
+    response_model=TrustedSignerResponse,
+    dependencies=[Depends(require_roles(ROLE_AUTHORISER, ROLE_SYSTEM_ADMINISTRATOR))],
+)
+def revoke_trusted_signer(
+    key_id: str,
+    reason: str = Query(..., description="Reason for key revocation"),
+    principal: EnterprisePrincipal = Depends(get_current_principal),
+    installation_id: str = Depends(get_installation_id),
+    db: Session = Depends(get_db),
+) -> TrustedSignerResponse:
+    effective_inst = principal.installation_id or installation_id
+    service = ProductionGovernanceService(db, effective_inst)
+    return service.revoke_trusted_signer(
+        key_id=key_id,
+        reason=reason,
+        actor_subject=principal.subject,
+        actor_role=_primary_role(principal),
+    )
+
+
+# =============================================================================
+# 16. Confirmation of Payee (CoP) Pre-Flight Name Verification
+# =============================================================================
+
+@router.post(
+    "/integrations/cop/verify",
+    response_model=CopVerifyResponse,
+    dependencies=[
+        Depends(require_roles(ROLE_INVESTIGATOR, ROLE_AUTHORISER, ROLE_SYSTEM_ADMINISTRATOR))
+    ],
+)
+def verify_confirmation_of_payee(
+    request: CopVerifyRequest,
+    principal: EnterprisePrincipal = Depends(get_current_principal),
+    installation_id: str = Depends(get_installation_id),
+    db: Session = Depends(get_db),
+) -> CopVerifyResponse:
+    effective_inst = principal.installation_id or installation_id
+    service = ProductionGovernanceService(db, effective_inst)
+    return service.verify_confirmation_of_payee(request=request, actor_subject=principal.subject)
+
+
+# =============================================================================
+# 17. Telecom Scam Signal Live Carrier Telemetry
+# =============================================================================
+
+@router.post(
+    "/integrations/telecom/scam-signal",
+    response_model=TelecomSignalResponse,
+    dependencies=[
+        Depends(require_roles(ROLE_INVESTIGATOR, ROLE_AUTHORISER, ROLE_SYSTEM_ADMINISTRATOR))
+    ],
+)
+def evaluate_telecom_scam_signal(
+    request: TelecomSignalRequest,
+    principal: EnterprisePrincipal = Depends(get_current_principal),
+    installation_id: str = Depends(get_installation_id),
+    db: Session = Depends(get_db),
+) -> TelecomSignalResponse:
+    effective_inst = principal.installation_id or installation_id
+    service = ProductionGovernanceService(db, effective_inst)
+    return service.evaluate_telecom_signal(request=request, actor_subject=principal.subject)
+
+
+# =============================================================================
+# 18. Federated Mule Directory & Hash-Linked Interbank Blacklist
+# =============================================================================
+
+@router.post(
+    "/integrations/federated-mules/register",
+    response_model=FederatedMuleEntryResponse,
+    dependencies=[
+        Depends(require_roles(ROLE_INVESTIGATOR, ROLE_AUTHORISER, ROLE_SYSTEM_ADMINISTRATOR))
+    ],
+)
+def register_federated_mule(
+    request: RegisterFederatedMuleRequest,
+    principal: EnterprisePrincipal = Depends(get_current_principal),
+    installation_id: str = Depends(get_installation_id),
+    db: Session = Depends(get_db),
+) -> FederatedMuleEntryResponse:
+    effective_inst = principal.installation_id or installation_id
+    service = ProductionGovernanceService(db, effective_inst)
+    return service.register_federated_mule(request=request, actor_subject=principal.subject)
+
+
+@router.post(
+    "/integrations/federated-mules/query",
+    response_model=QueryFederatedMuleResponse,
+    dependencies=[
+        Depends(require_roles(ROLE_INVESTIGATOR, ROLE_AUTHORISER, ROLE_AUDITOR, ROLE_SYSTEM_ADMINISTRATOR))
+    ],
+)
+def query_federated_mule(
+    request: QueryFederatedMuleRequest,
+    principal: EnterprisePrincipal = Depends(get_current_principal),
+    installation_id: str = Depends(get_installation_id),
+    db: Session = Depends(get_db),
+) -> QueryFederatedMuleResponse:
+    effective_inst = principal.installation_id or installation_id
+    service = ProductionGovernanceService(db, effective_inst)
+    return service.query_federated_mule(request=request)
+
+
+@router.get(
+    "/integrations/federated-mules/entries",
+    response_model=list[FederatedMuleEntryResponse],
+    dependencies=[
+        Depends(require_roles(ROLE_INVESTIGATOR, ROLE_AUTHORISER, ROLE_AUDITOR, ROLE_SYSTEM_ADMINISTRATOR))
+    ],
+)
+def list_federated_mules(
+    entity_type: str | None = Query(None),
+    status: str | None = Query(None),
+    principal: EnterprisePrincipal = Depends(get_current_principal),
+    installation_id: str = Depends(get_installation_id),
+    db: Session = Depends(get_db),
+) -> list[FederatedMuleEntryResponse]:
+    effective_inst = principal.installation_id or installation_id
+    service = ProductionGovernanceService(db, effective_inst)
+    return service.list_federated_mules(entity_type=entity_type, status=status)
+
+
+@router.patch(
+    "/integrations/federated-mules/entries/{entry_id}/status",
+    response_model=FederatedMuleEntryResponse,
+    dependencies=[
+        Depends(require_roles(ROLE_AUTHORISER, ROLE_SYSTEM_ADMINISTRATOR))
+    ],
+)
+def update_federated_mule_status(
+    entry_id: str,
+    request: UpdateFederatedMuleStatusRequest,
+    principal: EnterprisePrincipal = Depends(get_current_principal),
+    installation_id: str = Depends(get_installation_id),
+    db: Session = Depends(get_db),
+) -> FederatedMuleEntryResponse:
+    effective_inst = principal.installation_id or installation_id
+    service = ProductionGovernanceService(db, effective_inst)
+    return service.update_federated_mule_status(entry_id=entry_id, request=request, actor_subject=principal.subject)
+
+
+# =============================================================================
+# Phase 14.3: Multi-Tiered Mule Tracing & Graph Cascade Endpoints (PBOC / UK PSR)
+# =============================================================================
+
+@router.post(
+    "/intelligence/mule-cascade/trace",
+    response_model=MuleCascadeTraceResponse,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[
+        Depends(require_roles(ROLE_INVESTIGATOR, ROLE_AUTHORISER, ROLE_SYSTEM_ADMINISTRATOR))
+    ],
+)
+def trigger_mule_cascade_trace(
+    request: TriggerMuleCascadeTraceRequest,
+    principal: EnterprisePrincipal = Depends(get_current_principal),
+    installation_id: str = Depends(get_installation_id),
+    db: Session = Depends(get_db),
+) -> MuleCascadeTraceResponse:
+    effective_inst = principal.installation_id or installation_id
+    service = ProductionGovernanceService(db, effective_inst)
+    return service.trigger_mule_cascade_trace(request=request, actor_subject=principal.subject)
+
+
+@router.get(
+    "/intelligence/mule-cascade/traces",
+    response_model=list[MuleCascadeTraceResponse],
+    dependencies=[
+        Depends(require_roles(ROLE_INVESTIGATOR, ROLE_AUTHORISER, ROLE_AUDITOR, ROLE_SYSTEM_ADMINISTRATOR))
+    ],
+)
+def list_mule_cascade_traces(
+    principal: EnterprisePrincipal = Depends(get_current_principal),
+    installation_id: str = Depends(get_installation_id),
+    db: Session = Depends(get_db),
+) -> list[MuleCascadeTraceResponse]:
+    effective_inst = principal.installation_id or installation_id
+    service = ProductionGovernanceService(db, effective_inst)
+    return service.list_mule_cascade_traces()
+
+
+@router.get(
+    "/intelligence/mule-cascade/traces/{trace_id}",
+    response_model=MuleCascadeTraceResponse,
+    dependencies=[
+        Depends(require_roles(ROLE_INVESTIGATOR, ROLE_AUTHORISER, ROLE_AUDITOR, ROLE_SYSTEM_ADMINISTRATOR))
+    ],
+)
+def get_mule_cascade_trace(
+    trace_id: str,
+    principal: EnterprisePrincipal = Depends(get_current_principal),
+    installation_id: str = Depends(get_installation_id),
+    db: Session = Depends(get_db),
+) -> MuleCascadeTraceResponse:
+    effective_inst = principal.installation_id or installation_id
+    service = ProductionGovernanceService(db, effective_inst)
+    return service.get_mule_cascade_trace(trace_id=trace_id)
+
+
+@router.post(
+    "/intelligence/mule-cascade/traces/{trace_id}/directives/{directive_id}/execute",
+    response_model=ExecuteCascadeDirectiveResponse,
+    dependencies=[
+        Depends(require_roles(ROLE_AUTHORISER, ROLE_SYSTEM_ADMINISTRATOR))
+    ],
+)
+def execute_cascade_directive(
+    trace_id: str,
+    directive_id: str,
+    request: ExecuteCascadeDirectiveRequest,
+    principal: EnterprisePrincipal = Depends(get_current_principal),
+    installation_id: str = Depends(get_installation_id),
+    db: Session = Depends(get_db),
+) -> ExecuteCascadeDirectiveResponse:
+    effective_inst = principal.installation_id or installation_id
+    service = ProductionGovernanceService(db, effective_inst)
+    return service.execute_cascade_directive(
+        trace_id=trace_id,
+        request=request,
+        actor_subject=principal.subject,
+    )
+
+
+# ==============================================================================
+# Phase 15.0: Singapore MAS Money Lock Vault Partitioning Endpoints
+# ==============================================================================
+
+@router.post(
+    "/money-lock/accounts/{account_id}/lock",
+    response_model=MoneyLockAccountResponse,
+)
+def lock_money_vault(
+    account_id: str,
+    request: MoneyLockLockRequest,
+    principal: EnterprisePrincipal = Depends(get_current_principal),
+    installation_id: str = Depends(get_installation_id),
+    db: Session = Depends(get_db),
+) -> MoneyLockAccountResponse:
+    effective_inst = principal.installation_id or installation_id
+    service = ProductionGovernanceService(db, effective_inst)
+    return service.lock_money_vault(
+        account_id=account_id,
+        amount=request.amount,
+        actor=request.actor or principal.subject,
+    )
+
+
+@router.post(
+    "/money-lock/accounts/{account_id}/attempt-digital-unlock",
+    status_code=status.HTTP_403_FORBIDDEN,
+)
+def attempt_digital_unlock(
+    account_id: str,
+    principal: EnterprisePrincipal = Depends(get_current_principal),
+    installation_id: str = Depends(get_installation_id),
+    db: Session = Depends(get_db),
+) -> None:
+    """Attempts digital unlocking; strictly rejected under Singapore MAS Money Lock policy."""
+    effective_inst = principal.installation_id or installation_id
+    service = ProductionGovernanceService(db, effective_inst)
+    service.attempt_digital_unlock(
+        account_id=account_id,
+        actor=principal.subject,
+    )
+
+
+@router.post(
+    "/money-lock/accounts/{account_id}/branch-unlock",
+    response_model=MoneyLockAccountResponse,
+    dependencies=[
+        Depends(require_roles(ROLE_AUTHORISER, ROLE_SYSTEM_ADMINISTRATOR))
+    ],
+)
+def branch_unlock_money_vault(
+    account_id: str,
+    request: MoneyLockBranchUnlockRequest,
+    principal: EnterprisePrincipal = Depends(get_current_principal),
+    installation_id: str = Depends(get_installation_id),
+    db: Session = Depends(get_db),
+) -> MoneyLockAccountResponse:
+    effective_inst = principal.installation_id or installation_id
+    service = ProductionGovernanceService(db, effective_inst)
+    return service.branch_unlock_money_vault(
+        account_id=account_id,
+        amount=request.amount,
+        officer_id=request.officer_id,
+        station_id=request.station_id,
+        dual_authorizer_id=request.dual_authorizer_id,
+        channel=request.channel,
+    )
+
+
+@router.get(
+    "/money-lock/accounts/{account_id}",
+    response_model=MoneyLockAccountResponse,
+)
+def get_money_lock_account(
+    account_id: str,
+    principal: EnterprisePrincipal = Depends(get_current_principal),
+    installation_id: str = Depends(get_installation_id),
+    db: Session = Depends(get_db),
+) -> MoneyLockAccountResponse:
+    effective_inst = principal.installation_id or installation_id
+    service = ProductionGovernanceService(db, effective_inst)
+    return service.get_money_lock_account(account_id=account_id)
+
+
+@router.get(
+    "/money-lock/accounts",
+    response_model=list[MoneyLockAccountResponse],
+)
+def list_money_lock_accounts(
+    principal: EnterprisePrincipal = Depends(get_current_principal),
+    installation_id: str = Depends(get_installation_id),
+    db: Session = Depends(get_db),
+) -> list[MoneyLockAccountResponse]:
+    effective_inst = principal.installation_id or installation_id
+    service = ProductionGovernanceService(db, effective_inst)
+    return service.list_money_lock_accounts()
+
+
+# ==============================================================================
+# Phase 15.1: Brazil BCB Bloqueio Cautelar 72h Precautionary Hold Endpoints
+# ==============================================================================
+
+@router.post(
+    "/precautionary-holds",
+    response_model=PrecautionaryHoldResponse,
+    dependencies=[
+        Depends(require_roles(ROLE_INVESTIGATOR, ROLE_AUTHORISER, ROLE_SYSTEM_ADMINISTRATOR))
+    ],
+)
+def create_precautionary_hold(
+    request: PrecautionaryHoldCreateRequest,
+    principal: EnterprisePrincipal = Depends(get_current_principal),
+    installation_id: str = Depends(get_installation_id),
+    db: Session = Depends(get_db),
+) -> PrecautionaryHoldResponse:
+    effective_inst = principal.installation_id or installation_id
+    service = ProductionGovernanceService(db, effective_inst)
+    return service.create_precautionary_hold(request=request)
+
+
+@router.post(
+    "/precautionary-holds/{hold_id}/release",
+    response_model=PrecautionaryHoldResponse,
+    dependencies=[
+        Depends(require_roles(ROLE_AUTHORISER, ROLE_SYSTEM_ADMINISTRATOR))
+    ],
+)
+def release_precautionary_hold(
+    hold_id: str,
+    request: PrecautionaryHoldReleaseRequest,
+    principal: EnterprisePrincipal = Depends(get_current_principal),
+    installation_id: str = Depends(get_installation_id),
+    db: Session = Depends(get_db),
+) -> PrecautionaryHoldResponse:
+    effective_inst = principal.installation_id or installation_id
+    service = ProductionGovernanceService(db, effective_inst)
+    return service.release_precautionary_hold(hold_id=hold_id, request=request)
+
+
+@router.post(
+    "/precautionary-holds/{hold_id}/escalate",
+    response_model=PrecautionaryHoldResponse,
+    dependencies=[
+        Depends(require_roles(ROLE_AUTHORISER, ROLE_SYSTEM_ADMINISTRATOR))
+    ],
+)
+def escalate_precautionary_hold_to_camt056(
+    hold_id: str,
+    request: PrecautionaryHoldEscalateRequest,
+    principal: EnterprisePrincipal = Depends(get_current_principal),
+    installation_id: str = Depends(get_installation_id),
+    db: Session = Depends(get_db),
+) -> PrecautionaryHoldResponse:
+    effective_inst = principal.installation_id or installation_id
+    service = ProductionGovernanceService(db, effective_inst)
+    return service.escalate_precautionary_hold_to_camt056(hold_id=hold_id, request=request)
+
+
+@router.post(
+    "/precautionary-holds/{hold_id}/recall",
+    response_model=PrecautionaryHoldResponse,
+)
+def recall_precautionary_hold(
+    hold_id: str,
+    request: PrecautionaryHoldRecallRequest,
+    principal: EnterprisePrincipal = Depends(get_current_principal),
+    installation_id: str = Depends(get_installation_id),
+    db: Session = Depends(get_db),
+) -> PrecautionaryHoldResponse:
+    effective_inst = principal.installation_id or installation_id
+    service = ProductionGovernanceService(db, effective_inst)
+    return service.recall_precautionary_hold(hold_id=hold_id, request=request)
+
+
+@router.get(
+    "/precautionary-holds",
+    response_model=list[PrecautionaryHoldResponse],
+)
+def list_precautionary_holds(
+    principal: EnterprisePrincipal = Depends(get_current_principal),
+    installation_id: str = Depends(get_installation_id),
+    db: Session = Depends(get_db),
+) -> list[PrecautionaryHoldResponse]:
+    effective_inst = principal.installation_id or installation_id
+    service = ProductionGovernanceService(db, effective_inst)
+    return service.list_precautionary_holds()
+
+
+# ==============================================================================
+# Phase 15.2: India NPCI Cryptographic SIM & Hardware Binding Endpoints
+# ==============================================================================
+
+@router.post(
+    "/sim-binding/enroll",
+    response_model=SimBindingEnrollResponse,
+    dependencies=[
+        Depends(require_roles(ROLE_INVESTIGATOR, ROLE_AUTHORISER, ROLE_SYSTEM_ADMINISTRATOR))
+    ],
+)
+def enroll_sim_binding(
+    request: SimBindingEnrollRequest,
+    principal: EnterprisePrincipal = Depends(get_current_principal),
+    installation_id: str = Depends(get_installation_id),
+    db: Session = Depends(get_db),
+) -> SimBindingEnrollResponse:
+    effective_inst = principal.installation_id or installation_id
+    service = ProductionGovernanceService(db, effective_inst)
+    return service.enroll_sim_binding(request=request)
+
+
+@router.get(
+    "/sim-binding/accounts/{account_id}",
+    response_model=SimBindingEnrollResponse,
+)
+def get_sim_binding(
+    account_id: str,
+    principal: EnterprisePrincipal = Depends(get_current_principal),
+    installation_id: str = Depends(get_installation_id),
+    db: Session = Depends(get_db),
+) -> SimBindingEnrollResponse:
+    effective_inst = principal.installation_id or installation_id
+    service = ProductionGovernanceService(db, effective_inst)
+    return service.get_sim_binding(account_id=account_id)
+
+
+# ==============================================================================
+# Phase 16.0: Singapore SRF & 24/7 Customer Emergency Kill Switch Endpoints
+# ==============================================================================
+
+@router.post(
+    "/srf/adjudicate",
+    response_model=SrfAdjudicationResponse,
+    dependencies=[
+        Depends(require_roles(ROLE_INVESTIGATOR, ROLE_AUTHORISER, ROLE_SYSTEM_ADMINISTRATOR, ROLE_AUDITOR))
+    ],
+)
+def adjudicate_srf_claim(
+    request: SrfAdjudicationRequest,
+    principal: EnterprisePrincipal = Depends(get_current_principal),
+    installation_id: str = Depends(get_installation_id),
+    db: Session = Depends(get_db),
+) -> SrfAdjudicationResponse:
+    effective_inst = principal.installation_id or installation_id
+    service = ProductionGovernanceService(db, effective_inst)
+    return service.adjudicate_srf_claim(request=request, actor_subject=principal.subject)
+
+
+@router.post(
+    "/customer-kill-switch/accounts/{account_id}/activate",
+    response_model=CustomerKillSwitchResponse,
+)
+def activate_customer_kill_switch(
+    account_id: str,
+    request: CustomerKillSwitchActivateRequest,
+    principal: EnterprisePrincipal = Depends(get_current_principal),
+    installation_id: str = Depends(get_installation_id),
+    db: Session = Depends(get_db),
+) -> CustomerKillSwitchResponse:
+    effective_inst = principal.installation_id or installation_id
+    service = ProductionGovernanceService(db, effective_inst)
+    return service.activate_customer_kill_switch(account_id=account_id, request=request, actor_subject=principal.subject)
+
+
+@router.post(
+    "/customer-kill-switch/accounts/{account_id}/deactivate",
+    response_model=CustomerKillSwitchResponse,
+    dependencies=[
+        Depends(require_roles(ROLE_AUTHORISER, ROLE_SYSTEM_ADMINISTRATOR))
+    ],
+)
+def deactivate_customer_kill_switch(
+    account_id: str,
+    request: CustomerKillSwitchDeactivateRequest,
+    principal: EnterprisePrincipal = Depends(get_current_principal),
+    installation_id: str = Depends(get_installation_id),
+    db: Session = Depends(get_db),
+) -> CustomerKillSwitchResponse:
+    effective_inst = principal.installation_id or installation_id
+    service = ProductionGovernanceService(db, effective_inst)
+    return service.deactivate_customer_kill_switch(account_id=account_id, request=request, actor_subject=principal.subject)
+
+
+@router.get(
+    "/customer-kill-switch/accounts/{account_id}",
+    response_model=CustomerKillSwitchResponse,
+)
+def get_customer_kill_switch(
+    account_id: str,
+    principal: EnterprisePrincipal = Depends(get_current_principal),
+    installation_id: str = Depends(get_installation_id),
+    db: Session = Depends(get_db),
+) -> CustomerKillSwitchResponse:
+    effective_inst = principal.installation_id or installation_id
+    service = ProductionGovernanceService(db, effective_inst)
+    return service.get_customer_kill_switch(account_id=account_id)
+
+
+# ==============================================================================
+# Phase 16.1: South Korea FSS Designated Safe Accounts & Delayed ATM Endpoints
+# ==============================================================================
+
+@router.post(
+    "/safe-accounts/accounts/{account_id}",
+    response_model=SafeAccountResponse,
+)
+def register_designated_safe_account(
+    account_id: str,
+    request: SafeAccountRegisterRequest,
+    principal: EnterprisePrincipal = Depends(get_current_principal),
+    installation_id: str = Depends(get_installation_id),
+    db: Session = Depends(get_db),
+) -> SafeAccountResponse:
+    effective_inst = principal.installation_id or installation_id
+    service = ProductionGovernanceService(db, effective_inst)
+    return service.register_designated_safe_account(account_id=account_id, request=request, actor_subject=principal.subject)
+
+
+@router.get(
+    "/safe-accounts/accounts/{account_id}",
+    response_model=list[SafeAccountResponse],
+)
+def list_designated_safe_accounts(
+    account_id: str,
+    principal: EnterprisePrincipal = Depends(get_current_principal),
+    installation_id: str = Depends(get_installation_id),
+    db: Session = Depends(get_db),
+) -> list[SafeAccountResponse]:
+    effective_inst = principal.installation_id or installation_id
+    service = ProductionGovernanceService(db, effective_inst)
+    return service.list_designated_safe_accounts(account_id=account_id)
+
+
+@router.post(
+    "/delayed-atm/inbound-deposit/{account_id}",
+    response_model=AtmWithdrawalEvaluateResponse,
+)
+def record_atm_inbound_deposit(
+    account_id: str,
+    request: AtmDepositInboundRequest,
+    principal: EnterprisePrincipal = Depends(get_current_principal),
+    installation_id: str = Depends(get_installation_id),
+    db: Session = Depends(get_db),
+) -> AtmWithdrawalEvaluateResponse:
+    effective_inst = principal.installation_id or installation_id
+    service = ProductionGovernanceService(db, effective_inst)
+    return service.record_atm_inbound_deposit(account_id=account_id, request=request, actor_subject=principal.subject)
+
+
+@router.post(
+    "/delayed-atm/evaluate-withdrawal/{account_id}",
+    response_model=AtmWithdrawalEvaluateResponse,
+)
+def evaluate_atm_withdrawal(
+    account_id: str,
+    request: AtmWithdrawalEvaluateRequest,
+    principal: EnterprisePrincipal = Depends(get_current_principal),
+    installation_id: str = Depends(get_installation_id),
+    db: Session = Depends(get_db),
+) -> AtmWithdrawalEvaluateResponse:
+    effective_inst = principal.installation_id or installation_id
+    service = ProductionGovernanceService(db, effective_inst)
+    return service.evaluate_atm_withdrawal(account_id=account_id, request=request, actor_subject=principal.subject)
+
+
+# ==============================================================================
+# Phase 16.2: Brazil BCB Limit Increase Cooling-off & Pix MED 2.0 Endpoints
+# ==============================================================================
+
+@router.post(
+    "/transfer-limits/accounts/{account_id}/increase-request",
+    response_model=LimitIncreaseResponse,
+)
+def request_limit_increase(
+    account_id: str,
+    request: LimitIncreaseRequestCreate,
+    principal: EnterprisePrincipal = Depends(get_current_principal),
+    installation_id: str = Depends(get_installation_id),
+    db: Session = Depends(get_db),
+) -> LimitIncreaseResponse:
+    effective_inst = principal.installation_id or installation_id
+    service = ProductionGovernanceService(db, effective_inst)
+    return service.request_limit_increase(account_id=account_id, request=request, actor_subject=principal.subject)
+
+
+@router.post(
+    "/med2/cascade-clawback",
+    response_model=Med2CascadeTraceResponse,
+    dependencies=[
+        Depends(require_roles(ROLE_INVESTIGATOR, ROLE_AUTHORISER, ROLE_SYSTEM_ADMINISTRATOR))
+    ],
+)
+def execute_med2_cascade_clawback(
+    request: Med2CascadeTraceRequest,
+    principal: EnterprisePrincipal = Depends(get_current_principal),
+    installation_id: str = Depends(get_installation_id),
+    db: Session = Depends(get_db),
+) -> Med2CascadeTraceResponse:
+    effective_inst = principal.installation_id or installation_id
+    service = ProductionGovernanceService(db, effective_inst)
+    return service.execute_med2_cascade_clawback(request=request, actor_subject=principal.subject)
+
+
+# ==============================================================================
+# Phase 16.3: India I4C Helpline 1930 Golden Hour Endpoints
+# ==============================================================================
+
+@router.post(
+    "/golden-hour/reports",
+    response_model=GoldenHourReportResponse,
+    dependencies=[
+        Depends(require_roles(ROLE_INVESTIGATOR, ROLE_AUTHORISER, ROLE_SYSTEM_ADMINISTRATOR))
+    ],
+)
+def submit_golden_hour_report(
+    request: GoldenHourReportCreateRequest,
+    principal: EnterprisePrincipal = Depends(get_current_principal),
+    installation_id: str = Depends(get_installation_id),
+    db: Session = Depends(get_db),
+) -> GoldenHourReportResponse:
+    effective_inst = principal.installation_id or installation_id
+    service = ProductionGovernanceService(db, effective_inst)
+    return service.submit_golden_hour_report(request=request, actor_subject=principal.subject)
+
+
+# ==============================================================================
+# Phase 16.4: Hong Kong FPS Scameter Endpoints
+# ==============================================================================
+
+@router.post(
+    "/scameter/lookup",
+    response_model=ScameterLookupResponse,
+)
+def lookup_scameter_proxy(
+    request: ScameterLookupRequest,
+    principal: EnterprisePrincipal = Depends(get_current_principal),
+    installation_id: str = Depends(get_installation_id),
+    db: Session = Depends(get_db),
+) -> ScameterLookupResponse:
+    effective_inst = principal.installation_id or installation_id
+    service = ProductionGovernanceService(db, effective_inst)
+    return service.lookup_scameter_proxy(request=request, actor_subject=principal.subject)
+
+
+@router.post(
+    "/scameter/waivers",
+    response_model=ScameterWaiverResponse,
+)
+def execute_scameter_waiver(
+    request: ScameterWaiverCreateRequest,
+    principal: EnterprisePrincipal = Depends(get_current_principal),
+    installation_id: str = Depends(get_installation_id),
+    db: Session = Depends(get_db),
+) -> ScameterWaiverResponse:
+    effective_inst = principal.installation_id or installation_id
+    service = ProductionGovernanceService(db, effective_inst)
+    return service.execute_scameter_waiver(request=request, actor_subject=principal.subject)
+
+
+
+
+
+
+
 
 

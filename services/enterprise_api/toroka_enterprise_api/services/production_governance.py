@@ -5,12 +5,13 @@ import hmac
 import json
 import logging
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from fastapi import HTTPException, status
 from sqlalchemy import and_, desc, select
 from sqlalchemy.orm import Session
+from sqlalchemy.orm.attributes import flag_modified
 
 from toroka_enterprise.governance.approval import (
     ApprovalDecision,
@@ -81,11 +82,30 @@ from toroka_enterprise.governance.champion_challenger import (
     PromotionDecision,
     evaluate_challenger_promotion,
 )
+from decimal import Decimal
+from toroka_enterprise.governance.validation_executor import (
+    ExecutionProvenanceLevel,
+    TrustedLocalValidationExecutor,
+    ValidationPlan,
+    ValidationMetricSpec,
+    compute_execution_provenance_digest,
+)
+from toroka_enterprise.governance.evidence_resolver import (
+    BankEvidenceAdapter,
+    BankEvidenceArtifact,
+    EvidenceReferenceResolver,
+)
 from toroka_enterprise.governance.pki import (
     AsymmetricAlgorithm,
+    KeySecurityLevel,
     LocalHSMKeyProvider,
     SignatureBundle,
+    SignatureVerificationResult,
+    SignerKeyPurpose,
+    SignerTrustRegistry,
+    TrustedSignerRecord,
     verify_asymmetric_signature,
+    verify_signature_comprehensive,
 )
 from toroka_enterprise.governance.quantitative_risk import (
     compute_disparate_impact,
@@ -103,6 +123,93 @@ from toroka_enterprise.integrations.iso20022 import (
     ISO20022Engine,
     Pacs008CreditTransfer,
     PartyIdentification,
+    validate_payment_amount,
+)
+from toroka_enterprise.integrations.cop import (
+    ConfirmationOfPayeeEngine,
+    CopAccountType,
+    CopInquiryRequest,
+    CopStatus,
+)
+from toroka_enterprise.integrations.telecom_signal import (
+    CallStatus,
+    SimSwapStatus,
+    TelecomCarrier,
+    TelecomScamSignalGateway,
+    TelecomSignalQuery,
+)
+from toroka_enterprise.integrations.federated_mule import (
+    FederatedMuleEngine,
+    FederatedMuleMatch,
+    FederatedMuleQuery,
+    MuleEntityType,
+    MuleEntryStatus,
+    MuleSeverityTier,
+)
+from toroka_enterprise.integrations.sic5_parallel import (
+    SIC5ParallelClearingEngine,
+    ParallelClearingResult,
+    ClearingFeedLatencyBreakdown,
+)
+from toroka_enterprise.intelligence.mule_cascade import (
+    MuleCascadeTracerEngine,
+    MuleCascadeTraceResult,
+    CascadeHoldDirectiveType,
+)
+from toroka_enterprise.governance.money_lock import (
+    MoneyLockAccountVault,
+    MoneyLockStatus,
+    MoneyLockUnlockChannel,
+    MoneyLockPolicyViolationError,
+    MoneyLockExclusionError,
+)
+from toroka_enterprise.integrations.precautionary_hold import (
+    PrecautionaryHoldEngine,
+    PrecautionaryHoldDirective,
+    PrecautionaryHoldState,
+    NighttimeWindowPolicy,
+    DelayedTransferRecallPolicy,
+)
+from toroka_enterprise.governance.sim_binding import (
+    SimBindingEngine,
+    SimBindingEnrollment,
+    HardwareBindingAssertion,
+    HardwareBindingStatus,
+)
+from toroka_enterprise.intelligence.behavioral_biometrics import (
+    BehavioralBiometricsEngine,
+    BiometricsTelemetry,
+    BiometricsVerdict,
+)
+from toroka_enterprise.governance.srf_liability import (
+    SrfWaterfallAdjudicator,
+    SrfBankDuties,
+    SrfTelcoDuties,
+    CustomerKillSwitchEngine,
+    CustomerKillSwitchStatus,
+    CustomerKillSwitchChannel,
+)
+from toroka_enterprise.governance.safe_accounts_and_limits import (
+    DesignatedSafeAccountEngine,
+    DelayedAtmCashoutEngine,
+    IpIngressShieldEngine,
+    IngressShieldTelemetry,
+    IngressShieldVerdict,
+    LimitCoolingEngine,
+    PayeeFrictionEngine,
+)
+from toroka_enterprise.integrations.med2_clawback import (
+    Med2CascadingClawbackEngine,
+    Med2DisbursementEdge,
+    Med2HopTier,
+)
+from toroka_enterprise.integrations.golden_hour_intake import (
+    GoldenHourInterceptorEngine,
+    TargetRecipientDirective,
+)
+from toroka_enterprise.governance.scameter_shield import (
+    FpsScameterShieldEngine,
+    ScameterRiskLevel,
 )
 from toroka_enterprise.intelligence.copilot.contracts import (
     ClaimKind,
@@ -119,9 +226,11 @@ from toroka_enterprise.intelligence.copilot.semantic_grounding import (
 )
 from toroka_enterprise.intelligence.models import (
     ChampionChallengerRunRecord,
+    CopInquiryRecord,
     DriftRecordEntity,
     EntityLinkCandidateRecord,
     EvidencePassportRecord,
+    FederatedMuleRecord,
     ForensicDossierRecord,
     GovernanceIncidentRecord,
     GovernedAIProviderRecord,
@@ -129,17 +238,33 @@ from toroka_enterprise.intelligence.models import (
     InflightPaymentRiskRecord,
     IntelligenceEventRecord,
     IntelligenceSignalRecord,
+    MoneyLockAccountRecord,
+    MuleCascadeTraceRecord,
     NetworkFindingRecord,
+    PrecautionaryHoldRecord,
     ProductionReleaseRecord,
     QuantitativeDriftEvaluationRecord,
     ReadinessAttestationRecord,
+    SignerTrustRecord,
+    SimBindingRecord,
     SuspensionAuditRecord,
+    TelecomScamSignalRecord,
     ValidationRunRecord,
+    CustomerKillSwitchRecord,
+    DesignatedSafeAccountRecord,
+    AtmDelayedWithdrawalRecord,
+    LimitIncreaseRequestRecord,
+    Med2ClawbackTraceRecord,
+    GoldenHourReportRecord,
+    ScameterShieldWaiverRecord,
 )
 
 from ..governance_schemas import (
+    ApproveAIProviderRequest,
     ApproveComponentRequest,
     ChampionChallengerRunResponse,
+    CopVerifyRequest,
+    CopVerifyResponse,
     CreateComponentRequest,
     CreateForensicDossierRequest,
     CreateIncidentRequest,
@@ -150,32 +275,78 @@ from ..governance_schemas import (
     EvaluateQuantitativeDriftRequest,
     EvaluateReadinessGatesRequest,
     EvidencePassportResponse,
+    ExecuteCascadeDirectiveRequest,
+    ExecuteCascadeDirectiveResponse,
+    ExecuteTrustedValidationRequest,
+    FederatedMuleEntryResponse,
     ForensicDossierResponse,
     GovernanceIncidentResponse,
     GovernedAIProviderResponse,
     GovernedComponentResponse,
     InflightPaymentEvaluationRequest,
     InflightPaymentEvaluationResponse,
+    MoneyLockAccountResponse,
+    MoneyLockBranchUnlockRequest,
+    MoneyLockLockRequest,
+    MuleCascadeTraceResponse,
+    PrecautionaryHoldCreateRequest,
+    PrecautionaryHoldEscalateRequest,
+    PrecautionaryHoldRecallRequest,
+    PrecautionaryHoldReleaseRequest,
+    PrecautionaryHoldResponse,
     ProductionReleaseResponse,
     QuantitativeDriftEvaluationResponse,
+    QueryFederatedMuleRequest,
+    QueryFederatedMuleResponse,
     ReadinessAssessmentResponse,
     ReadinessAttestationResponse,
     RecordDriftRequest,
     RecordReadinessAttestationRequest,
     RegisterAIProviderRequest,
+    RegisterFederatedMuleRequest,
+    RegisterTrustedSignerRequest,
     ResumeComponentRequest,
     SemanticVerifyRequest,
     SemanticVerifyResponse,
     SignArtifactRequest,
+    SimBindingEnrollRequest,
+    SimBindingEnrollResponse,
     SuspendComponentRequest,
     SuspensionRecordResponse,
     SystemHealthOverviewResponse,
+    TelecomSignalRequest,
+    TelecomSignalResponse,
+    TriggerMuleCascadeTraceRequest,
+    TrustedSignerResponse,
+    UpdateFederatedMuleStatusRequest,
     UpdateIncidentStatusRequest,
     ValidationMetricSchema,
     ValidationPackageResponse,
     ValidationRunResponse,
     VerifyArtifactRequest,
     VerifyArtifactResponse,
+    SrfAdjudicationRequest,
+    SrfAdjudicationResponse,
+    CustomerKillSwitchActivateRequest,
+    CustomerKillSwitchDeactivateRequest,
+    CustomerKillSwitchResponse,
+    SafeAccountRegisterRequest,
+    SafeAccountResponse,
+    AtmDepositInboundRequest,
+    AtmWithdrawalEvaluateRequest,
+    AtmWithdrawalEvaluateResponse,
+    LimitIncreaseRequestCreate,
+    LimitIncreaseResponse,
+    Med2CascadeTraceRequest,
+    Med2CascadeTraceResponse,
+    Med2HopEdgeInput,
+    GoldenHourReportCreateRequest,
+    GoldenHourReportResponse,
+    TargetRecipientInput,
+    ScameterLookupRequest,
+    ScameterLookupResponse,
+    ScameterWaiverCreateRequest,
+    ScameterWaiverResponse,
 )
 from ..persistence.audit import append_audit, verify_audit_chain
 from ..persistence.models import EnterpriseCase
@@ -205,6 +376,10 @@ def compute_validation_run_digest(run: ValidationRunRecord) -> str:
     }
     raw = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False)
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+# Caller-submitted metrics are not proof that a validation job executed.
+UNVERIFIED_CALLER_ASSERTED_VALIDATION_LIMITATION = "UNVERIFIED_CALLER_ASSERTED_VALIDATION_METRICS"
 
 
 class DatabaseKillSwitchStore:
@@ -395,9 +570,43 @@ class DatabaseKillSwitchStore:
 class ProductionGovernanceService:
     """Operational service for Toroka production governance, model risk, and deployment readiness."""
 
-    def __init__(self, session: Session, installation_id: str) -> None:
+    def __init__(
+        self,
+        session: Session,
+        installation_id: str,
+        evidence_resolver: EvidenceReferenceResolver | None = None,
+        trust_registry: SignerTrustRegistry | None = None,
+    ) -> None:
         self.session = session
         self.installation_id = installation_id
+        self.evidence_resolver = evidence_resolver
+        self.trust_registry = trust_registry or SignerTrustRegistry()
+        self._load_trust_registry_from_db()
+
+    def _load_trust_registry_from_db(self) -> None:
+        try:
+            records = self.session.execute(
+                select(SignerTrustRecord).where(
+                    SignerTrustRecord.installation_id == self.installation_id
+                )
+            ).scalars().all()
+            for r in records:
+                self.trust_registry.register_signer(
+                    TrustedSignerRecord(
+                        key_id=r.key_id,
+                        installation_id=r.installation_id,
+                        public_key_pem=r.public_key_pem,
+                        algorithm=AsymmetricAlgorithm(r.algorithm),
+                        purpose=SignerKeyPurpose(r.purpose),
+                        security_level=KeySecurityLevel(r.security_level),
+                        activated_at=r.activated_at,
+                        expires_at=r.expires_at,
+                        is_revoked=r.is_revoked,
+                        revocation_reason=r.revocation_reason,
+                    )
+                )
+        except Exception:
+            pass
 
     def get_kill_switch(self) -> KillSwitch:
         """Returns a domain KillSwitch backed by the persistent database store."""
@@ -422,10 +631,10 @@ class ProductionGovernanceService:
             domain_comp = GovernedComponent(
                 component_id=request.component_id,
                 version=request.version,
-                component_type=ComponentType(request.component_type),
+                component_type=ComponentType(request.component_type.lower()),
                 name=request.name,
                 status=GovernanceStatus.DRAFT,
-                risk_tier=RiskTier(request.risk_tier),
+                risk_tier=RiskTier(request.risk_tier.lower()),
                 owner_team=request.owner_team,
                 source_digest=request.source_digest,
                 configuration_digest=request.configuration_digest,
@@ -575,6 +784,11 @@ class ProductionGovernanceService:
 
         if run is None:
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Validation run does not exist in this installation")
+        if UNVERIFIED_CALLER_ASSERTED_VALIDATION_LIMITATION in (run.limitations or []):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Caller-submitted metrics without independent execution proof cannot support approval",
+            )
         if run.result != ValidationResult.PASS.value:
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Only a passing validation run can support approval")
         if run.component_id != component_id or run.component_version != version:
@@ -670,7 +884,17 @@ class ProductionGovernanceService:
             for m in request.metrics
         ]
 
-        overall_result = calculate_validation_result(domain_metrics)
+        reported_result = calculate_validation_result(domain_metrics)
+        # Metrics, dataset digests and outcomes in this API request are caller
+        # assertions. A stored digest proves immutability, not execution. Keep
+        # them available for review but fail closed until a trusted executor
+        # attestation can prove which dataset/configuration was actually run.
+        persisted_result = ValidationResult.INCONCLUSIVE
+        limitations = list(dict.fromkeys([
+            *request.limitations,
+            UNVERIFIED_CALLER_ASSERTED_VALIDATION_LIMITATION,
+            f"Caller-reported metric evaluation was {reported_result.value}; execution is not independently attested.",
+        ]))
         run_id = f"val-{uuid.uuid4().hex[:12]}"
         now = _utc_now()
 
@@ -682,9 +906,10 @@ class ProductionGovernanceService:
             dataset_digest=request.dataset_digest,
             configuration_digest=request.configuration_digest,
             metrics=[m.model_dump() for m in request.metrics],
-            result=overall_result.value,
-            evaluator=request.evaluator,
-            limitations=request.limitations,
+            result=persisted_result.value,
+            evaluator=actor_subject,
+            limitations=limitations,
+            is_trusted_execution=False,
             started_at=now,
             completed_at=now,
             created_at=now,
@@ -718,7 +943,7 @@ class ProductionGovernanceService:
                 "run_id": run_id,
                 "component_id": request.component_id,
                 "component_version": request.component_version,
-                "validation_result": overall_result.value,
+                "validation_result": persisted_result.value,
             },
         )
         self.session.commit()
@@ -843,6 +1068,9 @@ class ProductionGovernanceService:
                 detail="Release manifest contains no components",
             )
 
+        required_validation_run_ids: set[str] = set()
+        required_approval_record_ids: set[str] = set()
+
         for comp_id, comp_ver in components_map.items():
             comp_rec = self.session.execute(
                 select(GovernedComponentRecord).where(
@@ -872,6 +1100,14 @@ class ProductionGovernanceService:
                     detail=f"Component '{comp_id}' version '{comp_ver}' lacks verified validation run evidence",
                 )
 
+            if not comp_rec.approval_record_id:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail=f"Component '{comp_id}' version '{comp_ver}' lacks a persisted approval record",
+                )
+            required_validation_run_ids.add(comp_rec.approved_validation_run_id)
+            required_approval_record_ids.add(comp_rec.approval_record_id)
+
             run = self.session.execute(
                 select(ValidationRunRecord).where(
                     and_(
@@ -893,6 +1129,18 @@ class ProductionGovernanceService:
                     status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                     detail=f"Component '{comp_id}' validation digest mismatch with persisted run",
                 )
+
+        # Manifest references must resolve to the exact persisted records.
+        if set(record.validation_runs or []) != required_validation_run_ids:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Release validation_runs do not match component-approved validation runs",
+            )
+        if set(record.approval_records or []) != required_approval_record_ids:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Release approval_records do not match persisted component approvals",
+            )
 
         # 3. For target_environment == "production", verify all 13 MANDATORY_GATES in ReadinessAttestationRecord table
         if target_environment == "production":
@@ -931,13 +1179,40 @@ class ProductionGovernanceService:
                     detail=f"Production promotion blocked: {len(unproven_gates)} mandatory readiness gates lack evidence-backed pass attestations: {', '.join(unproven_gates)}",
                 )
 
+            if self.evidence_resolver is not None:
+                for gate in MANDATORY_GATES:
+                    gate_key = gate.value if hasattr(gate, "value") else str(gate)
+                    atts = attestations_by_gate.get(gate_key, [])
+                    passing = [a for a in atts if a.status == "PASS" and a.evidence_reference and a.evidence_digest]
+                    for pass_att in passing:
+                        valid, reason = self.evidence_resolver.verify_readiness_evidence(
+                            evidence_reference=pass_att.evidence_reference,
+                            expected_digest=pass_att.evidence_digest,
+                            installation_id=self.installation_id,
+                            release_version=record.version,
+                            gate_name=gate_key,
+                            actor_role="authoriser",
+                        )
+                        if not valid:
+                            raise HTTPException(
+                                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                                detail=f"Evidence verification failed for gate '{gate_key}': {reason}",
+                            )
+
     def promote_release(
         self,
         release_id: str,
         target_environment: str,
         actor_subject: str,
         actor_role: str = "authoriser",
+        signature_bundle: dict[str, Any] | None = None,
     ) -> ProductionReleaseResponse:
+        if target_environment not in (DeploymentEnvironment.PILOT.value, DeploymentEnvironment.PRODUCTION.value):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="target_environment must be exactly 'pilot' or 'production'",
+            )
+
         record = self.session.execute(
             select(ProductionReleaseRecord).where(
                 and_(
@@ -952,6 +1227,59 @@ class ProductionGovernanceService:
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Release '{release_id}' not found.",
             )
+
+        # Digital signature and key trust verification for production promotion
+        if target_environment == "production":
+            sig_to_verify = signature_bundle or record.signature_bundle
+            if sig_to_verify is not None:
+                bundle = SignatureBundle.from_dict(sig_to_verify) if isinstance(sig_to_verify, dict) else sig_to_verify
+                db_signer = self.session.execute(
+                    select(SignerTrustRecord).where(
+                        and_(
+                            SignerTrustRecord.installation_id == self.installation_id,
+                            SignerTrustRecord.key_id == bundle.key_id,
+                        )
+                    )
+                ).scalar_one_or_none()
+                if db_signer:
+                    self.trust_registry.register_signer(
+                        TrustedSignerRecord(
+                            key_id=db_signer.key_id,
+                            installation_id=db_signer.installation_id,
+                            public_key_pem=db_signer.public_key_pem,
+                            algorithm=AsymmetricAlgorithm(db_signer.algorithm),
+                            purpose=SignerKeyPurpose(db_signer.purpose),
+                            security_level=KeySecurityLevel(db_signer.security_level),
+                            activated_at=db_signer.activated_at,
+                            expires_at=db_signer.expires_at,
+                            is_revoked=db_signer.is_revoked,
+                            revocation_reason=db_signer.revocation_reason,
+                        )
+                    )
+
+                signer_rec = self.trust_registry.get_signer(self.installation_id, bundle.key_id)
+                if not signer_rec:
+                    raise HTTPException(
+                        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                        detail=f"Signer key '{bundle.key_id}' is not in the trusted registry for installation '{self.installation_id}'",
+                    )
+                if signer_rec.security_level == KeySecurityLevel.DEV_SOFTWARE:
+                    raise HTTPException(
+                        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                        detail="Production promotion requires an institutional key (BANK_MANAGED_HSM or CLOUD_KMS); DEV_SOFTWARE key is not permitted",
+                    )
+                ver_res = self.trust_registry.verify_trust(
+                    bundle=bundle,
+                    installation_id=self.installation_id,
+                    expected_purpose=SignerKeyPurpose.RELEASE_PROMOTION,
+                )
+                if not ver_res.is_valid:
+                    raise HTTPException(
+                        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                        detail=f"Digital signature verification failed for production promotion: {ver_res.trust_failure_reason}",
+                    )
+                if signature_bundle is not None:
+                    record.signature_bundle = bundle.to_dict()
 
         # Enforce independent evidence verification
         self._verify_release_evidence(record, actor_subject, target_environment)
@@ -1436,10 +1764,15 @@ class ProductionGovernanceService:
         # 1. Audit integrity health
         audit_verified = False
         try:
-            audit_verified = verify_audit_chain(self.session, self.installation_id)
+            audit_result = verify_audit_chain(self.session, self.installation_id)
+            if isinstance(audit_result, tuple):
+                audit_verified = bool(audit_result[0])
+            else:
+                audit_verified = bool(audit_result)
             audit_health = HealthStatus.HEALTHY.value if audit_verified else HealthStatus.CRITICAL.value
-        except Exception:
-            audit_health = HealthStatus.UNKNOWN.value
+        except Exception as exc:
+            logger.error("Audit chain verification failed: %s", exc)
+            audit_health = HealthStatus.CRITICAL.value
 
         # 2. Active drifts & open incidents & active suspensions
         drift_records = list(self.session.execute(
@@ -1896,24 +2229,34 @@ class ProductionGovernanceService:
         key_id = None
         algo = None
 
+        signer_trusted = False
+        sig_math_valid = False
         if is_signed:
             try:
                 bundle = SignatureBundle.from_dict(record.signature_bundle)
                 key_id = bundle.key_id
                 algo = bundle.algorithm
-                sig_ok = verify_asymmetric_signature(
+                res = verify_signature_comprehensive(
                     payload=domain_passport.canonical_payload(),
                     bundle=bundle,
+                    trust_registry=self.trust_registry,
+                    installation_id=self.installation_id,
+                    expected_purpose=SignerKeyPurpose.EVIDENCE_PASSPORT,
                     trusted_public_key_pem=request.trusted_public_key_pem,
                 )
-                if not sig_ok:
+                sig_math_valid = res.signature_math_valid
+                signer_trusted = res.signer_trusted
+                sig_ok = res.is_valid
+                if not sig_math_valid:
                     sig_err = "Asymmetric digital signature verification failed against passport payload."
+                elif not signer_trusted:
+                    sig_err = res.trust_failure_reason or "Signer key is not trusted in this installation registry."
             except Exception as exc:
                 sig_err = f"Digital signature error: {exc}"
         else:
             sig_err = "Artifact is not digitally signed (tamper-evident SHA-256 digest only)."
 
-        is_valid = digest_ok and (sig_ok if is_signed else True)
+        is_valid = digest_ok and is_signed and sig_ok
 
         return VerifyArtifactResponse(
             is_valid=is_valid,
@@ -1925,6 +2268,9 @@ class ProductionGovernanceService:
             signing_key_id=key_id,
             signing_algorithm=algo,
             error=sig_err,
+            digest_integrity_valid=digest_ok,
+            signature_math_valid=sig_math_valid,
+            signer_trusted=signer_trusted,
         )
 
     def sign_release(
@@ -2021,24 +2367,34 @@ class ProductionGovernanceService:
         key_id = None
         algo = None
 
+        signer_trusted = False
+        sig_math_valid = False
         if is_signed:
             try:
                 bundle = SignatureBundle.from_dict(record.signature_bundle)
                 key_id = bundle.key_id
                 algo = bundle.algorithm
-                sig_ok = verify_asymmetric_signature(
+                res = verify_signature_comprehensive(
                     payload=manifest._compute_digest_payload(),
                     bundle=bundle,
+                    trust_registry=self.trust_registry,
+                    installation_id=self.installation_id,
+                    expected_purpose=SignerKeyPurpose.RELEASE_PROMOTION,
                     trusted_public_key_pem=request.trusted_public_key_pem,
                 )
-                if not sig_ok:
+                sig_math_valid = res.signature_math_valid
+                signer_trusted = res.signer_trusted
+                sig_ok = res.is_valid
+                if not sig_math_valid:
                     sig_err = "Asymmetric digital signature verification failed against release manifest payload."
+                elif not signer_trusted:
+                    sig_err = res.trust_failure_reason or "Signer key is not trusted in this installation registry."
             except Exception as exc:
                 sig_err = f"Digital signature error: {exc}"
         else:
             sig_err = "Artifact is not digitally signed."
 
-        is_valid = digest_ok and (sig_ok if is_signed else True)
+        is_valid = digest_ok and is_signed and sig_ok
 
         return VerifyArtifactResponse(
             is_valid=is_valid,
@@ -2050,6 +2406,9 @@ class ProductionGovernanceService:
             signing_key_id=key_id,
             signing_algorithm=algo,
             error=sig_err,
+            digest_integrity_valid=digest_ok,
+            signature_math_valid=sig_math_valid,
+            signer_trusted=signer_trusted,
         )
 
     def evaluate_quantitative_drift(
@@ -2245,8 +2604,8 @@ class ProductionGovernanceService:
             hosting_location=request.hosting_location,
             data_retention_policy=request.data_retention_policy,
             training_on_customer_data_permitted=request.training_on_customer_data_permitted,
-            risk_tier=RiskTier(request.risk_tier),
-            is_approved=True,
+            risk_tier=RiskTier(request.risk_tier.lower()),
+            is_approved=False,
         )
 
         is_compliant, reason = verify_provider_compliance(provider)
@@ -2266,9 +2625,15 @@ class ProductionGovernanceService:
             hosting_location=provider.hosting_location,
             data_retention_policy=provider.data_retention_policy,
             training_on_customer_data_permitted=provider.training_on_customer_data_permitted,
-            is_approved=True,
+            is_approved=False,
             risk_tier=provider.risk_tier.value,
-            evaluation_summary={"compliance_reason": reason, "verified_at": now.isoformat()},
+            evaluation_summary={
+                "compliance_reason": reason,
+                "review_status": "PENDING_INDEPENDENT_REVIEW",
+                "verified_at": now.isoformat(),
+            },
+            registered_by=actor_subject,
+            review_status="PENDING_INDEPENDENT_REVIEW",
             last_evaluated_at=now,
             created_at=now,
         )
@@ -2285,6 +2650,57 @@ class ProductionGovernanceService:
             safe_metadata={
                 "provider_id": provider.provider_id,
                 "risk_tier": provider.risk_tier.value,
+                "review_status": "PENDING_INDEPENDENT_REVIEW",
+            },
+        )
+        self.session.commit()
+        return self._to_provider_response(rec)
+
+    def approve_ai_provider(
+        self,
+        provider_id: str,
+        request: ApproveAIProviderRequest,
+        actor_subject: str,
+        actor_role: str = "authoriser",
+    ) -> GovernedAIProviderResponse:
+        rec = self.session.execute(
+            select(GovernedAIProviderRecord).where(
+                and_(
+                    GovernedAIProviderRecord.installation_id == self.installation_id,
+                    GovernedAIProviderRecord.provider_id == provider_id,
+                )
+            )
+        ).scalar_one_or_none()
+        if not rec:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"AI Provider '{provider_id}' not found.")
+
+        # Maker-checker separation: registrant cannot approve the provider
+        if rec.registered_by and rec.registered_by == actor_subject:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Provider registrant cannot approve their own AI provider registration (maker-checker separation)",
+            )
+
+        now = _utc_now()
+        rec.is_approved = True
+        rec.approved_by = actor_subject
+        rec.approved_at = now
+        rec.review_status = "APPROVED"
+        rec.review_notes = request.review_notes
+
+        append_audit(
+            self.session,
+            installation_id=self.installation_id,
+            actor_subject=actor_subject,
+            actor_role=actor_role,
+            action="ai_provider_approved",
+            target_type="ai_provider",
+            target_id=provider_id,
+            safe_metadata={
+                "provider_id": provider_id,
+                "approved_by": actor_subject,
+                "review_status": "APPROVED",
+                "notes": request.review_notes,
             },
         )
         self.session.commit()
@@ -2506,6 +2922,9 @@ class ProductionGovernanceService:
             completed_at=r.completed_at.isoformat(),
             created_at=r.created_at.isoformat(),
             validation_digest=v_digest,
+            execution_provenance_digest=r.execution_provenance_digest,
+            executor_id=r.executor_id,
+            is_trusted_execution=bool(r.is_trusted_execution),
         )
 
     def _to_release_response(self, r: ProductionReleaseRecord) -> ProductionReleaseResponse:
@@ -2692,6 +3111,11 @@ class ProductionGovernanceService:
             evaluation_summary=r.evaluation_summary or {},
             last_evaluated_at=r.last_evaluated_at.isoformat() if r.last_evaluated_at else None,
             created_at=r.created_at.isoformat(),
+            review_status=getattr(r, "review_status", None) or ("APPROVED" if r.is_approved else "PENDING_INDEPENDENT_REVIEW"),
+            registered_by=getattr(r, "registered_by", None),
+            approved_by=getattr(r, "approved_by", None),
+            approved_at=r.approved_at.isoformat() if getattr(r, "approved_at", None) else None,
+            review_notes=getattr(r, "review_notes", None),
         )
 
     def _to_quantitative_drift_response(self, r: QuantitativeDriftEvaluationRecord) -> QuantitativeDriftEvaluationResponse:
@@ -2758,9 +3182,10 @@ class ProductionGovernanceService:
                 "dossier_digest": r.dossier_digest,
                 "signature_bundle": r.signature_bundle,
             })
-            is_verified = dossier.verify_dossier_integrity()
             if is_signed:
-                is_verified = is_verified and dossier.verify_digital_signature()
+                is_verified = dossier.verify_dossier_integrity() and dossier.verify_digital_signature()
+            else:
+                is_verified = False
         except Exception:
             is_verified = False
 
@@ -2792,7 +3217,19 @@ class ProductionGovernanceService:
         self,
         request: CreateForensicDossierRequest,
         actor_subject: str,
+        actor_role: str = "authoriser",
     ) -> ForensicDossierResponse:
+        case_record = self.session.execute(
+            select(EnterpriseCase).where(
+                and_(EnterpriseCase.installation_id == self.installation_id, EnterpriseCase.id == request.case_id)
+            )
+        ).scalar_one_or_none()
+        if case_record is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="The requested case does not exist in this installation",
+            )
+
         dossier_id = f"dos-{uuid.uuid4().hex[:12]}"
         now = _utc_now()
 
@@ -2800,28 +3237,25 @@ class ProductionGovernanceService:
             event_id=f"cust-{uuid.uuid4().hex[:8]}",
             timestamp=now,
             actor_subject=actor_subject,
-            actor_role="LEAD_EXAMINER",
+            actor_role=actor_role,
             action="DOSSIER_COMPILED",
             source_hash="0000000000000000000000000000000000000000000000000000000000000000",
             destination_hash="",
-            notes="Initial compilation of court-ready forensic evidence dossier",
+            notes="Initial compilation of an unverified draft evidence dossier",
         )
 
+        # Do not manufacture a Section 106B certificate from caller-entered
+        # certifier details or an unverified statement about device operation.
         cert = None
-        if request.certifier_name:
-            cert = Section106BCertificate(
-                certificate_id=f"cert-106b-{uuid.uuid4().hex[:8]}",
-                statutory_framework="Kenya Evidence Act (Cap 80) Section 106B",
-                certifier_name=request.certifier_name,
-                certifier_designation=request.certifier_designation or "Lead Financial Crime Investigator",
-                certifier_organization="Toroka Financial Crime Compliance",
-                device_identification=f"TOROKA-NODE-{self.installation_id[:8]}",
-                operating_condition_statement="At all material times, the computer system was operating properly and there was no malfunction affecting the production of the electronic record or accuracy of its contents.",
-                hash_algorithm="SHA-256",
-                merkle_root_hash="PENDING_ROOT",
-                certified_at=now,
-                declaration_text=request.declaration_text or "I certify under penalty of perjury that this electronic evidence record was generated in the ordinary course of financial crime detection.",
-            )
+
+        sanitized_evidence = []
+        for ev in request.evidence_records:
+            ev_dict = dict(ev) if isinstance(ev, dict) else ev
+            if "provenance" not in ev_dict or not ev_dict["provenance"]:
+                ev_dict["provenance"] = "ANALYST_SUPPLIED"
+            sanitized_evidence.append(ev_dict)
+
+        loss_dec = Decimal(str(request.fraud_loss_amount))
 
         # Build initial domain dossier
         dossier = ForensicDossier(
@@ -2830,15 +3264,15 @@ class ProductionGovernanceService:
             installation_id=self.installation_id,
             title=request.title,
             incident_type=request.incident_type,
-            fraud_loss_amount=request.fraud_loss_amount,
+            fraud_loss_amount=loss_dec,
             currency=request.currency,
             examiner_subject=actor_subject,
-            examiner_role="LEAD_EXAMINER",
+            examiner_role=actor_role,
             created_at=now,
             case_summary=request.case_summary,
             attack_path_summary=request.attack_path_summary,
             identified_mule_nodes=tuple(request.identified_mule_nodes),
-            evidence_records=tuple(request.evidence_records),
+            evidence_records=tuple(sanitized_evidence),
             chain_of_custody=(custody_event,),
             section_106b_certificate=cert,
         )
@@ -2857,39 +3291,23 @@ class ProductionGovernanceService:
             ),
         )
 
-        updated_cert = cert
-        if cert:
-            updated_cert = Section106BCertificate(
-                certificate_id=cert.certificate_id,
-                statutory_framework=cert.statutory_framework,
-                certifier_name=cert.certifier_name,
-                certifier_designation=cert.certifier_designation,
-                certifier_organization=cert.certifier_organization,
-                device_identification=cert.device_identification,
-                operating_condition_statement=cert.operating_condition_statement,
-                hash_algorithm=cert.hash_algorithm,
-                merkle_root_hash=dossier.dossier_digest,
-                certified_at=cert.certified_at,
-                declaration_text=cert.declaration_text,
-            )
-
         final_dossier = ForensicDossier(
             dossier_id=dossier_id,
             case_id=request.case_id,
             installation_id=self.installation_id,
             title=request.title,
             incident_type=request.incident_type,
-            fraud_loss_amount=request.fraud_loss_amount,
+            fraud_loss_amount=loss_dec,
             currency=request.currency,
             examiner_subject=actor_subject,
-            examiner_role="LEAD_EXAMINER",
+            examiner_role=actor_role,
             created_at=now,
             case_summary=request.case_summary,
             attack_path_summary=request.attack_path_summary,
             identified_mule_nodes=tuple(request.identified_mule_nodes),
-            evidence_records=tuple(request.evidence_records),
+            evidence_records=tuple(sanitized_evidence),
             chain_of_custody=updated_custody,
-            section_106b_certificate=updated_cert,
+            section_106b_certificate=None,
         )
 
         record = ForensicDossierRecord(
@@ -2907,13 +3325,23 @@ class ProductionGovernanceService:
             identified_mule_nodes=list(final_dossier.identified_mule_nodes),
             evidence_records=list(final_dossier.evidence_records),
             chain_of_custody=[c.to_dict() for c in final_dossier.chain_of_custody],
-            section_106b_certificate=final_dossier.section_106b_certificate.to_dict() if final_dossier.section_106b_certificate else None,
+            section_106b_certificate=None,
             dossier_digest=final_dossier.dossier_digest,
             signature_bundle=None,
-            status="SEALED",
+            status="DRAFT_UNVERIFIED",
             created_at=final_dossier.created_at,
         )
         self.session.add(record)
+        append_audit(
+            self.session,
+            installation_id=self.installation_id,
+            actor_subject=actor_subject,
+            actor_role=actor_role,
+            action="forensic_dossier_draft_created",
+            target_type="forensic_dossier",
+            target_id=dossier_id,
+            safe_metadata={"case_id": request.case_id, "status": "DRAFT_UNVERIFIED"},
+        )
         self.session.commit()
         self.session.refresh(record)
 
@@ -3033,25 +3461,64 @@ class ProductionGovernanceService:
             "signature_bundle": record.signature_bundle,
         })
 
+        # Hydrate trust registry from DB
+        trust_records = self.session.execute(
+            select(SignerTrustRecord).where(
+                SignerTrustRecord.installation_id == self.installation_id
+            )
+        ).scalars().all()
+        for tr in trust_records:
+            self.trust_registry.register_signer(
+                SignerTrustRecord(
+                    key_id=tr.key_id,
+                    installation_id=tr.installation_id,
+                    security_level=KeySecurityLevel(tr.security_level),
+                    purpose=SignerKeyPurpose(tr.purpose),
+                    public_key_pem=tr.public_key_pem,
+                    algorithm=AsymmetricAlgorithm(tr.algorithm),
+                    is_active=tr.is_active,
+                )
+            )
+
         is_digest_valid = dossier.verify_dossier_integrity()
         sig_verified = False
+        sig_math_valid = False
+        signer_trusted = False
         sig_err = None
 
         if dossier.signature_bundle:
-            sig_verified = dossier.verify_digital_signature(request.trusted_public_key_pem)
-            if not sig_verified:
+            bundle = SignatureBundle.from_dict(dossier.signature_bundle)
+            res = verify_signature_comprehensive(
+                payload=dossier.dossier_digest.encode("utf-8"),
+                bundle=bundle,
+                registry=self.trust_registry,
+                installation_id=self.installation_id,
+                expected_purpose=SignerKeyPurpose.FORENSIC_DOSSIER,
+                trusted_public_key_pem=request.trusted_public_key_pem,
+            )
+            sig_math_valid = res.signature_math_valid
+            signer_trusted = res.signer_trusted
+            sig_verified = sig_math_valid
+            if not sig_math_valid:
                 sig_err = "Cryptographic signature does not match canonical dossier digest"
+            elif not signer_trusted and trust_records:
+                sig_err = res.trust_detail or "Signer key is not trusted in this installation registry."
         else:
             sig_err = "Dossier has no digital signature attached"
+
+        is_valid = is_digest_valid and dossier.signature_bundle is not None and sig_verified
 
         return VerifyArtifactResponse(
             artifact_id=record.dossier_id,
             artifact_type="forensic_dossier",
-            is_valid=is_digest_valid and (sig_verified if dossier.signature_bundle else True),
+            is_valid=is_valid,
             digest_verified=is_digest_valid,
             signature_verified=sig_verified,
             is_digitally_signed=dossier.signature_bundle is not None,
-            signature_error=sig_err,
+            error=sig_err,
+            digest_integrity_valid=is_digest_valid,
+            signature_math_valid=sig_math_valid,
+            signer_trusted=signer_trusted,
         )
 
     def export_forensic_dossier_html(self, dossier_id: str) -> str:
@@ -3107,16 +3574,27 @@ class ProductionGovernanceService:
             national_id=request.creditor_national_id,
             msisdn=request.creditor_msisdn,
         )
-        clearing_rail = (
-            ClearingRail(request.clearing_rail)
-            if request.clearing_rail in ClearingRail.__members__.values()
-            else ClearingRail.PESALINK
-        )
+        try:
+            clearing_rail = ClearingRail(request.clearing_rail)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Unsupported clearing_rail: {request.clearing_rail}",
+            ) from exc
+
+        try:
+            dec_amount = validate_payment_amount(request.amount, request.currency)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Invalid payment amount: {exc}",
+            ) from exc
+
         transfer = Pacs008CreditTransfer(
             msg_id=request.msg_id or f"MSG-{uuid.uuid4().hex[:12]}",
             end_to_end_id=request.end_to_end_id,
             tx_id=f"TX-{uuid.uuid4().hex[:12]}",
-            amount=request.amount,
+            amount=dec_amount,
             currency=request.currency,
             debtor=debtor,
             creditor=creditor,
@@ -3134,11 +3612,430 @@ class ProductionGovernanceService:
             if f.finding_data and "mule_accounts" in f.finding_data:
                 mule_accounts.update(f.finding_data["mule_accounts"])
 
-        eval_result = ISO20022Engine.evaluate_inflight_payment(
-            transfer=transfer,
-            known_mule_accounts=mule_accounts,
-            account_prior_transfers_count=request.account_prior_transfers_count,
-        )
+        is_parallel = bool(request.use_parallel_pipeline)
+        feed_statuses_dict = None
+        cop_lat = None
+        tel_lat = None
+        fed_lat = None
+        beh_lat = None
+        circuit_tripped = False
+        is_sla_comp = True
+        sla_budget = float(request.sla_budget_ms)
+
+        if is_parallel:
+            active_dicts = []
+            if request.check_federated_mule_directory:
+                fed_records = self.session.execute(
+                    select(FederatedMuleRecord).where(
+                        FederatedMuleRecord.installation_id == self.installation_id,
+                        FederatedMuleRecord.status == "ACTIVE",
+                    )
+                ).scalars().all()
+                active_dicts = [
+                    {
+                        "blinded_token": r.blinded_token,
+                        "cleartext_preview": r.cleartext_preview,
+                        "entity_type": r.entity_type,
+                        "severity_tier": r.severity_tier,
+                        "originating_bank_bic": r.originating_bank_bic,
+                        "reason_code": r.reason_code,
+                        "dossier_reference": r.dossier_reference,
+                        "status": r.status,
+                        "registered_at": r.registered_at,
+                        "expires_at": r.expires_at,
+                    }
+                    for r in fed_records
+                ]
+
+            parallel_res = SIC5ParallelClearingEngine.evaluate_parallel(
+                transfer=transfer,
+                cop_enabled=(request.cop_status is not None),
+                cop_override_status=request.cop_status,
+                cop_override_score=request.cop_match_score,
+                cop_registered_name=None,
+                telecom_enabled=(
+                    request.telecom_call_status is not None
+                    or request.telecom_coercion_score is not None
+                    or bool(request.simulated_latencies and "telecom" in request.simulated_latencies)
+                ),
+                telecom_msisdn=request.debtor_msisdn,
+                telecom_override_status=request.telecom_call_status,
+                telecom_override_score=request.telecom_coercion_score,
+                telecom_simulated_call=request.telecom_call_status,
+                federated_mule_enabled=request.check_federated_mule_directory,
+                federated_mule_records=active_dicts,
+                known_mule_accounts=mule_accounts,
+                account_prior_transfers_count=request.account_prior_transfers_count,
+                beneficiary_inflow_restriction=request.beneficiary_inflow_restriction,
+                debtor_channel_anomaly=request.debtor_channel_anomaly,
+                enable_graduated_controls=request.enable_graduated_controls,
+                sla_budget_ms=sla_budget,
+                simulated_latencies=request.simulated_latencies,
+            )
+            eval_result = parallel_res.evaluation
+            feed_statuses_dict = parallel_res.feed_statuses
+            circuit_tripped = parallel_res.circuit_breaker_tripped
+            cop_lat = parallel_res.latency_breakdown.cop_latency_ms
+            tel_lat = parallel_res.latency_breakdown.telecom_latency_ms
+            fed_lat = parallel_res.latency_breakdown.federated_mule_latency_ms
+            beh_lat = parallel_res.latency_breakdown.behavioral_latency_ms
+            is_sla_comp = parallel_res.latency_breakdown.is_sla_compliant
+        else:
+            federated_match = None
+            if request.check_federated_mule_directory:
+                creditor_token = FederatedMuleEngine.compute_blinded_token(
+                    transfer.creditor.account_number,
+                    MuleEntityType.BANK_ACCOUNT,
+                )
+                fed_records = self.session.execute(
+                    select(FederatedMuleRecord).where(
+                        FederatedMuleRecord.installation_id == self.installation_id,
+                        FederatedMuleRecord.blinded_token == creditor_token,
+                        FederatedMuleRecord.status == "ACTIVE",
+                    )
+                ).scalars().all()
+                if fed_records:
+                    active_dicts = [
+                        {
+                            "blinded_token": r.blinded_token,
+                            "cleartext_preview": r.cleartext_preview,
+                            "entity_type": r.entity_type,
+                            "severity_tier": r.severity_tier,
+                            "originating_bank_bic": r.originating_bank_bic,
+                            "reason_code": r.reason_code,
+                            "dossier_reference": r.dossier_reference,
+                            "status": r.status,
+                            "registered_at": r.registered_at,
+                            "expires_at": r.expires_at,
+                        }
+                        for r in fed_records
+                    ]
+                    query_obj = FederatedMuleQuery(
+                        value=creditor_token,
+                        entity_type=MuleEntityType.BANK_ACCOUNT,
+                        is_already_blinded=True,
+                    )
+                    federated_match = FederatedMuleEngine.evaluate_mule_query(query_obj, active_dicts)
+
+            eval_result = ISO20022Engine.evaluate_inflight_payment(
+                transfer=transfer,
+                known_mule_accounts=mule_accounts,
+                account_prior_transfers_count=request.account_prior_transfers_count,
+                cop_status=request.cop_status,
+                cop_match_score=request.cop_match_score,
+                beneficiary_inflow_restriction=request.beneficiary_inflow_restriction,
+                debtor_channel_anomaly=request.debtor_channel_anomaly,
+                enable_graduated_controls=request.enable_graduated_controls,
+                telecom_call_status=request.telecom_call_status,
+                telecom_coercion_score=request.telecom_coercion_score,
+                federated_mule_match=federated_match,
+            )
+
+        # Phase 15 Variables
+        money_lock_act = False
+        money_lock_avail = None
+        money_lock_locked = None
+        is_money_lock_br = False
+        is_night_breach = False
+        night_ceiling = None
+        hold_id = None
+        hold_state = None
+        sim_status = None
+        is_emulator = False
+        bio_verdict = None
+        bio_risk_score = None
+        is_rat = False
+
+        decision_str = eval_result.decision.value
+        risk_score_val = eval_result.risk_score
+        risk_tier_str = eval_result.risk_tier.value
+        rules_list = list(eval_result.triggered_rules)
+        rec_action = eval_result.recommended_action
+
+        # 1. Phase 15.0: Singapore MAS Money Lock Vault Check
+        if request.check_money_lock:
+            ml_rec = self.session.execute(
+                select(MoneyLockAccountRecord).where(
+                    MoneyLockAccountRecord.installation_id == self.installation_id,
+                    MoneyLockAccountRecord.account_id == transfer.debtor.account_number,
+                )
+            ).scalar_one_or_none()
+            if ml_rec:
+                money_lock_act = (ml_rec.status == "LOCKED")
+                money_lock_avail = float(ml_rec.available_balance)
+                money_lock_locked = float(ml_rec.locked_vault_balance)
+                if money_lock_act and transfer.amount > ml_rec.available_balance:
+                    is_money_lock_br = True
+                    decision_str = "BLOCK"
+                    risk_score_val = 1.0
+                    risk_tier_str = "CRITICAL"
+                    rules_list.append("MONEY_LOCK_EXCLUSION_EXCEEDS_LIQUID_AVAILABLE")
+                    rec_action = (
+                        f"REJECT_PAYMENT_MONEY_LOCK_PROTECTED: Outbound transfer of {transfer.amount} {transfer.currency} "
+                        f"exceeds available liquid balance of {ml_rec.available_balance}. Locked vault balance of "
+                        f"{ml_rec.locked_vault_balance} is strictly protected under Singapore MAS Money Lock policy."
+                    )
+                    ml_trail = list(ml_rec.audit_trail or [])
+                    ml_trail.append({
+                        "event_id": str(uuid.uuid4()),
+                        "event_type": "MONEY_LOCK_DIGITAL_DRAINAGE_PREVENTED",
+                        "amount": float(transfer.amount),
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                        "actor": actor_subject,
+                    })
+                    ml_rec.audit_trail = ml_trail
+
+        # 2. Phase 15.1: Brazil BCB Limite Noturno / Nighttime Limits
+        if request.enforce_nighttime_limits:
+            night_policy = NighttimeWindowPolicy()
+            night_ceiling = float(night_policy.max_nighttime_amount)
+            if request.client_local_hour is not None:
+                check_dt = datetime(2026, 11, 19, request.client_local_hour, 0, tzinfo=timezone.utc)
+            else:
+                check_dt = datetime.now(timezone.utc)
+            night_eval = night_policy.evaluate_nighttime_ceiling(transfer.amount, check_dt)
+            if night_eval["is_breach"]:
+                is_night_breach = True
+                rules_list.append("STATUTORY_NIGHTTIME_LIMIT_EXCEEDED_BCB")
+                if decision_str in ("PROCEED", "ALLOW"):
+                    decision_str = "STEP_UP_AUTH"
+                    rec_action = "DELAY_UNTIL_DAYLIGHT_CLEARING"
+
+        # 3. Phase 15.2: India NPCI SIM & Hardware Binding
+        if request.sim_is_emulator:
+            is_emulator = True
+            decision_str = "BLOCK"
+            risk_score_val = max(risk_score_val, 0.98)
+            risk_tier_str = "CRITICAL"
+            rules_list.append("EMULATOR_ENVIRONMENT_PROHIBITED_NPCI")
+            rec_action = "HARD_BLOCK_EMULATOR_DETECTED"
+        elif request.sim_is_rooted:
+            decision_str = "BLOCK"
+            risk_score_val = max(risk_score_val, 0.95)
+            risk_tier_str = "CRITICAL"
+            rules_list.append("ROOTED_COMPROMISED_DEVICE_NPCI")
+            rec_action = "HARD_BLOCK_ROOTED_DEVICE"
+
+        if request.sim_device_imei_hash:
+            sim_rec = self.session.execute(
+                select(SimBindingRecord).where(
+                    SimBindingRecord.installation_id == self.installation_id,
+                    SimBindingRecord.account_id == transfer.debtor.account_number,
+                )
+            ).scalar_one_or_none()
+            if sim_rec:
+                enrollment = SimBindingEnrollment(
+                    account_id=sim_rec.account_id,
+                    installation_id=sim_rec.installation_id,
+                    bound_device_imei_hash=sim_rec.bound_device_imei_hash,
+                    bound_sim_iccid_hash=sim_rec.bound_sim_iccid_hash,
+                    enrolled_at=sim_rec.enrolled_at,
+                    last_verified_at=sim_rec.last_verified_at,
+                    status=HardwareBindingStatus(sim_rec.status),
+                    carrier_name=sim_rec.carrier_name,
+                )
+                assertion = HardwareBindingAssertion(
+                    device_imei_hash=request.sim_device_imei_hash,
+                    sim_iccid_hash=request.sim_iccid_hash or sim_rec.bound_sim_iccid_hash,
+                    app_instance_id="app-inst",
+                    client_timestamp=datetime.now(timezone.utc),
+                    is_emulator=request.sim_is_emulator,
+                    is_rooted=request.sim_is_rooted,
+                    sim_swap_hours_ago=request.sim_swap_hours_ago,
+                )
+                b_status, b_msg, b_det = SimBindingEngine.verify_assertion(enrollment, assertion)
+                sim_status = b_status.value
+                if b_status == HardwareBindingStatus.SIM_SWAP_DETECTED_COOLDOWN:
+                    decision_str = "BLOCK"
+                    risk_score_val = max(risk_score_val, 0.95)
+                    risk_tier_str = "CRITICAL"
+                    rules_list.append("SIM_SWAP_24H_COOLDOWN_ACTIVE")
+                    rec_action = "COOLING_OFF_HOLD"
+                elif b_status == HardwareBindingStatus.DEVICE_MISMATCH:
+                    rules_list.append("DEVICE_HARDWARE_MISMATCH_NPCI")
+                    if decision_str in ("PROCEED", "ALLOW"):
+                        decision_str = "STEP_UP_AUTH"
+                        rec_action = "STEP_UP_IN_PERSON_BRANCH"
+
+        # 4. Phase 15.3: BioCatch Behavioral Biometrics (RAT & Coached Victim)
+        if (
+            request.biometrics_trajectory_r2 is not None
+            or request.biometrics_is_active_call is not None
+            or request.biometrics_is_remote_software is not None
+        ):
+            bio_telemetry = BiometricsTelemetry(
+                trajectory_linearity_r2=request.biometrics_trajectory_r2 if request.biometrics_trajectory_r2 is not None else 0.45,
+                micro_tremor_hz=request.biometrics_micro_tremor_hz if request.biometrics_micro_tremor_hz is not None else 9.5,
+                typing_hesitation_ms=request.biometrics_hesitation_ms if request.biometrics_hesitation_ms is not None else 1200,
+                backspace_count=request.biometrics_backspaces if request.biometrics_backspaces is not None else 1,
+                is_active_voice_call=bool(request.biometrics_is_active_call),
+                is_remote_software_detected=bool(request.biometrics_is_remote_software),
+            )
+            bio_res = BehavioralBiometricsEngine.evaluate(bio_telemetry)
+            bio_verdict = bio_res.verdict.value
+            bio_risk_score = bio_res.risk_score
+            for fl in bio_res.detected_flags:
+                rules_list.append(f"BIOMETRICS_{fl}")
+
+            if bio_res.verdict == BiometricsVerdict.SUSPECTED_REMOTE_ACCESS_TROJAN:
+                is_rat = True
+                decision_str = "BLOCK"
+                risk_score_val = max(risk_score_val, 0.96)
+                risk_tier_str = "CRITICAL"
+                rules_list.append("REMOTE_ACCESS_TROJAN_CURSOR_LINEARITY_DETECTED")
+                rec_action = "TERMINATE_SESSION_STEP_UP_IN_PERSON"
+            elif bio_res.verdict == BiometricsVerdict.SUSPECTED_COACHED_VICTIM:
+                rules_list.append("COACHED_VICTIM_VOICE_CALL_HESITATION_DETECTED")
+                risk_score_val = max(risk_score_val, 0.82)
+                if decision_str in ("PROCEED", "ALLOW"):
+                    decision_str = "STEP_UP_AUTH"
+                    rec_action = "INTERRUPT_WITH_COACHING_WARNING_MODAL"
+
+        # Phase 16 Variables
+        is_kill_switch_active_val = False
+        is_safe_payee_val = None
+        safe_accounts_breach_val = False
+        ip_ingress_verdict_val = None
+        accord_delay_hours_val = 0
+        accord_warning_message_val = None
+        scameter_risk_level_val = None
+        is_scameter_shielded_val = False
+
+        # 5. Phase 16.0: Singapore MAS 24/7 Customer Kill Switch Check
+        if request.check_kill_switch:
+            ks_rec = self.session.execute(
+                select(CustomerKillSwitchRecord).where(
+                    CustomerKillSwitchRecord.installation_id == self.installation_id,
+                    CustomerKillSwitchRecord.account_id == transfer.debtor.account_number,
+                    CustomerKillSwitchRecord.status == "ACTIVE",
+                )
+            ).scalar_one_or_none()
+            if ks_rec:
+                is_kill_switch_active_val = True
+                decision_str = "BLOCK"
+                risk_score_val = 1.0
+                risk_tier_str = "CRITICAL"
+                rules_list.append("CUSTOMER_24_7_EMERGENCY_KILL_SWITCH_ACTIVE")
+                rec_action = (
+                    f"HARD_BLOCK_24_7_KILL_SWITCH: Outbound clearing rejected for account {transfer.debtor.account_number}. "
+                    f"Customer emergency kill switch is active (initiated via {ks_rec.channel_initiated}). "
+                    f"Physical branch maker-checker dual-custody verification required to deactivate."
+                )
+
+        # 6. Phase 16.1: South Korea FSS Designated Safe Accounts
+        if request.enforce_safe_accounts:
+            safe_rec = self.session.execute(
+                select(DesignatedSafeAccountRecord).where(
+                    DesignatedSafeAccountRecord.installation_id == self.installation_id,
+                    DesignatedSafeAccountRecord.account_id == transfer.debtor.account_number,
+                    DesignatedSafeAccountRecord.payee_account == transfer.creditor.account_number,
+                    DesignatedSafeAccountRecord.is_active == True,
+                )
+            ).scalar_one_or_none()
+            if safe_rec:
+                is_safe_payee_val = True
+            else:
+                is_safe_payee_val = False
+                if transfer.amount > Decimal("10000.00"):
+                    safe_accounts_breach_val = True
+                    rules_list.append("NON_DESIGNATED_SAFE_ACCOUNT_MICRO_LIMIT_EXCEEDED")
+                    if decision_str in ("PROCEED", "ALLOW"):
+                        decision_str = "STEP_UP_AUTH"
+                        rec_action = "STEP_UP_BRANCH_NON_DESIGNATED_SAFE_ACCOUNT_LIMIT"
+
+        # 7. Phase 16.1: South Korea & Global Ingress Shield (VPN / Tor / Overseas)
+        if request.check_ip_ingress or request.is_vpn or request.is_tor or request.is_datacenter_proxy or (request.client_country_code and request.client_country_code != "KE"):
+            shield_telemetry = IngressShieldTelemetry(
+                client_ip=request.client_ip or "127.0.0.1",
+                country_code=request.client_country_code or "KE",
+                is_vpn=request.is_vpn,
+                is_tor=request.is_tor,
+                is_datacenter_proxy=request.is_datacenter_proxy,
+                registered_overseas_travel=request.registered_overseas_travel,
+                customer_home_country="KE",
+            )
+            v_res, v_reason = IpIngressShieldEngine.evaluate_ingress(shield_telemetry)
+            ip_ingress_verdict_val = v_res.value
+            if v_res in (IngressShieldVerdict.BLOCK_VPN_OR_TOR, IngressShieldVerdict.BLOCK_DATACENTER_PROXY):
+                decision_str = "BLOCK"
+                risk_score_val = max(risk_score_val, 0.95)
+                risk_tier_str = "CRITICAL"
+                rules_list.append(f"INGRESS_SHIELD_{v_res.value}")
+                rec_action = f"HARD_BLOCK_INGRESS_PROXY: {v_reason}"
+            elif v_res == IngressShieldVerdict.BLOCK_OVERSEAS_UNREGISTERED:
+                rules_list.append("OVERSEAS_IP_UNREGISTERED_SOUTH_KOREA_MODEL")
+                risk_score_val = max(risk_score_val, 0.85)
+                if decision_str in ("PROCEED", "ALLOW"):
+                    decision_str = "STEP_UP_AUTH"
+                    rec_action = "STEP_UP_OVERSEAS_TRAVEL_VERIFICATION"
+
+        # 8. Phase 16.2: Australia NASC Scam-Safe Accord First-Time Payee Settlement Delays
+        if request.enforce_accord_delay and request.is_first_time_payee:
+            accord_res = PayeeFrictionEngine.evaluate_settlement_delay(
+                account_id=transfer.debtor.account_number,
+                payee_account=transfer.creditor.account_number,
+                amount=transfer.amount,
+                is_first_time_payee=True,
+            )
+            if accord_res.is_delayed:
+                accord_delay_hours_val = accord_res.delay_hours
+                accord_warning_message_val = accord_res.contextual_warning_message
+                rules_list.append(f"AUSTRALIA_ACCORD_DELAY_{accord_res.delay_hours}H_FIRST_TIME_PAYEE")
+                if decision_str in ("PROCEED", "ALLOW"):
+                    decision_str = "DELAY_SETTLEMENT_15M"
+                    rec_action = f"DELAY_SETTLEMENT_{accord_res.delay_hours}H_NASC_ACCORD"
+
+        # 9. Phase 16.4: Hong Kong FPS Scameter High-Risk Proxy Warning & Shield
+        if request.check_scameter and request.scameter_proxy_id:
+            if request.scameter_waiver_id:
+                w_rec = self.session.execute(
+                    select(ScameterShieldWaiverRecord).where(
+                        ScameterShieldWaiverRecord.installation_id == self.installation_id,
+                        ScameterShieldWaiverRecord.waiver_id == request.scameter_waiver_id,
+                    )
+                ).scalar_one_or_none()
+                if w_rec:
+                    is_scameter_shielded_val = True
+                    rules_list.append("FPS_SCAMETER_STATUTORY_LIABILITY_WAIVER_EXECUTED")
+            else:
+                if any(k in request.scameter_proxy_id.lower() for k in ("police", "999", "scam", "fraud")):
+                    scameter_risk_level_val = "HIGH_RISK_POLICE_RECORD"
+                    rules_list.append("FPS_SCAMETER_HIGH_RISK_POLICE_RECORD_HKMA")
+                    risk_score_val = max(risk_score_val, 0.92)
+                    if decision_str in ("PROCEED", "ALLOW"):
+                        decision_str = "STEP_UP_AUTH"
+                        rec_action = "PROMPT_UNSKIPPABLE_SCAMETER_WARNING_AND_WAIVER"
+
+        # 10. Precautionary Hold (Bloqueio Cautelar 72h) Trigger
+        if decision_str == "BLOCK" or risk_score_val >= 0.85 or is_rat or is_money_lock_br or is_kill_switch_active_val:
+            hold_directive = PrecautionaryHoldEngine.create_precautionary_hold(
+                installation_id=self.installation_id,
+                tx_id=transfer.tx_id,
+                amount=transfer.amount,
+                debtor_account=transfer.debtor.account_number,
+                creditor_account=transfer.creditor.account_number,
+                reason="; ".join(rules_list) or "Precautionary block triggered by high-risk anomaly.",
+                currency=transfer.currency,
+            )
+            hold_rec = PrecautionaryHoldRecord(
+                hold_id=hold_directive.hold_id,
+                installation_id=self.installation_id,
+                tx_id=hold_directive.tx_id,
+                amount=hold_directive.amount,
+                currency=hold_directive.currency,
+                debtor_account=hold_directive.debtor_account,
+                creditor_account=hold_directive.creditor_account,
+                state=hold_directive.state.value,
+                placed_at=hold_directive.placed_at,
+                expires_at=hold_directive.expires_at,
+                reason=hold_directive.reason,
+                statutory_basis=hold_directive.statutory_basis,
+                created_at=datetime.now(timezone.utc),
+                updated_at=datetime.now(timezone.utc),
+            )
+            self.session.add(hold_rec)
+            hold_id = hold_directive.hold_id
+            hold_state = hold_directive.state.value
 
         record = InflightPaymentRiskRecord(
             evaluation_id=f"eval-pmt-{uuid.uuid4().hex[:12]}",
@@ -3149,12 +4046,27 @@ class ProductionGovernanceService:
             currency=transfer.currency,
             debtor_account=transfer.debtor.account_number,
             creditor_account=transfer.creditor.account_number,
-            decision=eval_result.decision.value,
-            risk_score=eval_result.risk_score,
-            risk_tier=eval_result.risk_tier.value,
-            triggered_rules=list(eval_result.triggered_rules),
-            recommended_action=eval_result.recommended_action,
+            decision=decision_str,
+            risk_score=risk_score_val,
+            risk_tier=risk_tier_str,
+            triggered_rules=rules_list,
+            recommended_action=rec_action,
+            integration_mode="SHADOW",
             latency_ms=eval_result.latency_ms,
+            is_parallel_pipeline=is_parallel,
+            sla_budget_ms=sla_budget,
+            is_sla_compliant=is_sla_comp,
+            feed_latencies={
+                "cop": cop_lat,
+                "telecom": tel_lat,
+                "federated_mule": fed_lat,
+                "behavioral": beh_lat,
+            } if is_parallel else {},
+            biometrics_verdict=bio_verdict,
+            biometrics_risk_score=bio_risk_score,
+            is_rat_detected=is_rat,
+            sim_binding_status=sim_status,
+            is_nighttime_breach=is_night_breach,
             evaluated_at=eval_result.evaluated_at,
         )
         self.session.add(record)
@@ -3168,9 +4080,487 @@ class ProductionGovernanceService:
             risk_tier=record.risk_tier,
             triggered_rules=record.triggered_rules,
             recommended_action=record.recommended_action,
+            integration_mode=record.integration_mode,
             latency_ms=record.latency_ms,
             evaluated_at=record.evaluated_at.isoformat(),
+            cop_status=eval_result.cop_status,
+            cop_match_score=eval_result.cop_match_score,
+            telecom_call_status=eval_result.telecom_call_status,
+            telecom_coercion_score=eval_result.telecom_coercion_score,
+            is_telecom_coerced=eval_result.is_telecom_coerced,
+            is_federated_mule=eval_result.is_federated_mule,
+            federated_mule_tier=eval_result.federated_mule_tier,
+            is_parallel_pipeline=record.is_parallel_pipeline,
+            sla_budget_ms=record.sla_budget_ms,
+            is_sla_compliant=record.is_sla_compliant,
+            cop_latency_ms=cop_lat,
+            telecom_latency_ms=tel_lat,
+            federated_mule_latency_ms=fed_lat,
+            behavioral_latency_ms=beh_lat,
+            feed_statuses=feed_statuses_dict,
+            circuit_breaker_tripped=circuit_tripped,
+            money_lock_active=money_lock_act,
+            money_lock_available_balance=money_lock_avail,
+            money_lock_locked_balance=money_lock_locked,
+            is_money_lock_breach=is_money_lock_br,
+            is_nighttime_breach=is_night_breach,
+            nighttime_ceiling=night_ceiling,
+            precautionary_hold_id=hold_id,
+            precautionary_hold_state=hold_state,
+            sim_binding_status=sim_status,
+            is_emulator_detected=is_emulator,
+            biometrics_verdict=bio_verdict,
+            biometrics_risk_score=bio_risk_score,
+            is_rat_detected=is_rat,
+            is_kill_switch_active=is_kill_switch_active_val,
+            is_designated_safe_payee=is_safe_payee_val,
+            safe_accounts_breach=safe_accounts_breach_val,
+            ip_ingress_verdict=ip_ingress_verdict_val,
+            accord_delay_hours=accord_delay_hours_val,
+            accord_warning_message=accord_warning_message_val,
+            scameter_risk_level=scameter_risk_level_val,
+            is_scameter_shielded=is_scameter_shielded_val,
         )
+
+    def verify_confirmation_of_payee(
+        self,
+        request: CopVerifyRequest,
+        actor_subject: str,
+    ) -> CopVerifyResponse:
+        """Evaluates intended payee name against registered account holder (UK CoP & CBK)."""
+        inq_req = CopInquiryRequest(
+            intended_name=request.intended_name,
+            registered_name=request.registered_name,
+            account_number=request.account_number,
+            account_type=CopAccountType(request.account_type),
+            clearing_rail=request.clearing_rail,
+            bank_bic=request.bank_bic,
+            inquiry_id=request.inquiry_id or f"cop-{uuid.uuid4().hex[:12]}",
+        )
+        result = ConfirmationOfPayeeEngine.verify(inq_req)
+
+        record = CopInquiryRecord(
+            inquiry_id=result.inquiry_id,
+            installation_id=self.installation_id,
+            intended_name=request.intended_name,
+            registered_name=request.registered_name,
+            account_number=request.account_number,
+            account_type=request.account_type,
+            clearing_rail=request.clearing_rail,
+            bank_bic=request.bank_bic,
+            status=result.status.value,
+            match_score=result.match_score,
+            suggested_name=result.suggested_name,
+            reason_code=result.reason_code,
+            advisory_message=result.advisory_message,
+            inquiry_digest=result.inquiry_digest,
+            actor_subject=actor_subject,
+            verified_at=result.verified_at,
+        )
+        self.session.add(record)
+        self.session.commit()
+        self.session.refresh(record)
+
+        return CopVerifyResponse(
+            inquiry_id=result.inquiry_id,
+            status=result.status.value,
+            match_score=result.match_score,
+            intended_name_normalized=result.intended_name_normalized,
+            registered_name_normalized=result.registered_name_normalized,
+            suggested_name=result.suggested_name,
+            reason_code=result.reason_code,
+            advisory_message=result.advisory_message,
+            inquiry_digest=result.inquiry_digest,
+            verified_at=result.verified_at.isoformat(),
+        )
+
+    def evaluate_telecom_signal(
+        self,
+        request: TelecomSignalRequest,
+        actor_subject: str,
+    ) -> TelecomSignalResponse:
+        """Evaluates live carrier telecom telemetry (voice call in progress, SIM swap age, coercion score)."""
+        carrier_str = request.carrier.upper()
+        carrier_enum = TelecomCarrier.SAFARICOM
+        try:
+            carrier_enum = TelecomCarrier(carrier_str)
+        except ValueError:
+            carrier_enum = TelecomCarrier.SAFARICOM
+
+        query = TelecomSignalQuery(
+            msisdn=request.msisdn,
+            carrier=carrier_enum,
+            query_id=request.query_id or f"tscm-{uuid.uuid4().hex[:12]}",
+            simulated_call_status=request.simulated_call_status,
+            simulated_call_duration_seconds=request.simulated_call_duration_seconds,
+            simulated_sim_swap_age_hours=request.simulated_sim_swap_age_hours,
+        )
+        result = TelecomScamSignalGateway.query_signal(query)
+
+        record = TelecomScamSignalRecord(
+            query_id=result.query_id,
+            installation_id=self.installation_id,
+            msisdn=result.msisdn,
+            carrier=result.carrier.value,
+            call_status=result.call_status.value,
+            call_duration_seconds=result.call_duration_seconds,
+            sim_swap_status=result.sim_swap_status.value,
+            sim_swap_age_hours=result.sim_swap_age_hours,
+            scam_signal_score=result.scam_signal_score,
+            is_high_coercion_risk=result.is_high_coercion_risk,
+            coercion_indicators=result.coercion_indicators,
+            advisory_action=result.advisory_action,
+            statutory_warning=result.statutory_warning,
+            query_digest=result.query_digest,
+            actor_subject=actor_subject,
+            queried_at=result.queried_at,
+        )
+        self.session.add(record)
+        self.session.commit()
+        self.session.refresh(record)
+
+        return TelecomSignalResponse(
+            query_id=record.query_id,
+            msisdn=record.msisdn,
+            carrier=record.carrier,
+            call_status=record.call_status,
+            call_duration_seconds=record.call_duration_seconds,
+            sim_swap_status=record.sim_swap_status,
+            sim_swap_age_hours=record.sim_swap_age_hours,
+            scam_signal_score=record.scam_signal_score,
+            is_high_coercion_risk=record.is_high_coercion_risk,
+            coercion_indicators=record.coercion_indicators,
+            advisory_action=record.advisory_action,
+            statutory_warning=record.statutory_warning,
+            query_digest=record.query_digest,
+            queried_at=record.queried_at.isoformat(),
+        )
+
+    # =========================================================================
+    # Phase 14.2: Federated Mule Directory & Hash-Linked Interbank Blacklist
+    # =========================================================================
+
+    def register_federated_mule(
+        self,
+        request: RegisterFederatedMuleRequest,
+        actor_subject: str,
+    ) -> FederatedMuleEntryResponse:
+        """Registers a suspect/corroborated mule in the federated directory with a blinded HMAC token."""
+        token = FederatedMuleEngine.compute_blinded_token(request.value, request.entity_type)
+        preview = FederatedMuleEngine.mask_identifier(request.value, request.entity_type)
+        entry_id = f"mule-{uuid.uuid4().hex[:12]}"
+        now = _utc_now()
+        expires_at = now + timedelta(days=request.ttl_days) if request.ttl_days else None
+
+        record = FederatedMuleRecord(
+            entry_id=entry_id,
+            installation_id=self.installation_id,
+            entity_type=request.entity_type,
+            blinded_token=token,
+            cleartext_preview=preview,
+            severity_tier=request.severity_tier,
+            originating_bank_bic=request.originating_bank_bic,
+            reason_code=request.reason_code,
+            dossier_reference=request.dossier_reference,
+            status="ACTIVE",
+            registered_by=actor_subject,
+            registered_at=now,
+            expires_at=expires_at,
+        )
+        self.session.add(record)
+        self.session.commit()
+        self.session.refresh(record)
+
+        return self._to_federated_mule_response(record)
+
+    def query_federated_mule(
+        self,
+        request: QueryFederatedMuleRequest,
+    ) -> QueryFederatedMuleResponse:
+        """Queries the federated cross-bank mule directory using raw or blinded token."""
+        if request.is_already_blinded:
+            token = request.value.strip().lower()
+        else:
+            token = FederatedMuleEngine.compute_blinded_token(request.value, request.entity_type)
+
+        fed_records = self.session.execute(
+            select(FederatedMuleRecord).where(
+                FederatedMuleRecord.installation_id == self.installation_id,
+                FederatedMuleRecord.blinded_token == token,
+            )
+        ).scalars().all()
+        active_dicts = [
+            {
+                "blinded_token": r.blinded_token,
+                "cleartext_preview": r.cleartext_preview,
+                "entity_type": r.entity_type,
+                "severity_tier": r.severity_tier,
+                "originating_bank_bic": r.originating_bank_bic,
+                "reason_code": r.reason_code,
+                "dossier_reference": r.dossier_reference,
+                "status": r.status,
+                "registered_at": r.registered_at,
+                "expires_at": r.expires_at,
+            }
+            for r in fed_records
+        ]
+        query_obj = FederatedMuleQuery(
+            value=request.value,
+            entity_type=MuleEntityType(request.entity_type),
+            is_already_blinded=request.is_already_blinded,
+        )
+        match = FederatedMuleEngine.evaluate_mule_query(query_obj, active_dicts)
+        return QueryFederatedMuleResponse(
+            is_match=match.is_match,
+            blinded_token=match.blinded_token,
+            cleartext_preview=match.cleartext_preview,
+            entity_type=match.entity_type.value,
+            severity_tier=match.severity_tier.value if match.severity_tier else None,
+            originating_bank_bic=match.originating_bank_bic,
+            reason_code=match.reason_code,
+            dossier_reference=match.dossier_reference,
+            status=match.status.value,
+            registered_at=match.registered_at.isoformat() if match.registered_at else None,
+            expires_at=match.expires_at.isoformat() if match.expires_at else None,
+            recommended_action=match.recommended_action,
+        )
+
+    def list_federated_mules(
+        self,
+        entity_type: str | None = None,
+        status: str | None = None,
+    ) -> list[FederatedMuleEntryResponse]:
+        stmt = select(FederatedMuleRecord).where(
+            FederatedMuleRecord.installation_id == self.installation_id
+        )
+        if entity_type:
+            stmt = stmt.where(FederatedMuleRecord.entity_type == entity_type)
+        if status:
+            stmt = stmt.where(FederatedMuleRecord.status == status)
+        stmt = stmt.order_by(FederatedMuleRecord.registered_at.desc())
+        records = self.session.execute(stmt).scalars().all()
+        return [self._to_federated_mule_response(r) for r in records]
+
+    def update_federated_mule_status(
+        self,
+        entry_id: str,
+        request: UpdateFederatedMuleStatusRequest,
+        actor_subject: str,
+    ) -> FederatedMuleEntryResponse:
+        rec = self.session.execute(
+            select(FederatedMuleRecord).where(
+                FederatedMuleRecord.installation_id == self.installation_id,
+                FederatedMuleRecord.entry_id == entry_id,
+            )
+        ).scalar_one_or_none()
+        if not rec:
+            raise HTTPException(status_code=404, detail=f"Mule entry '{entry_id}' not found")
+        rec.status = request.status
+        self.session.commit()
+        self.session.refresh(rec)
+        return self._to_federated_mule_response(rec)
+
+    def _to_federated_mule_response(self, r: FederatedMuleRecord) -> FederatedMuleEntryResponse:
+        return FederatedMuleEntryResponse(
+            entry_id=r.entry_id,
+            installation_id=r.installation_id,
+            entity_type=r.entity_type,
+            blinded_token=r.blinded_token,
+            cleartext_preview=r.cleartext_preview,
+            severity_tier=r.severity_tier,
+            originating_bank_bic=r.originating_bank_bic,
+            reason_code=r.reason_code,
+            dossier_reference=r.dossier_reference,
+            status=r.status,
+            registered_by=r.registered_by,
+            registered_at=r.registered_at.isoformat(),
+            expires_at=r.expires_at.isoformat() if r.expires_at else None,
+        )
+
+    # =========================================================================
+    # Phase 14.3: Multi-Tiered Mule Tracing & Graph Cascade
+    # =========================================================================
+
+    def trigger_mule_cascade_trace(
+        self,
+        request: TriggerMuleCascadeTraceRequest,
+        actor_subject: str,
+    ) -> MuleCascadeTraceResponse:
+        """Traces the downstream mule dispersion cascade and persists the graph and hold directives."""
+        engine = MuleCascadeTracerEngine(local_bank_bic=request.local_bank_bic)
+
+        anchor_dt = None
+        if request.anchor_time:
+            anchor_dt = datetime.fromisoformat(request.anchor_time.replace("Z", "+00:00"))
+
+        transfers = list(request.transfers or [])
+        if not transfers:
+            stmt = select(InflightPaymentRiskRecord).where(
+                InflightPaymentRiskRecord.installation_id == self.installation_id
+            ).order_by(InflightPaymentRiskRecord.evaluated_at.desc()).limit(100)
+            records = self.session.execute(stmt).scalars().all()
+            for rec in records:
+                transfers.append({
+                    "source_account": rec.debtor_account,
+                    "target_account": rec.creditor_account,
+                    "amount": rec.payment_amount,
+                    "currency": rec.payment_currency,
+                    "timestamp": rec.evaluated_at,
+                    "transaction_id": rec.end_to_end_id,
+                    "payment_rail": rec.clearing_rail,
+                    "source_bic": rec.debtor_bic,
+                    "target_bic": rec.creditor_bic,
+                })
+
+        trace_res = engine.trace_cascade(
+            installation_id=self.installation_id,
+            root_account=request.root_account,
+            root_fraud_amount=request.root_fraud_amount,
+            currency=request.currency,
+            root_transaction_id=request.root_transaction_id,
+            anchor_time=anchor_dt,
+            transfers=transfers,
+            max_hops=request.max_hops,
+            time_window_hours=request.time_window_hours,
+            account_metadata=request.account_metadata,
+        )
+
+        now = _utc_now()
+        record = MuleCascadeTraceRecord(
+            trace_id=trace_res.trace_id,
+            installation_id=self.installation_id,
+            root_account=request.root_account,
+            root_transaction_id=request.root_transaction_id,
+            root_fraud_amount=request.root_fraud_amount,
+            currency=request.currency,
+            max_depth_reached=trace_res.max_depth_reached,
+            total_nodes_identified=trace_res.total_nodes_identified,
+            total_frozen_or_held_amount=trace_res.total_frozen_or_held_amount,
+            recovery_potential_ratio=trace_res.recovery_potential_ratio,
+            graph_topology={
+                "nodes": [n.to_dict() for n in trace_res.nodes],
+                "edges": [e.to_dict() for e in trace_res.edges],
+            },
+            directives=trace_res.directives_generated,
+            status="ACTIVE",
+            initiated_by=actor_subject,
+            created_at=now,
+            updated_at=now,
+        )
+        self.session.add(record)
+        self.session.commit()
+        self.session.refresh(record)
+
+        return self._to_mule_cascade_response(record)
+
+    def list_mule_cascade_traces(self) -> list[MuleCascadeTraceResponse]:
+        stmt = select(MuleCascadeTraceRecord).where(
+            MuleCascadeTraceRecord.installation_id == self.installation_id
+        ).order_by(MuleCascadeTraceRecord.created_at.desc())
+        records = self.session.execute(stmt).scalars().all()
+        return [self._to_mule_cascade_response(r) for r in records]
+
+    def get_mule_cascade_trace(self, trace_id: str) -> MuleCascadeTraceResponse:
+        record = self.session.execute(
+            select(MuleCascadeTraceRecord).where(
+                MuleCascadeTraceRecord.installation_id == self.installation_id,
+                MuleCascadeTraceRecord.trace_id == trace_id,
+            )
+        ).scalar_one_or_none()
+        if not record:
+            raise HTTPException(status_code=404, detail=f"Mule cascade trace '{trace_id}' not found")
+        return self._to_mule_cascade_response(record)
+
+    def execute_cascade_directive(
+        self,
+        trace_id: str,
+        request: ExecuteCascadeDirectiveRequest,
+        actor_subject: str,
+    ) -> ExecuteCascadeDirectiveResponse:
+        record = self.session.execute(
+            select(MuleCascadeTraceRecord).where(
+                MuleCascadeTraceRecord.installation_id == self.installation_id,
+                MuleCascadeTraceRecord.trace_id == trace_id,
+            )
+        ).scalar_one_or_none()
+        if not record:
+            raise HTTPException(status_code=404, detail=f"Mule cascade trace '{trace_id}' not found")
+
+        directives = list(record.directives)
+        matched_dir = None
+        for d in directives:
+            if d.get("directive_id") == request.directive_id:
+                matched_dir = d
+                break
+        if not matched_dir:
+            raise HTTPException(status_code=404, detail=f"Directive '{request.directive_id}' not found in trace")
+
+        now = _utc_now()
+        new_status = "EXECUTED" if request.action in ("EXECUTE_LOCAL_HOLD", "DISPATCH_CAMT056") else "REJECTED"
+        matched_dir["status"] = new_status
+        matched_dir["executed_by"] = actor_subject
+        matched_dir["executed_at"] = now.isoformat()
+        if request.justification:
+            matched_dir["justification"] = request.justification
+
+        topology = dict(record.graph_topology)
+        nodes = list(topology.get("nodes", []))
+        for n in nodes:
+            if n.get("node_key") == matched_dir.get("node_key"):
+                n["directive_status"] = new_status
+                break
+        topology["nodes"] = nodes
+
+        camt056_xml = None
+        if request.action == "DISPATCH_CAMT056":
+            engine = MuleCascadeTracerEngine(local_bank_bic="KCBKKENA")
+            camt056_xml = engine.generate_camt056_xml(
+                trace_id=record.trace_id,
+                original_txn_id=record.root_transaction_id or f"TX_{record.trace_id[:8]}",
+                instructed_amount=Decimal(str(matched_dir.get("target_amount", record.root_fraud_amount))),
+                currency=record.currency,
+                counterparty_bic=matched_dir.get("bank_bic", "EQUAKENA"),
+                mule_account=matched_dir.get("node_key", ""),
+                cancellation_reason_code="FRAD",
+            )
+            matched_dir["camt056_xml"] = camt056_xml
+
+        record.directives = directives
+        record.graph_topology = topology
+        record.updated_at = now
+        flag_modified(record, "directives")
+        flag_modified(record, "graph_topology")
+        self.session.commit()
+
+        return ExecuteCascadeDirectiveResponse(
+            directive_id=request.directive_id,
+            trace_id=trace_id,
+            status=new_status,
+            action_taken=request.action,
+            camt056_xml=camt056_xml,
+            executed_at=now.isoformat(),
+        )
+
+    def _to_mule_cascade_response(self, r: MuleCascadeTraceRecord) -> MuleCascadeTraceResponse:
+        topology = r.graph_topology or {}
+        return MuleCascadeTraceResponse(
+            trace_id=r.trace_id,
+            installation_id=r.installation_id,
+            root_account=r.root_account,
+            root_transaction_id=r.root_transaction_id,
+            root_fraud_amount=str(r.root_fraud_amount),
+            currency=r.currency,
+            max_depth_reached=r.max_depth_reached,
+            nodes=topology.get("nodes", []),
+            edges=topology.get("edges", []),
+            total_nodes_identified=r.total_nodes_identified,
+            total_frozen_or_held_amount=str(r.total_frozen_or_held_amount),
+            recovery_potential_ratio=r.recovery_potential_ratio,
+            created_at=r.created_at.isoformat(),
+            status=r.status,
+            directives=r.directives or [],
+        )
+
 
     def verify_copilot_semantics(
         self,
@@ -3219,6 +4609,8 @@ class ProductionGovernanceService:
         report = verify_report_semantics(claims, ctx)
         return SemanticVerifyResponse(
             is_valid=report.is_valid,
+            verification_scope="CALLER_SUPPLIED_EXCERPTS_ONLY_NOT_SOURCE_AUTHENTICATION",
+            methodology=report.methodology,
             total_claims=report.total_claims,
             entailed_claims=report.entailed_claims,
             contradicted_claims=report.contradicted_claims,
@@ -3226,4 +4618,1242 @@ class ProductionGovernanceService:
             ungrounded_claims=report.ungrounded_claims,
             evaluations=[e.to_dict() for e in report.evaluations],
         )
+
+    # =========================================================================
+    # Trust Registry & Validation Executor Hardening Methods
+    # =========================================================================
+
+    def register_trusted_signer(
+        self,
+        request: RegisterTrustedSignerRequest,
+        actor_subject: str,
+        actor_role: str = "authoriser",
+    ) -> TrustedSignerResponse:
+        now = _utc_now()
+        algo = AsymmetricAlgorithm.ED25519 if request.algorithm.upper() in ("ED25519", "ED_25519") else AsymmetricAlgorithm.ECDSA_P256
+        purpose = SignerKeyPurpose(request.purpose)
+        sec_level = KeySecurityLevel(request.security_level)
+
+        signer_record = TrustedSignerRecord(
+            key_id=request.key_id,
+            installation_id=self.installation_id,
+            public_key_pem=request.public_key_pem,
+            algorithm=algo,
+            purpose=purpose,
+            security_level=sec_level,
+            activated_at=now,
+            expires_at=None,
+            is_revoked=False,
+        )
+        self.trust_registry.register_signer(signer_record)
+
+        db_rec = self.session.execute(
+            select(SignerTrustRecord).where(
+                and_(
+                    SignerTrustRecord.installation_id == self.installation_id,
+                    SignerTrustRecord.key_id == request.key_id,
+                )
+            )
+        ).scalar_one_or_none()
+
+        if db_rec is None:
+            db_rec = SignerTrustRecord(
+                key_id=request.key_id,
+                installation_id=self.installation_id,
+                public_key_pem=request.public_key_pem,
+                algorithm=algo.value,
+                purpose=purpose.value,
+                security_level=sec_level.value,
+                activated_at=now,
+                is_revoked=False,
+                registered_by=actor_subject,
+                created_at=now,
+            )
+            self.session.add(db_rec)
+        else:
+            db_rec.public_key_pem = request.public_key_pem
+            db_rec.algorithm = algo.value
+            db_rec.purpose = purpose.value
+            db_rec.security_level = sec_level.value
+            db_rec.is_revoked = False
+            db_rec.revocation_reason = None
+
+        append_audit(
+            self.session,
+            installation_id=self.installation_id,
+            actor_subject=actor_subject,
+            actor_role=actor_role,
+            action="signer_registered",
+            target_type="trusted_signer",
+            target_id=request.key_id,
+            safe_metadata={
+                "key_id": request.key_id,
+                "purpose": purpose.value,
+                "security_level": sec_level.value,
+            },
+        )
+        self.session.commit()
+        return self._to_signer_response(db_rec)
+
+    def list_trusted_signers(self) -> list[TrustedSignerResponse]:
+        records = self.session.execute(
+            select(SignerTrustRecord).where(
+                SignerTrustRecord.installation_id == self.installation_id
+            ).order_by(SignerTrustRecord.key_id)
+        ).scalars().all()
+        return [self._to_signer_response(r) for r in records]
+
+    def revoke_trusted_signer(
+        self,
+        key_id: str,
+        reason: str,
+        actor_subject: str,
+        actor_role: str = "authoriser",
+    ) -> TrustedSignerResponse:
+        db_rec = self.session.execute(
+            select(SignerTrustRecord).where(
+                and_(
+                    SignerTrustRecord.installation_id == self.installation_id,
+                    SignerTrustRecord.key_id == key_id,
+                )
+            )
+        ).scalar_one_or_none()
+        if not db_rec:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Signer '{key_id}' not found.")
+
+        db_rec.is_revoked = True
+        db_rec.revocation_reason = reason
+        self.trust_registry.revoke_signer(key_id, self.installation_id, reason)
+
+        append_audit(
+            self.session,
+            installation_id=self.installation_id,
+            actor_subject=actor_subject,
+            actor_role=actor_role,
+            action="signer_revoked",
+            target_type="trusted_signer",
+            target_id=key_id,
+            safe_metadata={"key_id": key_id, "reason": reason},
+        )
+        self.session.commit()
+        return self._to_signer_response(db_rec)
+
+    def _to_signer_response(self, r: SignerTrustRecord) -> TrustedSignerResponse:
+        return TrustedSignerResponse(
+            key_id=r.key_id,
+            installation_id=r.installation_id,
+            algorithm=r.algorithm,
+            purpose=r.purpose,
+            security_level=r.security_level,
+            is_active=not r.is_revoked,
+            is_revoked=r.is_revoked,
+            revocation_reason=r.revocation_reason,
+            created_at=_canonical_utc(r.created_at),
+        )
+
+    def execute_trusted_validation(
+        self,
+        request: ExecuteTrustedValidationRequest,
+        actor_subject: str,
+        actor_role: str = "authoriser",
+    ) -> ValidationRunResponse:
+        comp = self.session.execute(
+            select(GovernedComponentRecord).where(
+                and_(
+                    GovernedComponentRecord.installation_id == self.installation_id,
+                    GovernedComponentRecord.component_id == request.component_id,
+                    GovernedComponentRecord.version == request.component_version,
+                )
+            )
+        ).scalar_one_or_none()
+        if not comp:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Component '{request.component_id}' version '{request.component_version}' not found.",
+            )
+
+        # Independence: component maker cannot execute their own validation
+        if comp.created_by == actor_subject:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Component maker cannot execute validation for their own component (maker-checker separation)",
+            )
+
+        executor = TrustedLocalValidationExecutor(executor_id=f"exec-{actor_subject}")
+        plan = ValidationPlan(
+            plan_name=request.plan_name,
+            expected_dataset_digest=request.dataset_digest,
+            expected_configuration_digest=request.configuration_digest,
+            required_metrics=tuple(
+                ValidationMetricSpec(
+                    metric_name=m["name"],
+                    threshold=float(m["threshold"]),
+                    direction=m.get("direction", "gte"),
+                )
+                for m in request.metric_specs
+            ),
+        )
+
+        exec_res = executor.execute_validation(
+            component_id=request.component_id,
+            component_version=request.component_version,
+            component_source_digest=comp.source_digest,
+            plan=plan,
+            runtime_dataset_digest=request.dataset_digest,
+            runtime_configuration_digest=request.configuration_digest,
+        )
+
+        run_id = f"val-{uuid.uuid4().hex[:12]}"
+        now = _utc_now()
+        run_record = ValidationRunRecord(
+            run_id=run_id,
+            installation_id=self.installation_id,
+            component_id=request.component_id,
+            component_version=request.component_version,
+            dataset_digest=request.dataset_digest,
+            configuration_digest=request.configuration_digest,
+            metrics=[
+                {
+                    "name": m.metric_name,
+                    "value": m.observed_value,
+                    "threshold": m.threshold,
+                    "direction": m.direction,
+                    "result": m.result,
+                }
+                for m in exec_res.metrics
+            ],
+            result=exec_res.overall_result.value,
+            evaluator=actor_subject,
+            limitations=[],
+            execution_provenance_digest=exec_res.provenance_digest,
+            executor_id=exec_res.executor_id,
+            is_trusted_execution=True,
+            started_at=exec_res.execution_started_at,
+            completed_at=exec_res.execution_completed_at,
+            created_at=now,
+        )
+        self.session.add(run_record)
+
+        if comp.status == GovernanceStatus.DRAFT.value:
+            comp.status = GovernanceStatus.VALIDATION.value
+            comp.updated_at = now
+
+        append_audit(
+            self.session,
+            installation_id=self.installation_id,
+            actor_subject=actor_subject,
+            actor_role=actor_role,
+            action="trusted_validation_executed",
+            target_type="validation_run",
+            target_id=run_id,
+            safe_metadata={
+                "run_id": run_id,
+                "component_id": request.component_id,
+                "component_version": request.component_version,
+                "provenance_digest": exec_res.provenance_digest,
+                "result": exec_res.overall_result.value,
+            },
+        )
+        self.session.commit()
+        return self._to_validation_run_response(run_record)
+
+    # ==============================================================================
+    # Phase 15.0: Singapore MAS Money Lock Vault Partitioning Service Methods
+    # ==============================================================================
+
+    def lock_money_vault(
+        self,
+        account_id: str,
+        amount: Decimal,
+        actor: str,
+    ) -> MoneyLockAccountResponse:
+        """Lock funds into customer non-digital vault partition (Singapore MAS/ABS)."""
+        now = _utc_now()
+        rec = self.session.execute(
+            select(MoneyLockAccountRecord).where(
+                MoneyLockAccountRecord.installation_id == self.installation_id,
+                MoneyLockAccountRecord.account_id == account_id,
+            )
+        ).scalar_one_or_none()
+
+        if not rec:
+            total = max(Decimal("500000.00"), amount)
+            rec = MoneyLockAccountRecord(
+                account_id=account_id,
+                installation_id=self.installation_id,
+                currency="KES",
+                total_balance=total,
+                locked_vault_balance=Decimal("0.0"),
+                available_balance=total,
+                status="UNLOCKED",
+                audit_trail=[],
+                created_at=now,
+                updated_at=now,
+            )
+            self.session.add(rec)
+
+        vault = MoneyLockAccountVault(
+            account_id=rec.account_id,
+            installation_id=rec.installation_id,
+            currency=rec.currency,
+            total_balance=rec.total_balance,
+            locked_vault_balance=rec.locked_vault_balance,
+            status=MoneyLockStatus(rec.status),
+        )
+        try:
+            vault.lock_funds(amount=amount, actor=actor)
+        except (ValueError, MoneyLockPolicyViolationError) as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=str(exc),
+            ) from exc
+
+        rec.locked_vault_balance = vault.locked_vault_balance
+        rec.available_balance = vault.available_balance
+        rec.status = vault.status.value
+        rec.last_locked_at = vault.last_locked_at
+        rec.updated_at = now
+
+        trail = list(rec.audit_trail or [])
+        trail.append({
+            "event_id": str(uuid.uuid4()),
+            "event_type": "MONEY_LOCK_FUNDS_LOCKED",
+            "amount": float(amount),
+            "actor": actor,
+            "timestamp": now.isoformat(),
+        })
+        rec.audit_trail = trail
+        self.session.commit()
+        self.session.refresh(rec)
+        return self._to_money_lock_response(rec)
+
+    def attempt_digital_unlock(self, account_id: str, actor: str) -> None:
+        """Digital unlocking is strictly prohibited under Singapore MAS Money Lock rules."""
+        rec = self.session.execute(
+            select(MoneyLockAccountRecord).where(
+                MoneyLockAccountRecord.installation_id == self.installation_id,
+                MoneyLockAccountRecord.account_id == account_id,
+            )
+        ).scalar_one_or_none()
+        if rec:
+            trail = list(rec.audit_trail or [])
+            trail.append({
+                "event_id": str(uuid.uuid4()),
+                "event_type": "MONEY_LOCK_DIGITAL_UNLOCK_REJECTED",
+                "actor": actor,
+                "timestamp": _utc_now().isoformat(),
+            })
+            rec.audit_trail = trail
+            self.session.commit()
+
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                "Digital unlocking is strictly prohibited under Singapore MAS Money Lock policy. "
+                "To unlock funds, the account holder must physically attend an authorized bank branch "
+                "counter with national photo identification, or authenticate via a physical ATM terminal "
+                "using hardware chip-and-PIN."
+            ),
+        )
+
+    def branch_unlock_money_vault(
+        self,
+        account_id: str,
+        amount: Decimal,
+        officer_id: str,
+        station_id: str,
+        dual_authorizer_id: str | None = None,
+        channel: str = "PHYSICAL_BRANCH_COUNTER",
+    ) -> MoneyLockAccountResponse:
+        """Authorized physical branch counter or ATM unlock."""
+        now = _utc_now()
+        rec = self.session.execute(
+            select(MoneyLockAccountRecord).where(
+                MoneyLockAccountRecord.installation_id == self.installation_id,
+                MoneyLockAccountRecord.account_id == account_id,
+            )
+        ).scalar_one_or_none()
+
+        if not rec:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Money Lock account {account_id} not found.",
+            )
+
+        vault = MoneyLockAccountVault(
+            account_id=rec.account_id,
+            installation_id=rec.installation_id,
+            currency=rec.currency,
+            total_balance=rec.total_balance,
+            locked_vault_balance=rec.locked_vault_balance,
+            status=MoneyLockStatus(rec.status),
+        )
+        try:
+            vault.unlock_funds_branch(
+                amount_to_unlock=amount,
+                officer_id=officer_id,
+                station_id=station_id,
+                channel=MoneyLockUnlockChannel(channel),
+                dual_authorizer_id=dual_authorizer_id,
+            )
+        except (ValueError, MoneyLockPolicyViolationError) as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=str(exc),
+            ) from exc
+
+        rec.locked_vault_balance = vault.locked_vault_balance
+        rec.available_balance = vault.available_balance
+        rec.status = vault.status.value
+        rec.last_unlocked_at = vault.last_unlocked_at
+        rec.unlock_channel = channel
+        rec.unlock_officer_id = officer_id
+        rec.unlock_station_id = station_id
+        rec.dual_authorizer_id = dual_authorizer_id
+        rec.updated_at = now
+
+        trail = list(rec.audit_trail or [])
+        trail.append({
+            "event_id": str(uuid.uuid4()),
+            "event_type": "MONEY_LOCK_OFFICER_UNLOCKED",
+            "amount": float(amount),
+            "officer_id": officer_id,
+            "station_id": station_id,
+            "dual_authorizer_id": dual_authorizer_id,
+            "channel": channel,
+            "timestamp": now.isoformat(),
+        })
+        rec.audit_trail = trail
+        self.session.commit()
+        self.session.refresh(rec)
+        return self._to_money_lock_response(rec)
+
+    def get_money_lock_account(self, account_id: str) -> MoneyLockAccountResponse:
+        rec = self.session.execute(
+            select(MoneyLockAccountRecord).where(
+                MoneyLockAccountRecord.installation_id == self.installation_id,
+                MoneyLockAccountRecord.account_id == account_id,
+            )
+        ).scalar_one_or_none()
+        if not rec:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Money Lock account {account_id} not found.",
+            )
+        return self._to_money_lock_response(rec)
+
+    def list_money_lock_accounts(self) -> list[MoneyLockAccountResponse]:
+        records = self.session.execute(
+            select(MoneyLockAccountRecord).where(
+                MoneyLockAccountRecord.installation_id == self.installation_id,
+            ).order_by(MoneyLockAccountRecord.updated_at.desc())
+        ).scalars().all()
+        return [self._to_money_lock_response(r) for r in records]
+
+    def _to_money_lock_response(self, rec: MoneyLockAccountRecord) -> MoneyLockAccountResponse:
+        return MoneyLockAccountResponse(
+            account_id=rec.account_id,
+            installation_id=rec.installation_id,
+            currency=rec.currency,
+            total_balance=float(rec.total_balance),
+            locked_vault_balance=float(rec.locked_vault_balance),
+            available_balance=float(rec.available_balance),
+            status=rec.status,
+            last_locked_at=rec.last_locked_at.isoformat() if rec.last_locked_at else None,
+            last_unlocked_at=rec.last_unlocked_at.isoformat() if rec.last_unlocked_at else None,
+            unlock_channel=rec.unlock_channel,
+            unlock_officer_id=rec.unlock_officer_id,
+            unlock_station_id=rec.unlock_station_id,
+            dual_authorizer_id=rec.dual_authorizer_id,
+            audit_trail=rec.audit_trail or [],
+        )
+
+    # ==============================================================================
+    # Phase 15.1: Brazil BCB Bloqueio Cautelar 72h & Recall Service Methods
+    # ==============================================================================
+
+    def create_precautionary_hold(
+        self,
+        request: PrecautionaryHoldCreateRequest,
+    ) -> PrecautionaryHoldResponse:
+        directive = PrecautionaryHoldEngine.create_precautionary_hold(
+            installation_id=self.installation_id,
+            tx_id=request.tx_id,
+            amount=request.amount,
+            debtor_account=request.debtor_account,
+            creditor_account=request.creditor_account,
+            reason=request.reason,
+            currency=request.currency,
+            duration_hours=request.duration_hours,
+        )
+        rec = PrecautionaryHoldRecord(
+            hold_id=directive.hold_id,
+            installation_id=self.installation_id,
+            tx_id=directive.tx_id,
+            amount=directive.amount,
+            currency=directive.currency,
+            debtor_account=directive.debtor_account,
+            creditor_account=directive.creditor_account,
+            state=directive.state.value,
+            placed_at=directive.placed_at,
+            expires_at=directive.expires_at,
+            reason=directive.reason,
+            statutory_basis=directive.statutory_basis,
+            created_at=_utc_now(),
+            updated_at=_utc_now(),
+        )
+        self.session.add(rec)
+        self.session.commit()
+        self.session.refresh(rec)
+        return self._to_precautionary_hold_response(rec)
+
+    def release_precautionary_hold(
+        self,
+        hold_id: str,
+        request: PrecautionaryHoldReleaseRequest,
+    ) -> PrecautionaryHoldResponse:
+        rec = self.session.execute(
+            select(PrecautionaryHoldRecord).where(
+                PrecautionaryHoldRecord.installation_id == self.installation_id,
+                PrecautionaryHoldRecord.hold_id == hold_id,
+            )
+        ).scalar_one_or_none()
+        if not rec:
+            raise HTTPException(status_code=404, detail=f"Hold {hold_id} not found.")
+
+        directive = PrecautionaryHoldDirective(
+            hold_id=rec.hold_id,
+            installation_id=rec.installation_id,
+            tx_id=rec.tx_id,
+            amount=rec.amount,
+            currency=rec.currency,
+            debtor_account=rec.debtor_account,
+            creditor_account=rec.creditor_account,
+            state=PrecautionaryHoldState(rec.state),
+            placed_at=rec.placed_at,
+            expires_at=rec.expires_at,
+            reason=rec.reason,
+        )
+        try:
+            PrecautionaryHoldEngine.release_hold(directive, request.officer_id, request.resolution_notes)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+        rec.state = directive.state.value
+        rec.decision_officer_id = directive.decision_officer_id
+        rec.resolution_notes = directive.resolution_notes
+        rec.updated_at = _utc_now()
+        self.session.commit()
+        self.session.refresh(rec)
+        return self._to_precautionary_hold_response(rec)
+
+    def escalate_precautionary_hold_to_camt056(
+        self,
+        hold_id: str,
+        request: PrecautionaryHoldEscalateRequest,
+    ) -> PrecautionaryHoldResponse:
+        rec = self.session.execute(
+            select(PrecautionaryHoldRecord).where(
+                PrecautionaryHoldRecord.installation_id == self.installation_id,
+                PrecautionaryHoldRecord.hold_id == hold_id,
+            )
+        ).scalar_one_or_none()
+        if not rec:
+            raise HTTPException(status_code=404, detail=f"Hold {hold_id} not found.")
+
+        directive = PrecautionaryHoldDirective(
+            hold_id=rec.hold_id,
+            installation_id=rec.installation_id,
+            tx_id=rec.tx_id,
+            amount=rec.amount,
+            currency=rec.currency,
+            debtor_account=rec.debtor_account,
+            creditor_account=rec.creditor_account,
+            state=PrecautionaryHoldState(rec.state),
+            placed_at=rec.placed_at,
+            expires_at=rec.expires_at,
+            reason=rec.reason,
+        )
+        try:
+            PrecautionaryHoldEngine.escalate_to_camt056_clawback(
+                directive, request.officer_id, request.resolution_notes
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+        rec.state = directive.state.value
+        rec.decision_officer_id = directive.decision_officer_id
+        rec.resolution_notes = directive.resolution_notes
+        rec.camt056_xml = directive.camt056_xml
+        rec.updated_at = _utc_now()
+        self.session.commit()
+        self.session.refresh(rec)
+        return self._to_precautionary_hold_response(rec)
+
+    def recall_precautionary_hold(
+        self,
+        hold_id: str,
+        request: PrecautionaryHoldRecallRequest,
+    ) -> PrecautionaryHoldResponse:
+        rec = self.session.execute(
+            select(PrecautionaryHoldRecord).where(
+                PrecautionaryHoldRecord.installation_id == self.installation_id,
+                PrecautionaryHoldRecord.hold_id == hold_id,
+            )
+        ).scalar_one_or_none()
+        if not rec:
+            raise HTTPException(status_code=404, detail=f"Hold {hold_id} not found.")
+
+        policy = DelayedTransferRecallPolicy()
+        req_dt = datetime.fromisoformat(request.recall_requested_at) if request.recall_requested_at else _utc_now()
+        can_recall, msg = policy.evaluate_recall(rec.placed_at, req_dt)
+        if not can_recall:
+            raise HTTPException(status_code=400, detail=msg)
+
+        rec.state = PrecautionaryHoldState.RECALLED_BY_SENDER.value
+        rec.resolution_notes = f"Sender recall accepted: {msg}"
+        rec.updated_at = _utc_now()
+        self.session.commit()
+        self.session.refresh(rec)
+        return self._to_precautionary_hold_response(rec)
+
+    def list_precautionary_holds(self) -> list[PrecautionaryHoldResponse]:
+        records = self.session.execute(
+            select(PrecautionaryHoldRecord).where(
+                PrecautionaryHoldRecord.installation_id == self.installation_id,
+            ).order_by(PrecautionaryHoldRecord.placed_at.desc())
+        ).scalars().all()
+        return [self._to_precautionary_hold_response(r) for r in records]
+
+    def _to_precautionary_hold_response(self, rec: PrecautionaryHoldRecord) -> PrecautionaryHoldResponse:
+        return PrecautionaryHoldResponse(
+            hold_id=rec.hold_id,
+            installation_id=rec.installation_id,
+            tx_id=rec.tx_id,
+            amount=float(rec.amount),
+            currency=rec.currency,
+            debtor_account=rec.debtor_account,
+            creditor_account=rec.creditor_account,
+            state=rec.state,
+            placed_at=rec.placed_at.isoformat(),
+            expires_at=rec.expires_at.isoformat(),
+            reason=rec.reason,
+            statutory_basis=rec.statutory_basis,
+            decision_officer_id=rec.decision_officer_id,
+            resolution_notes=rec.resolution_notes,
+            camt056_xml=rec.camt056_xml,
+        )
+
+    # ==============================================================================
+    # Phase 15.2: India NPCI SIM & Hardware Binding Service Methods
+    # ==============================================================================
+
+    def enroll_sim_binding(
+        self,
+        request: SimBindingEnrollRequest,
+    ) -> SimBindingEnrollResponse:
+        enrollment = SimBindingEngine.enroll_binding(
+            account_id=request.account_id,
+            installation_id=self.installation_id,
+            device_imei=request.device_imei,
+            sim_iccid=request.sim_iccid,
+            carrier_name=request.carrier_name,
+        )
+        rec = self.session.execute(
+            select(SimBindingRecord).where(
+                SimBindingRecord.installation_id == self.installation_id,
+                SimBindingRecord.account_id == request.account_id,
+            )
+        ).scalar_one_or_none()
+
+        if not rec:
+            rec = SimBindingRecord(
+                account_id=enrollment.account_id,
+                installation_id=self.installation_id,
+                bound_device_imei_hash=enrollment.bound_device_imei_hash,
+                bound_sim_iccid_hash=enrollment.bound_sim_iccid_hash,
+                carrier_name=enrollment.carrier_name,
+                status=enrollment.status.value,
+                enrolled_at=enrollment.enrolled_at,
+                last_verified_at=enrollment.last_verified_at,
+            )
+            self.session.add(rec)
+        else:
+            rec.bound_device_imei_hash = enrollment.bound_device_imei_hash
+            rec.bound_sim_iccid_hash = enrollment.bound_sim_iccid_hash
+            rec.carrier_name = enrollment.carrier_name
+            rec.status = enrollment.status.value
+            rec.last_verified_at = enrollment.last_verified_at
+
+        self.session.commit()
+        self.session.refresh(rec)
+        return SimBindingEnrollResponse(
+            account_id=rec.account_id,
+            installation_id=rec.installation_id,
+            bound_device_imei_hash=rec.bound_device_imei_hash,
+            bound_sim_iccid_hash=rec.bound_sim_iccid_hash,
+            carrier_name=rec.carrier_name,
+            status=rec.status,
+            enrolled_at=rec.enrolled_at.isoformat(),
+        )
+
+    def get_sim_binding(self, account_id: str) -> SimBindingEnrollResponse:
+        rec = self.session.execute(
+            select(SimBindingRecord).where(
+                SimBindingRecord.installation_id == self.installation_id,
+                SimBindingRecord.account_id == account_id,
+            )
+        ).scalar_one_or_none()
+        if not rec:
+            raise HTTPException(status_code=404, detail=f"SIM binding for account {account_id} not found.")
+        return SimBindingEnrollResponse(
+            account_id=rec.account_id,
+            installation_id=rec.installation_id,
+            bound_device_imei_hash=rec.bound_device_imei_hash,
+            bound_sim_iccid_hash=rec.bound_sim_iccid_hash,
+            carrier_name=rec.carrier_name,
+            status=rec.status,
+            enrolled_at=rec.enrolled_at.isoformat(),
+        )
+
+    # ==============================================================================
+    # Phase 16.0: Singapore SRF & 24/7 Customer Emergency Kill Switch Methods
+    # ==============================================================================
+
+    def adjudicate_srf_claim(
+        self,
+        request: SrfAdjudicationRequest,
+        actor_subject: str,
+    ) -> SrfAdjudicationResponse:
+        bank_duties = SrfBankDuties(
+            enforced_token_cooling_12h=request.enforced_token_cooling_12h,
+            real_time_alert_dispatched=request.real_time_alert_dispatched,
+            kill_switch_available_24_7=request.kill_switch_available_24_7,
+            fraud_surveillance_active=request.fraud_surveillance_active,
+        )
+        telco_duties = SrfTelcoDuties(
+            checked_ssir_registry=request.checked_ssir_registry,
+            blocked_sender_id_spoofing=request.blocked_sender_id_spoofing,
+            filtered_malicious_urls=request.filtered_malicious_urls,
+        )
+        res = SrfWaterfallAdjudicator.adjudicate_phishing_loss(
+            account_id=request.account_id,
+            disputed_amount=request.disputed_amount,
+            bank_duties=bank_duties,
+            telco_duties=telco_duties,
+            consumer_gross_negligence=request.consumer_gross_negligence,
+        )
+        return SrfAdjudicationResponse(
+            claim_id=res.claim_id,
+            account_id=res.account_id,
+            disputed_amount=str(res.disputed_amount),
+            liability_verdict=res.liability_verdict.value,
+            primary_liable_party=res.primary_liable_party,
+            reimbursement_bank_amount=str(res.reimbursement_bank_amount),
+            reimbursement_telco_amount=str(res.reimbursement_telco_amount),
+            consumer_liability_amount=str(res.consumer_liability_amount),
+            identified_breaches=res.identified_breaches,
+            adjudication_timestamp=res.adjudication_timestamp.isoformat(),
+            statutory_reference=res.statutory_reference,
+        )
+
+    def activate_customer_kill_switch(
+        self,
+        account_id: str,
+        request: CustomerKillSwitchActivateRequest,
+        actor_subject: str,
+    ) -> CustomerKillSwitchResponse:
+        rec = self.session.execute(
+            select(CustomerKillSwitchRecord).where(
+                CustomerKillSwitchRecord.installation_id == self.installation_id,
+                CustomerKillSwitchRecord.account_id == account_id,
+            )
+        ).scalar_one_or_none()
+
+        now_utc = datetime.now(timezone.utc)
+        if not rec:
+            rec = CustomerKillSwitchRecord(
+                account_id=account_id,
+                installation_id=self.installation_id,
+                customer_id=f"CUST-{account_id}",
+                status="ACTIVE",
+                channel_initiated=request.channel,
+                activation_reason=request.reason,
+                revoked_sessions_count=request.active_sessions_to_revoke,
+                activated_at=now_utc,
+            )
+            self.session.add(rec)
+        else:
+            rec.status = "ACTIVE"
+            rec.channel_initiated = request.channel
+            rec.activation_reason = request.reason
+            rec.revoked_sessions_count = request.active_sessions_to_revoke
+            rec.activated_at = now_utc
+            rec.deactivated_at = None
+            rec.deactivation_maker_officer = None
+            rec.deactivation_checker_officer = None
+            rec.deactivation_branch_code = None
+
+        self.session.commit()
+        self.session.refresh(rec)
+        return CustomerKillSwitchResponse(
+            account_id=rec.account_id,
+            customer_id=rec.customer_id,
+            installation_id=rec.installation_id,
+            status=rec.status,
+            activated_at=rec.activated_at.isoformat(),
+            channel_initiated=rec.channel_initiated,
+            activation_reason=rec.activation_reason,
+            revoked_sessions_count=rec.revoked_sessions_count,
+        )
+
+    def deactivate_customer_kill_switch(
+        self,
+        account_id: str,
+        request: CustomerKillSwitchDeactivateRequest,
+        actor_subject: str,
+    ) -> CustomerKillSwitchResponse:
+        rec = self.session.execute(
+            select(CustomerKillSwitchRecord).where(
+                CustomerKillSwitchRecord.installation_id == self.installation_id,
+                CustomerKillSwitchRecord.account_id == account_id,
+            )
+        ).scalar_one_or_none()
+
+        if not rec:
+            raise HTTPException(status_code=404, detail=f"Kill switch for account {account_id} not found.")
+
+        if not request.maker_officer or not request.checker_officer:
+            raise HTTPException(status_code=422, detail="Both Maker and Checker officers required for deactivation.")
+        if request.maker_officer.strip() == request.checker_officer.strip():
+            raise HTTPException(status_code=422, detail="Maker and Checker officers must be distinct individuals.")
+        if not request.branch_code:
+            raise HTTPException(status_code=422, detail="Physical branch code required for deactivation.")
+
+        now_utc = datetime.now(timezone.utc)
+        rec.status = "INACTIVE"
+        rec.deactivated_at = now_utc
+        rec.deactivation_maker_officer = request.maker_officer.strip()
+        rec.deactivation_checker_officer = request.checker_officer.strip()
+        rec.deactivation_branch_code = request.branch_code.strip()
+        rec.deactivation_notes = request.notes
+
+        self.session.commit()
+        self.session.refresh(rec)
+        return CustomerKillSwitchResponse(
+            account_id=rec.account_id,
+            customer_id=rec.customer_id,
+            installation_id=rec.installation_id,
+            status=rec.status,
+            activated_at=rec.activated_at.isoformat(),
+            channel_initiated=rec.channel_initiated,
+            activation_reason=rec.activation_reason,
+            revoked_sessions_count=rec.revoked_sessions_count,
+            deactivated_at=rec.deactivated_at.isoformat() if rec.deactivated_at else None,
+            deactivation_maker_officer=rec.deactivation_maker_officer,
+            deactivation_checker_officer=rec.deactivation_checker_officer,
+            deactivation_branch_code=rec.deactivation_branch_code,
+        )
+
+    def get_customer_kill_switch(self, account_id: str) -> CustomerKillSwitchResponse:
+        rec = self.session.execute(
+            select(CustomerKillSwitchRecord).where(
+                CustomerKillSwitchRecord.installation_id == self.installation_id,
+                CustomerKillSwitchRecord.account_id == account_id,
+            )
+        ).scalar_one_or_none()
+        if not rec:
+            return CustomerKillSwitchResponse(
+                account_id=account_id,
+                customer_id=f"CUST-{account_id}",
+                installation_id=self.installation_id,
+                status="INACTIVE",
+            )
+        return CustomerKillSwitchResponse(
+            account_id=rec.account_id,
+            customer_id=rec.customer_id,
+            installation_id=rec.installation_id,
+            status=rec.status,
+            activated_at=rec.activated_at.isoformat(),
+            channel_initiated=rec.channel_initiated,
+            activation_reason=rec.activation_reason,
+            revoked_sessions_count=rec.revoked_sessions_count,
+            deactivated_at=rec.deactivated_at.isoformat() if rec.deactivated_at else None,
+            deactivation_maker_officer=rec.deactivation_maker_officer,
+            deactivation_checker_officer=rec.deactivation_checker_officer,
+            deactivation_branch_code=rec.deactivation_branch_code,
+        )
+
+    # ==============================================================================
+    # Phase 16.1: South Korea FSS Designated Safe Accounts & Delayed ATM Methods
+    # ==============================================================================
+
+    def register_designated_safe_account(
+        self,
+        account_id: str,
+        request: SafeAccountRegisterRequest,
+        actor_subject: str,
+    ) -> SafeAccountResponse:
+        reg_id = f"SAFE-REG-{uuid.uuid4().hex[:10].upper()}"
+        now_utc = datetime.now(timezone.utc)
+        rec = DesignatedSafeAccountRecord(
+            registration_id=reg_id,
+            installation_id=self.installation_id,
+            account_id=account_id,
+            payee_account=request.payee_account.strip(),
+            payee_institution=request.payee_institution.strip(),
+            label=request.label.strip(),
+            is_active=True,
+            registered_at=now_utc,
+        )
+        self.session.add(rec)
+        self.session.commit()
+        self.session.refresh(rec)
+        return SafeAccountResponse(
+            registration_id=rec.registration_id,
+            account_id=rec.account_id,
+            installation_id=rec.installation_id,
+            payee_account=rec.payee_account,
+            payee_institution=rec.payee_institution,
+            label=rec.label,
+            is_active=rec.is_active,
+            registered_at=rec.registered_at.isoformat(),
+        )
+
+    def list_designated_safe_accounts(self, account_id: str) -> list[SafeAccountResponse]:
+        records = self.session.execute(
+            select(DesignatedSafeAccountRecord).where(
+                DesignatedSafeAccountRecord.installation_id == self.installation_id,
+                DesignatedSafeAccountRecord.account_id == account_id,
+                DesignatedSafeAccountRecord.is_active == True,
+            )
+        ).scalars().all()
+        return [
+            SafeAccountResponse(
+                registration_id=r.registration_id,
+                account_id=r.account_id,
+                installation_id=r.installation_id,
+                payee_account=r.payee_account,
+                payee_institution=r.payee_institution,
+                label=r.label,
+                is_active=r.is_active,
+                registered_at=r.registered_at.isoformat(),
+            )
+            for r in records
+        ]
+
+    def record_atm_inbound_deposit(
+        self,
+        account_id: str,
+        request: AtmDepositInboundRequest,
+        actor_subject: str,
+    ) -> AtmWithdrawalEvaluateResponse:
+        now_utc = datetime.now(timezone.utc)
+        threshold = Decimal("50000.00")
+        if request.amount >= threshold:
+            hold_id = f"ATM-HOLD-{uuid.uuid4().hex[:10].upper()}"
+            expiry = now_utc + timedelta(minutes=30)
+            rec = AtmDelayedWithdrawalRecord(
+                hold_id=hold_id,
+                installation_id=self.installation_id,
+                account_id=account_id,
+                inbound_amount=request.amount,
+                inbound_reference=request.reference,
+                credit_timestamp=now_utc,
+                hold_expiry_timestamp=expiry,
+                status="ACTIVE_HOLD",
+            )
+            self.session.add(rec)
+            self.session.commit()
+            return AtmWithdrawalEvaluateResponse(
+                account_id=account_id,
+                allowed=False,
+                reason=f"Electronic deposit of {request.amount} triggered South Korea FSS 30-minute anti-runner ATM hold.",
+                hold_id=hold_id,
+                inbound_amount=str(request.amount),
+                hold_expiry_timestamp=expiry.isoformat(),
+            )
+        return AtmWithdrawalEvaluateResponse(
+            account_id=account_id,
+            allowed=True,
+            reason="Inbound amount below ATM hold threshold",
+        )
+
+    def evaluate_atm_withdrawal(
+        self,
+        account_id: str,
+        request: AtmWithdrawalEvaluateRequest,
+        actor_subject: str,
+    ) -> AtmWithdrawalEvaluateResponse:
+        now_utc = datetime.now(timezone.utc)
+        active_holds = self.session.execute(
+            select(AtmDelayedWithdrawalRecord).where(
+                AtmDelayedWithdrawalRecord.installation_id == self.installation_id,
+                AtmDelayedWithdrawalRecord.account_id == account_id,
+                AtmDelayedWithdrawalRecord.status == "ACTIVE_HOLD",
+            )
+        ).scalars().all()
+
+        for hold in active_holds:
+            hold_exp = hold.hold_expiry_timestamp
+            if hold_exp.tzinfo is None:
+                hold_exp = hold_exp.replace(tzinfo=timezone.utc)
+            if now_utc < hold_exp:
+                mins_left = max(1, int((hold_exp - now_utc).total_seconds() / 60))
+                return AtmWithdrawalEvaluateResponse(
+                    account_id=account_id,
+                    allowed=False,
+                    reason=(
+                        f"ATM cash withdrawal blocked: South Korea FSS Delayed Withdrawal Service (지연인출제도) active. "
+                        f"Mandatory 30-minute anti-runner quarantine in effect. {mins_left} minutes remaining."
+                    ),
+                    hold_id=hold.hold_id,
+                    inbound_amount=str(hold.inbound_amount),
+                    hold_expiry_timestamp=hold_exp.isoformat(),
+                )
+            else:
+                hold.status = "EXPIRED_RELEASED"
+
+        self.session.commit()
+        return AtmWithdrawalEvaluateResponse(
+            account_id=account_id,
+            allowed=True,
+            reason="ATM withdrawal authorized (no active quarantine holds)",
+        )
+
+    # ==============================================================================
+    # Phase 16.2: Brazil BCB Limit Increase Cooling-off & Pix MED 2.0 Methods
+    # ==============================================================================
+
+    def request_limit_increase(
+        self,
+        account_id: str,
+        request: LimitIncreaseRequestCreate,
+        actor_subject: str,
+    ) -> LimitIncreaseResponse:
+        now_utc = datetime.now(timezone.utc)
+        effective = now_utc + timedelta(hours=24)
+        req_id = f"LIM-REQ-{uuid.uuid4().hex[:10].upper()}"
+
+        rec = LimitIncreaseRequestRecord(
+            request_id=req_id,
+            installation_id=self.installation_id,
+            account_id=account_id,
+            limit_type=request.limit_type,
+            current_limit=Decimal("50000.00"),
+            requested_limit=request.requested_limit,
+            requested_at=now_utc,
+            effective_at=effective,
+            is_cancelled=False,
+        )
+        self.session.add(rec)
+        self.session.commit()
+        self.session.refresh(rec)
+
+        return LimitIncreaseResponse(
+            request_id=rec.request_id,
+            account_id=rec.account_id,
+            limit_type=rec.limit_type,
+            current_limit=f"{rec.current_limit:.2f}",
+            requested_limit=f"{rec.requested_limit:.2f}",
+            requested_at=rec.requested_at.isoformat(),
+            effective_at=rec.effective_at.isoformat(),
+            is_cooling=True,
+            status_message=f"Mandatory 24h statutory cooling-off active under Brazil BCB Limite Noturno framework. Activates at {effective.isoformat()}.",
+        )
+
+    def execute_med2_cascade_clawback(
+        self,
+        request: Med2CascadeTraceRequest,
+        actor_subject: str,
+    ) -> Med2CascadeTraceResponse:
+        incident_dt = datetime.fromisoformat(request.incident_timestamp.replace("Z", "+00:00"))
+        domain_edges: list[Med2DisbursementEdge] = []
+        for e in request.edges:
+            edge_ts = datetime.fromisoformat(e.timestamp.replace("Z", "+00:00")) if e.timestamp else incident_dt
+            domain_edges.append(
+                Med2DisbursementEdge(
+                    edge_id=e.edge_id,
+                    source_account=e.source_account,
+                    target_account=e.target_account,
+                    target_institution_bic=e.target_institution_bic,
+                    amount=e.amount,
+                    timestamp=edge_ts,
+                    hop_tier=Med2HopTier(e.hop_tier),
+                )
+            )
+
+        report = Med2CascadingClawbackEngine.execute_med2_cascade_clawback(
+            original_tx_id=request.original_tx_id,
+            victim_account=request.victim_account,
+            total_stolen_amount=request.total_stolen_amount,
+            incident_timestamp=incident_dt,
+            edges=domain_edges,
+            account_balances=dict(request.account_balances),
+        )
+
+        trace_rec = Med2ClawbackTraceRecord(
+            contestation_id=report.contestation_id,
+            installation_id=self.installation_id,
+            original_tx_id=report.original_tx_id,
+            victim_account=report.victim_account,
+            total_stolen_amount=report.total_stolen_amount,
+            total_clawback_holds_placed=report.total_clawback_holds_placed,
+            recovery_rate_pct=report.recovery_rate_pct,
+            reported_at=report.reported_at,
+            hops_payload=[h.to_dict() for h in report.hops],
+            status="RESOLVED",
+        )
+        self.session.add(trace_rec)
+        self.session.commit()
+
+        return Med2CascadeTraceResponse(
+            contestation_id=report.contestation_id,
+            original_tx_id=report.original_tx_id,
+            victim_account=report.victim_account,
+            total_stolen_amount=str(report.total_stolen_amount),
+            reported_at=report.reported_at.isoformat(),
+            is_within_80_day_window=report.is_within_80_day_window,
+            total_clawback_holds_placed=str(report.total_clawback_holds_placed),
+            recovery_rate_pct=report.recovery_rate_pct,
+            hops=[h.to_dict() for h in report.hops],
+            statutory_basis=report.statutory_basis,
+        )
+
+    # ==============================================================================
+    # Phase 16.3: India I4C Helpline 1930 Golden Hour Methods
+    # ==============================================================================
+
+    def submit_golden_hour_report(
+        self,
+        request: GoldenHourReportCreateRequest,
+        actor_subject: str,
+    ) -> GoldenHourReportResponse:
+        inc_dt = datetime.fromisoformat(request.incident_timestamp.replace("Z", "+00:00"))
+        targets = [
+            TargetRecipientDirective(
+                recipient_account=t.recipient_account,
+                recipient_institution_bic=t.recipient_institution_bic,
+                amount_flagged=t.amount_flagged,
+                freeze_action=t.freeze_action,
+            )
+            for t in request.target_recipients
+        ]
+
+        report = GoldenHourInterceptorEngine.ingest_emergency_report(
+            victim_account_id=request.victim_account_id,
+            victim_phone=request.victim_phone,
+            scam_category=request.scam_category,
+            incident_time=inc_dt,
+            reported_time=datetime.now(timezone.utc),
+            total_amount_lost=request.total_amount_lost,
+            transaction_references=request.transaction_references,
+            target_recipients=targets,
+        )
+
+        rec = GoldenHourReportRecord(
+            report_id=report.report_id,
+            installation_id=self.installation_id,
+            victim_account_id=report.victim_account_id,
+            victim_phone=report.victim_phone,
+            scam_category=report.scam_category,
+            incident_timestamp=report.incident_timestamp,
+            reported_timestamp=report.reported_timestamp,
+            elapsed_minutes=report.elapsed_minutes,
+            is_golden_hour=report.is_golden_hour,
+            total_amount_lost=report.total_amount_lost,
+            transaction_references=report.transaction_references,
+            switch_freeze_broadcast_id=report.switch_freeze_broadcast_id,
+            switch_status=report.switch_status.value,
+        )
+        self.session.add(rec)
+        self.session.commit()
+
+        return GoldenHourReportResponse(
+            report_id=report.report_id,
+            victim_account_id=report.victim_account_id,
+            victim_phone=report.victim_phone,
+            scam_category=report.scam_category,
+            incident_timestamp=report.incident_timestamp.isoformat(),
+            reported_timestamp=report.reported_timestamp.isoformat(),
+            elapsed_minutes=report.elapsed_minutes,
+            is_golden_hour=report.is_golden_hour,
+            status=report.status.value,
+            total_amount_lost=str(report.total_amount_lost),
+            transaction_references=report.transaction_references,
+            target_recipients_count=len(report.target_recipients),
+            switch_freeze_broadcast_id=report.switch_freeze_broadcast_id,
+            switch_status=report.switch_status.value,
+            statutory_authority=report.statutory_authority,
+        )
+
+    # ==============================================================================
+    # Phase 16.4: Hong Kong FPS Scameter Methods
+    # ==============================================================================
+
+    def lookup_scameter_proxy(
+        self,
+        request: ScameterLookupRequest,
+        actor_subject: str,
+    ) -> ScameterLookupResponse:
+        engine = FpsScameterShieldEngine()
+        engine.register_police_proxy("0712345678", ScameterRiskLevel.HIGH_RISK_POLICE_RECORD, "HKPF-CR-2026-9921")
+        engine.register_police_proxy("suspect@scam.com", ScameterRiskLevel.HIGH_RISK_POLICE_RECORD, "HKPF-CR-2026-1188")
+        engine.register_police_proxy("0722000000", ScameterRiskLevel.SUSPICIOUS_HIGH_FREQUENCY, "HKPF-WARN-8842")
+
+        res = engine.lookup_proxy(request.proxy_id, request.proxy_type)
+        return ScameterLookupResponse(
+            proxy_id=res.proxy_id,
+            proxy_type=res.proxy_type,
+            risk_level=res.risk_level.value,
+            police_report_reference=res.police_report_reference,
+            unskippable_warning_required=res.unskippable_warning_required,
+            warning_title=res.warning_title,
+            warning_body=res.warning_body,
+            requires_liability_waiver=res.requires_liability_waiver,
+        )
+
+    def execute_scameter_waiver(
+        self,
+        request: ScameterWaiverCreateRequest,
+        actor_subject: str,
+    ) -> ScameterWaiverResponse:
+        engine = FpsScameterShieldEngine()
+        waiver = engine.execute_statutory_waiver(
+            account_id=request.account_id,
+            customer_id=request.customer_id,
+            proxy_id=request.proxy_id,
+            risk_level=ScameterRiskLevel(request.risk_level),
+            transfer_amount=request.transfer_amount,
+            customer_consent_ack=request.customer_consent_ack,
+        )
+
+        rec = ScameterShieldWaiverRecord(
+            waiver_id=waiver.waiver_id,
+            installation_id=self.installation_id,
+            account_id=waiver.account_id,
+            customer_id=waiver.customer_id,
+            proxy_id=waiver.proxy_id,
+            risk_level=waiver.risk_level.value,
+            transfer_amount=waiver.transfer_amount,
+            signed_timestamp=waiver.signed_timestamp,
+            waiver_hash=waiver.waiver_hash,
+            is_institution_shielded=True,
+        )
+        self.session.add(rec)
+        self.session.commit()
+
+        return ScameterWaiverResponse(
+            waiver_id=waiver.waiver_id,
+            account_id=waiver.account_id,
+            customer_id=waiver.customer_id,
+            proxy_id=waiver.proxy_id,
+            risk_level=waiver.risk_level.value,
+            transfer_amount=str(waiver.transfer_amount),
+            signed_timestamp=waiver.signed_timestamp.isoformat(),
+            waiver_hash=waiver.waiver_hash,
+            is_institution_shielded=waiver.is_institution_shielded,
+            statutory_framework=waiver.statutory_framework,
+        )
+
 

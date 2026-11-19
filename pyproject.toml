@@ -28,3 +28,11 @@ filterwarnings = [
   "ignore:Using ephemeral development keys:UserWarning",          # expected in tests: keys are generated per run
   "ignore:Using `httpx` with `starlette.testclient`:DeprecationWarning",   # third-party notice about the test client
 ]
+
+# This is a monorepo. Restrict setuptools discovery to Python source roots;
+# otherwise editable installation discovers unrelated top-level namespace dirs.
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["packages*", "services*"]
+namespaces = true
+

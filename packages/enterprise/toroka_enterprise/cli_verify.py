@@ -108,6 +108,9 @@ def verify_passport_file(
 
     return {
         "is_valid": is_overall_valid,
+        "digest_integrity_valid": is_digest_valid,
+        "signature_math_valid": signature_verified,
+        "signer_trusted": bool(trusted_public_key_pem and signature_verified),
         "passport_id": passport.passport_id,
         "finding_id": passport.finding_id,
         "case_id": passport.case_id,
@@ -177,6 +180,9 @@ def verify_release_manifest_file(
 
     return {
         "is_valid": is_overall_valid,
+        "digest_integrity_valid": digest_valid,
+        "signature_math_valid": signature_verified,
+        "signer_trusted": bool(trusted_public_key_pem and signature_verified),
         "release_id": release_id,
         "version": version,
         "components_count": len(components),
@@ -225,19 +231,23 @@ def verify_dossier_file(
     has_106b = dossier.section_106b_certificate is not None
     cert_dict = dossier.section_106b_certificate.to_dict() if has_106b else None
 
-    is_overall_valid = is_digest_valid and (sig_verified if dossier.signature_bundle else True)
+    is_signed = dossier.signature_bundle is not None
+    is_overall_valid = is_digest_valid and is_signed and sig_verified
 
     return {
         "is_valid": is_overall_valid,
+        "digest_integrity_valid": is_digest_valid,
+        "signature_math_valid": sig_verified,
+        "signer_trusted": bool(trusted_public_key_pem and sig_verified),
         "dossier_id": dossier.dossier_id,
         "case_id": dossier.case_id,
         "installation_id": dossier.installation_id,
         "title": dossier.title,
-        "fraud_loss_amount": dossier.fraud_loss_amount,
+        "fraud_loss_amount": str(dossier.fraud_loss_amount),
         "currency": dossier.currency,
         "digest_verified": is_digest_valid,
         "dossier_digest": dossier.dossier_digest,
-        "is_digitally_signed": dossier.signature_bundle is not None,
+        "is_digitally_signed": is_signed,
         "signature_verified": sig_verified,
         "signing_algorithm": dossier.signature_bundle.algorithm if dossier.signature_bundle else None,
         "signature_error": sig_error,

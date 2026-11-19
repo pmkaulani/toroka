@@ -45,4 +45,6 @@ packages/rules/ssi_rules/ml/data/sources/sources_state.json
 packages/rules/ssi_rules/ml/data/staging_samples.jsonl
 packages/rules/ssi_rules/ml/data/feedback_queue.jsonl
 
+*.egg-info/
+build/
 .toroka-enterprise-hardening-backup/

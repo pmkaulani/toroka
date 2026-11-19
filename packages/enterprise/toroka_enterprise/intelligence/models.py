@@ -4,15 +4,19 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 from typing import Any
+from decimal import Decimal
 from sqlalchemy import (
     Boolean,
     DateTime,
     Float,
+    Index,
     Integer,
     JSON,
+    Numeric,
     String,
     Text,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -936,6 +940,10 @@ class ValidationRunRecord(IntelligenceBase):
     evaluator: Mapped[str] = mapped_column(String(255), nullable=False)
     limitations: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
 
+    execution_provenance_digest: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    executor_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    is_trusted_execution: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     completed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
@@ -985,9 +993,12 @@ class ReadinessAttestationRecord(IntelligenceBase):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
 
     __table_args__ = (
-        UniqueConstraint(
+        Index(
+            "uq_readiness_attestation_active",
             "installation_id", "release_version", "gate_name",
-            name="uq_readiness_attestation",
+            unique=True,
+            sqlite_where=text("is_active = 1"),
+            postgresql_where=text("is_active IS TRUE"),
         ),
     )
 
@@ -1109,8 +1120,14 @@ class GovernedAIProviderRecord(IntelligenceBase):
     hosting_location: Mapped[str] = mapped_column(String(100), nullable=False)
     data_retention_policy: Mapped[str] = mapped_column(String(100), nullable=False)
     training_on_customer_data_permitted: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    is_approved: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    is_approved: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     risk_tier: Mapped[str] = mapped_column(String(30), nullable=False)
+
+    registered_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    approved_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    review_status: Mapped[str] = mapped_column(String(50), nullable=False, default="PENDING_INDEPENDENT_REVIEW")
+    review_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     evaluation_summary: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
     last_evaluated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -1190,7 +1207,7 @@ class ForensicDossierRecord(IntelligenceBase):
     case_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     incident_type: Mapped[str] = mapped_column(String(100), nullable=False)
-    fraud_loss_amount: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    fraud_loss_amount: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False, default=Decimal("0.0"))
     currency: Mapped[str] = mapped_column(String(10), nullable=False, default="KES")
 
     examiner_subject: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -1206,7 +1223,7 @@ class ForensicDossierRecord(IntelligenceBase):
     dossier_digest: Mapped[str] = mapped_column(String(64), nullable=False)
     signature_bundle: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
 
-    status: Mapped[str] = mapped_column(String(50), nullable=False, default="SEALED")
+    status: Mapped[str] = mapped_column(String(50), nullable=False, default="DRAFT_UNVERIFIED")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
 
 
@@ -1219,7 +1236,7 @@ class InflightPaymentRiskRecord(IntelligenceBase):
 
     end_to_end_id: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
     clearing_rail: Mapped[str] = mapped_column(String(50), nullable=False)
-    amount: Mapped[float] = mapped_column(Float, nullable=False)
+    amount: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False)
     currency: Mapped[str] = mapped_column(String(10), nullable=False, default="KES")
 
     debtor_account: Mapped[str] = mapped_column(String(100), nullable=False)
@@ -1232,14 +1249,371 @@ class InflightPaymentRiskRecord(IntelligenceBase):
     triggered_rules: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
     recommended_action: Mapped[str] = mapped_column(Text, nullable=False)
     latency_ms: Mapped[float] = mapped_column(Float, nullable=False)
+    integration_mode: Mapped[str] = mapped_column(String(32), nullable=False, default="SHADOW")
+
+    # Phase 14.4 Swiss SIC5 Parallel Pipeline telemetry
+    is_parallel_pipeline: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    sla_budget_ms: Mapped[float] = mapped_column(Float, nullable=False, default=45.0)
+    is_sla_compliant: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    feed_latencies: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+
+    # Phase 15 Global Frontier Telemetry & Controls
+    biometrics_verdict: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    biometrics_risk_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    is_rat_detected: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    sim_binding_status: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    is_nighttime_breach: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
     evaluated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
 
 
+# ==============================================================================
+# Phase 13.2 Models: Institutional Signer Trust Registry
+# ==============================================================================
+
+class SignerTrustRecord(IntelligenceBase):
+    """Server-side institutional trust anchors for production and supervisory signing keys."""
+    __tablename__ = "enterprise_signer_trust_registry"
+
+    key_id: Mapped[str] = mapped_column(String(100), primary_key=True)
+    installation_id: Mapped[str] = mapped_column(String(100), primary_key=True, index=True)
+
+    public_key_pem: Mapped[str] = mapped_column(Text, nullable=False)
+    algorithm: Mapped[str] = mapped_column(String(50), nullable=False)
+    purpose: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+    security_level: Mapped[str] = mapped_column(String(50), nullable=False, default="BANK_MANAGED_HSM")
+
+    activated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    is_revoked: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, index=True)
+    revocation_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    registered_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
 
 
+# ==============================================================================
+# Phase 14.0 Models: Confirmation of Payee (CoP) Inquiries
+# ==============================================================================
+
+class CopInquiryRecord(IntelligenceBase):
+    """Historical record of Confirmation of Payee (CoP) inquiries and outcomes."""
+    __tablename__ = "enterprise_cop_inquiries"
+
+    inquiry_id: Mapped[str] = mapped_column(String(100), primary_key=True)
+    installation_id: Mapped[str] = mapped_column(String(100), primary_key=True, index=True)
+
+    intended_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    registered_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    account_number: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    account_type: Mapped[str] = mapped_column(String(50), nullable=False, default="PERSONAL")
+    clearing_rail: Mapped[str] = mapped_column(String(50), nullable=False, default="PESALINK")
+    bank_bic: Mapped[str] = mapped_column(String(50), nullable=False, default="")
+
+    status: Mapped[str] = mapped_column(String(50), nullable=False, index=True)  # MATCH, CLOSE_MATCH, NO_MATCH
+    match_score: Mapped[float] = mapped_column(Float, nullable=False)
+    suggested_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    reason_code: Mapped[str] = mapped_column(String(100), nullable=False)
+    advisory_message: Mapped[str] = mapped_column(Text, nullable=False)
+    inquiry_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+
+    actor_subject: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    verified_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
 
 
+# ==============================================================================
+# Phase 14.1 Models: Telecom "Scam Signal" Live Telemetry & Coercion Intelligence
+# ==============================================================================
 
+class TelecomScamSignalRecord(IntelligenceBase):
+    """Historical record of carrier telemetry inquiries (live call status, SIM swap, coercion score)."""
+    __tablename__ = "enterprise_telecom_scam_signals"
+
+    query_id: Mapped[str] = mapped_column(String(100), primary_key=True)
+    installation_id: Mapped[str] = mapped_column(String(100), primary_key=True, index=True)
+
+    msisdn: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+    carrier: Mapped[str] = mapped_column(String(50), nullable=False, default="SAFARICOM")
+
+    call_status: Mapped[str] = mapped_column(String(50), nullable=False, default="IDLE")
+    call_duration_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+    sim_swap_status: Mapped[str] = mapped_column(String(50), nullable=False, default="NO_SWAP")
+    sim_swap_age_hours: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    scam_signal_score: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    is_high_coercion_risk: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, index=True)
+    coercion_indicators: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+
+    advisory_action: Mapped[str] = mapped_column(String(100), nullable=False)
+    statutory_warning: Mapped[str | None] = mapped_column(Text, nullable=True)
+    query_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+
+    actor_subject: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    queried_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+
+
+# ==============================================================================
+# Phase 14.2 Models: Federated Mule Directory & Hash-Linked Interbank Blacklist
+# ==============================================================================
+
+class FederatedMuleRecord(IntelligenceBase):
+    """Interbank cross-institution blinded mule directory record (PBOC Art. 21 / US EWS / Swiss SMPC)."""
+    __tablename__ = "enterprise_federated_mule_directory"
+
+    entry_id: Mapped[str] = mapped_column(String(100), primary_key=True)
+    installation_id: Mapped[str] = mapped_column(String(100), primary_key=True, index=True)
+
+    entity_type: Mapped[str] = mapped_column(String(50), nullable=False, default="BANK_ACCOUNT")
+    blinded_token: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    cleartext_preview: Mapped[str] = mapped_column(String(100), nullable=False)
+
+    severity_tier: Mapped[str] = mapped_column(String(50), nullable=False, default="CORROBORATED_MULE", index=True)
+    originating_bank_bic: Mapped[str] = mapped_column(String(50), nullable=False, default="")
+    reason_code: Mapped[str] = mapped_column(String(100), nullable=False, default="SUSPICIOUS_MULE_ACTIVITY")
+    dossier_reference: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
+
+    status: Mapped[str] = mapped_column(String(50), nullable=False, default="ACTIVE", index=True)
+    registered_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    registered_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+# ==============================================================================
+# Phase 14.3 Models: Multi-Tiered Mule Tracing & Graph Cascade
+# ==============================================================================
+
+class MuleCascadeTraceRecord(IntelligenceBase):
+    """Downstream mule dispersion cascade trace with graph topology and directives (PBOC / UK PSR)."""
+    __tablename__ = "enterprise_mule_cascade_traces"
+
+    trace_id: Mapped[str] = mapped_column(String(100), primary_key=True)
+    installation_id: Mapped[str] = mapped_column(String(100), primary_key=True, index=True)
+
+    root_account: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    root_transaction_id: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
+    root_fraud_amount: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False)
+    currency: Mapped[str] = mapped_column(String(10), nullable=False, default="KES")
+
+    max_depth_reached: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    total_nodes_identified: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    total_frozen_or_held_amount: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False, default=Decimal("0.0"))
+    recovery_potential_ratio: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+
+    graph_topology: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    directives: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False, default=list)
+
+    status: Mapped[str] = mapped_column(String(50), nullable=False, default="ACTIVE", index=True)
+    initiated_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now, onupdate=utc_now)
+
+
+# ==============================================================================
+# Phase 15.0 Models: Singapore MAS Money Lock Vault Partitioning
+# ==============================================================================
+
+class MoneyLockAccountRecord(IntelligenceBase):
+    """Customer-controlled non-digital vault partition record (Singapore MAS/ABS)."""
+    __tablename__ = "enterprise_money_lock_accounts"
+
+    account_id: Mapped[str] = mapped_column(String(100), primary_key=True)
+    installation_id: Mapped[str] = mapped_column(String(100), primary_key=True, index=True)
+
+    currency: Mapped[str] = mapped_column(String(10), nullable=False, default="KES")
+    total_balance: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False, default=Decimal("0.0"))
+    locked_vault_balance: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False, default=Decimal("0.0"))
+    available_balance: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False, default=Decimal("0.0"))
+
+    status: Mapped[str] = mapped_column(String(50), nullable=False, default="UNLOCKED", index=True)
+    last_locked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_unlocked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    unlock_channel: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    unlock_officer_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    unlock_station_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    dual_authorizer_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    audit_trail: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False, default=list)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now, onupdate=utc_now)
+
+
+# ==============================================================================
+# Phase 15.1 Models: Brazil BCB Bloqueio Cautelar 72h Precautionary Hold
+# ==============================================================================
+
+class PrecautionaryHoldRecord(IntelligenceBase):
+    """Statutory 72-hour precautionary hold record (Brazil BCB Resolução 493/2025)."""
+    __tablename__ = "enterprise_precautionary_holds"
+
+    hold_id: Mapped[str] = mapped_column(String(100), primary_key=True)
+    installation_id: Mapped[str] = mapped_column(String(100), primary_key=True, index=True)
+
+    tx_id: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    amount: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False)
+    currency: Mapped[str] = mapped_column(String(10), nullable=False, default="KES")
+    debtor_account: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    creditor_account: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+
+    state: Mapped[str] = mapped_column(String(50), nullable=False, default="ACTIVE_HOLD_72H", index=True)
+    placed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    statutory_basis: Mapped[str] = mapped_column(String(100), nullable=False, default="RESOLUCAO_BCB_493_2025_ART_39")
+
+    decision_officer_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    resolution_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    camt056_xml: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now, onupdate=utc_now)
+
+
+# ==============================================================================
+# Phase 15.2 Models: India NPCI SIM Binding & Hardware Anchor
+# ==============================================================================
+
+class SimBindingRecord(IntelligenceBase):
+    """Cryptographic SIM and device hardware binding record (India NPCI / DoT DIP)."""
+    __tablename__ = "enterprise_sim_bindings"
+
+    account_id: Mapped[str] = mapped_column(String(100), primary_key=True)
+    installation_id: Mapped[str] = mapped_column(String(100), primary_key=True, index=True)
+
+    bound_device_imei_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    bound_sim_iccid_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    carrier_name: Mapped[str] = mapped_column(String(50), nullable=False, default="Safaricom")
+    status: Mapped[str] = mapped_column(String(50), nullable=False, default="BOUND_TRUSTED", index=True)
+
+    enrolled_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+    last_verified_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+
+
+# ==============================================================================
+# Phase 16.0 Models: Singapore SRF Kill Switch & Global Frontier Defenses
+# ==============================================================================
+
+class CustomerKillSwitchRecord(IntelligenceBase):
+    """Singapore MAS 24/7 Customer Emergency Kill Switch record."""
+    __tablename__ = "enterprise_customer_kill_switches"
+
+    account_id: Mapped[str] = mapped_column(String(100), primary_key=True)
+    installation_id: Mapped[str] = mapped_column(String(100), primary_key=True, index=True)
+
+    customer_id: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(50), nullable=False, default="ACTIVE", index=True)
+    channel_initiated: Mapped[str] = mapped_column(String(50), nullable=False, default="MOBILE_PANIC_BUTTON")
+    activation_reason: Mapped[str] = mapped_column(Text, nullable=False)
+    revoked_sessions_count: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+
+    activated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+    deactivated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    deactivation_maker_officer: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    deactivation_checker_officer: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    deactivation_branch_code: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    deactivation_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now, onupdate=utc_now)
+
+
+class DesignatedSafeAccountRecord(IntelligenceBase):
+    """South Korea FSS Designated Safe Accounts registry record."""
+    __tablename__ = "enterprise_designated_safe_accounts"
+
+    registration_id: Mapped[str] = mapped_column(String(100), primary_key=True)
+    installation_id: Mapped[str] = mapped_column(String(100), primary_key=True, index=True)
+
+    account_id: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    payee_account: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    payee_institution: Mapped[str] = mapped_column(String(100), nullable=False, default="Safaricom")
+    label: Mapped[str] = mapped_column(String(100), nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+
+    registered_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+
+
+class AtmDelayedWithdrawalRecord(IntelligenceBase):
+    """South Korea FSS Delayed ATM Cash-Out hold record (지연인출제도)."""
+    __tablename__ = "enterprise_atm_delayed_withdrawals"
+
+    hold_id: Mapped[str] = mapped_column(String(100), primary_key=True)
+    installation_id: Mapped[str] = mapped_column(String(100), primary_key=True, index=True)
+
+    account_id: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    inbound_amount: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False)
+    inbound_reference: Mapped[str] = mapped_column(String(100), nullable=False)
+    credit_timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+    hold_expiry_timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    status: Mapped[str] = mapped_column(String(50), nullable=False, default="ACTIVE_HOLD", index=True)
+
+
+class LimitIncreaseRequestRecord(IntelligenceBase):
+    """Brazil BCB Transfer Limit Increase Cooling-off record."""
+    __tablename__ = "enterprise_limit_increase_requests"
+
+    request_id: Mapped[str] = mapped_column(String(100), primary_key=True)
+    installation_id: Mapped[str] = mapped_column(String(100), primary_key=True, index=True)
+
+    account_id: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    limit_type: Mapped[str] = mapped_column(String(50), nullable=False, default="DAILY_P2P")
+    current_limit: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False)
+    requested_limit: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False)
+    requested_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+    effective_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    is_cancelled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+
+class Med2ClawbackTraceRecord(IntelligenceBase):
+    """Brazil BCB Pix MED 2.0 5-Layer Cascading Clawback Trace record."""
+    __tablename__ = "enterprise_med2_clawback_traces"
+
+    contestation_id: Mapped[str] = mapped_column(String(100), primary_key=True)
+    installation_id: Mapped[str] = mapped_column(String(100), primary_key=True, index=True)
+
+    original_tx_id: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    victim_account: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    total_stolen_amount: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False)
+    total_clawback_holds_placed: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False)
+    recovery_rate_pct: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    reported_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+    hops_payload: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False, default=list)
+    status: Mapped[str] = mapped_column(String(50), nullable=False, default="RESOLVED")
+
+
+class GoldenHourReportRecord(IntelligenceBase):
+    """India I4C Helpline 1930 / CFCFRMS Golden Hour emergency intake record."""
+    __tablename__ = "enterprise_golden_hour_reports"
+
+    report_id: Mapped[str] = mapped_column(String(100), primary_key=True)
+    installation_id: Mapped[str] = mapped_column(String(100), primary_key=True, index=True)
+
+    victim_account_id: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    victim_phone: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+    scam_category: Mapped[str] = mapped_column(String(100), nullable=False)
+    incident_timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    reported_timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+    elapsed_minutes: Mapped[float] = mapped_column(Float, nullable=False)
+    is_golden_hour: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    total_amount_lost: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False)
+    transaction_references: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    switch_freeze_broadcast_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    switch_status: Mapped[str] = mapped_column(String(50), nullable=False, default="BROADCAST_DISPATCHED")
+
+
+class ScameterShieldWaiverRecord(IntelligenceBase):
+    """Hong Kong HKMA FPS Scameter Statutory Liability Shield Waiver record."""
+    __tablename__ = "enterprise_scameter_waivers"
+
+    waiver_id: Mapped[str] = mapped_column(String(100), primary_key=True)
+    installation_id: Mapped[str] = mapped_column(String(100), primary_key=True, index=True)
+
+    account_id: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    customer_id: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    proxy_id: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    risk_level: Mapped[str] = mapped_column(String(50), nullable=False)
+    transfer_amount: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False)
+    signed_timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+    waiver_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    is_institution_shielded: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 
 

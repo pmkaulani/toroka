@@ -76,19 +76,20 @@ def test_component_registry_and_maker_checker_approval(oidc_client, token_factor
     assert comp["status"] == "draft"
     assert comp["created_by"] == "authoriser.alice"
 
-    # Move component to validation via validation run
+    # Move component to validation via trusted validation run
+    token_validator = token_factory(sub="validator.charlie", roles=["BANK_AUTHORISER"])
     val_resp = oidc_client.post(
-        "/api/enterprise/v1/governance/validation-runs",
-        headers={"Authorization": f"Bearer {token_author_a}"},
+        "/api/enterprise/v1/governance/validation-runs/execute-trusted",
+        headers={"Authorization": f"Bearer {token_validator}"},
         json={
+            "plan_id": "plan-rapid-01",
             "component_id": "det_rapid_flow",
             "component_version": "1.0.0",
             "dataset_digest": "d" * 64,
             "configuration_digest": "b" * 64,
             "metrics": [
-                {"name": "precision", "value": 0.95, "threshold": 0.85, "direction": "gte", "result": "pass"},
+                {"name": "precision", "target_value": 0.95, "threshold": 0.85, "direction": "gte"},
             ],
-            "evaluator": "independent_model_validation_team",
         },
     )
     assert val_resp.status_code == 201
@@ -146,7 +147,7 @@ def test_validation_run_recording_and_listing(oidc_client, token_factory):
     )
     assert val_resp.status_code == 201
     val_data = val_resp.json()
-    assert val_data["result"] == "pass"
+    assert val_data["result"] == "inconclusive"
     assert len(val_data["metrics"]) == 3
 
     # 2. List validation runs
@@ -392,7 +393,18 @@ def test_ai_provider_governance_policy(oidc_client, token_factory):
         },
     )
     assert compliant_resp.status_code == 201
-    assert compliant_resp.json()["is_approved"] is True
+    prov_data = compliant_resp.json()
+    assert prov_data["is_approved"] is False
+
+    # Independent authoriser approves provider per Phase 13.2 maker-checker
+    token_bob = token_factory(sub="authoriser.bob", roles=["BANK_AUTHORISER"])
+    app_resp = oidc_client.post(
+        f"/api/enterprise/v1/governance/ai-providers/{prov_data['provider_id']}/approve",
+        headers={"Authorization": f"Bearer {token_bob}"},
+        json={"review_notes": "Independent governance review complete and verified zero retention"},
+    )
+    assert app_resp.status_code == 200
+    assert app_resp.json()["is_approved"] is True
 
     # 2. Non-compliant provider (training_on_customer_data_permitted = True) -> Must be rejected
     rejected_resp = oidc_client.post(

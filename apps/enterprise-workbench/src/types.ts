@@ -1155,6 +1155,11 @@ export interface GovernedAIProvider {
   evaluation_summary: Record<string, unknown>;
   last_evaluated_at?: string | null;
   created_at: string;
+  review_status?: string | null;
+  registered_by?: string | null;
+  approved_by?: string | null;
+  approved_at?: string | null;
+  review_notes?: string | null;
 }
 
 export interface ReadinessAssessment {
@@ -1287,14 +1292,240 @@ export interface ForensicDossier {
 
 export interface InflightPaymentEvaluation {
   end_to_end_id: string;
-  decision: "ALLOW" | "STEP_UP_AUTH" | "QUARANTINE_HOLD" | "BLOCK";
+  decision: "ALLOW" | "STEP_UP_AUTH" | "QUARANTINE_HOLD" | "BLOCK" | "DELAY_SETTLEMENT_15M" | "INFLOW_ONLY" | "RESTRICT_NON_COUNTER";
   risk_score: number;
   risk_tier: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
   triggered_rules: string[];
   recommended_action: string;
+  integration_mode?: string;
   latency_ms: number;
   evaluated_at: string;
+  cop_status?: string | null;
+  cop_match_score?: number | null;
+  telecom_call_status?: string | null;
+  telecom_coercion_score?: number | null;
+  is_telecom_coerced?: boolean;
+  is_federated_mule?: boolean;
+  federated_mule_tier?: string | null;
+  // Phase 14.4 Swiss SIC5 Sub-50ms Parallel Telemetry
+  is_parallel_pipeline?: boolean;
+  sla_budget_ms?: number;
+  is_sla_compliant?: boolean;
+  cop_latency_ms?: number | null;
+  telecom_latency_ms?: number | null;
+  federated_mule_latency_ms?: number | null;
+  behavioral_latency_ms?: number | null;
+  feed_statuses?: Record<string, string> | null;
+  circuit_breaker_tripped?: boolean;
 }
+
+export interface CopVerifyRequest {
+  intended_name: string;
+  registered_name: string;
+  account_number: string;
+  account_type?: "PERSONAL" | "BUSINESS";
+  clearing_rail?: string;
+  bank_bic?: string;
+  inquiry_id?: string;
+}
+
+export interface CopVerifyResponse {
+  inquiry_id: string;
+  status: "MATCH" | "CLOSE_MATCH" | "NO_MATCH";
+  match_score: number;
+  intended_name_normalized: string;
+  registered_name_normalized: string;
+  suggested_name?: string | null;
+  reason_code: string;
+  advisory_message: string;
+  inquiry_digest: string;
+  verified_at: string;
+}
+
+export interface SemanticVerifyResponse {
+  is_valid: boolean;
+  verification_scope: string;
+  methodology: string;
+  total_claims: number;
+  entailed_claims: number;
+  contradicted_claims: number;
+  numeric_mismatches: number;
+  ungrounded_claims: number;
+  evaluations: Array<{
+    claim_id: string;
+    statement: string;
+    kind: string;
+    status: string;
+    reasons: string[];
+    confidence: number;
+  }>;
+}
+
+export interface TrustedSignerRecord {
+  key_id: string;
+  installation_id: string;
+  algorithm: string;
+  purpose: string;
+  security_level: string;
+  is_active: boolean;
+  is_revoked?: boolean;
+  revocation_reason?: string | null;
+}
+
+export interface TelecomSignalRequest {
+  msisdn: string;
+  carrier?: "SAFARICOM" | "AIRTEL" | "TELKOM" | "UNKNOWN";
+  query_id?: string;
+  simulated_call_status?: "IDLE" | "CALL_IN_PROGRESS" | "RECENT_CALL" | "UNKNOWN";
+  simulated_call_duration_seconds?: number;
+  simulated_sim_swap_age_hours?: number;
+}
+
+export interface TelecomSignalResponse {
+  query_id: string;
+  msisdn: string;
+  carrier: string;
+  call_status: "IDLE" | "CALL_IN_PROGRESS" | "RECENT_CALL" | "UNKNOWN" | string;
+  call_duration_seconds: number;
+  sim_swap_status: string;
+  sim_swap_age_hours?: number | null;
+  scam_signal_score: number;
+  is_high_coercion_risk: boolean;
+  coercion_indicators: string[];
+  advisory_action: string;
+  statutory_warning: string;
+  query_digest: string;
+  queried_at: string;
+}
+
+export interface FederatedMuleEntry {
+  entry_id: string;
+  installation_id: string;
+  entity_type: "BANK_ACCOUNT" | "MSISDN" | "NATIONAL_ID" | "PAYBILL_TILL" | string;
+  blinded_token: string;
+  cleartext_preview: string;
+  severity_tier: "SUSPECT_MULE" | "CORROBORATED_MULE" | "CONFIRMED_SYNDICATE_CONTROLLER" | string;
+  originating_bank_bic: string;
+  reason_code: string;
+  dossier_reference?: string | null;
+  status: "ACTIVE" | "CONTESTED" | "EXPUNGED" | string;
+  registered_by?: string | null;
+  registered_at: string;
+  expires_at?: string | null;
+}
+
+export interface QueryFederatedMuleResponse {
+  is_match: boolean;
+  blinded_token: string;
+  cleartext_preview: string;
+  entity_type: string;
+  severity_tier?: string | null;
+  originating_bank_bic?: string | null;
+  reason_code?: string | null;
+  dossier_reference?: string | null;
+  status: string;
+  registered_at?: string | null;
+  expires_at?: string | null;
+  recommended_action: string;
+}
+
+// Phase 14.3 Multi-Tiered Mule Tracing & Graph Cascade
+export interface MuleCascadeNode {
+  node_key: string;
+  tier_level: number;
+  tier_name: string;
+  bank_bic: string;
+  account_name?: string | null;
+  total_inflow: string;
+  total_outflow: string;
+  retained_balance_estimate: string;
+  velocity_minutes: number;
+  dispersion_ratio: number;
+  risk_score: number;
+  recommended_directive: string;
+  directive_status: string;
+  first_inflow_time?: string | null;
+  last_outflow_time?: string | null;
+}
+
+export interface MuleCascadeEdge {
+  edge_id: string;
+  source_node: string;
+  target_node: string;
+  amount: string;
+  currency: string;
+  timestamp: string;
+  payment_rail: string;
+  transaction_id: string;
+  hop_number: number;
+  transfer_delay_minutes: number;
+}
+
+export interface CascadeDirective {
+  directive_id: string;
+  node_key: string;
+  tier_level: number;
+  bank_bic: string;
+  is_internal: boolean;
+  directive_type: string;
+  target_amount: string;
+  currency: string;
+  status: "PENDING" | "EXECUTED" | "REJECTED" | string;
+  recommended_action: string;
+  executed_by?: string | null;
+  executed_at?: string | null;
+  justification?: string | null;
+  camt056_xml?: string | null;
+}
+
+export interface MuleCascadeTrace {
+  trace_id: string;
+  installation_id: string;
+  root_account: string;
+  root_transaction_id?: string | null;
+  root_fraud_amount: string;
+  currency: string;
+  max_depth_reached: number;
+  nodes: MuleCascadeNode[];
+  edges: MuleCascadeEdge[];
+  total_nodes_identified: number;
+  total_frozen_or_held_amount: string;
+  recovery_potential_ratio: number;
+  created_at: string;
+  status: string;
+  directives: CascadeDirective[];
+}
+
+export interface TriggerMuleCascadeTracePayload {
+  root_account: string;
+  root_fraud_amount: string | number;
+  currency?: string;
+  root_transaction_id?: string | null;
+  anchor_time?: string | null;
+  max_hops?: number;
+  time_window_hours?: number;
+  local_bank_bic?: string;
+  transfers?: Array<Record<string, unknown>>;
+  account_metadata?: Record<string, Record<string, unknown>>;
+}
+
+export interface ExecuteCascadeDirectivePayload {
+  directive_id: string;
+  action: "EXECUTE_LOCAL_HOLD" | "DISPATCH_CAMT056" | "REJECT";
+  justification?: string;
+}
+
+export interface ExecuteCascadeDirectiveResponse {
+  directive_id: string;
+  trace_id: string;
+  status: string;
+  action_taken: string;
+  camt056_xml?: string | null;
+  executed_at: string;
+}
+
+
+
 
 
 

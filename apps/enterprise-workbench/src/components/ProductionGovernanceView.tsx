@@ -16,6 +16,11 @@ import {
   ChampionChallengerRun,
   ForensicDossier,
   InflightPaymentEvaluation,
+  CopVerifyResponse,
+  TelecomSignalResponse,
+  FederatedMuleEntry,
+  QueryFederatedMuleResponse,
+  MuleCascadeTrace,
   Persona,
 } from "../types";
 
@@ -86,11 +91,151 @@ export const ProductionGovernanceView: React.FC<Props> = ({ currentPersona }) =>
   const [isoEvaluation, setIsoEvaluation] = useState<InflightPaymentEvaluation | null>(null);
   const [isoEvaluating, setIsoEvaluating] = useState(false);
 
+  // Phase 14.0 Confirmation of Payee (CoP) & Graduated Controls state
+  const [copIntendedName, setCopIntendedName] = useState("Patrick Mwangi");
+  const [copRegisteredName, setCopRegisteredName] = useState("Patrick Mwangi");
+  const [copAcctNumber, setCopAcctNumber] = useState("01100998877");
+  const [copAcctType, setCopAcctType] = useState<"PERSONAL" | "BUSINESS">("PERSONAL");
+  const [copRail, setCopRail] = useState("PESALINK");
+  const [copBic, setCopBic] = useState("KCBKKENA");
+  const [copVerifying, setCopVerifying] = useState(false);
+  const [copResult, setCopResult] = useState<CopVerifyResponse | null>(null);
+
+  const [enableGraduatedControls, setEnableGraduatedControls] = useState(true);
+  const [beneficiaryInflowRestriction, setBeneficiaryInflowRestriction] = useState(false);
+  const [debtorChannelAnomaly, setDebtorChannelAnomaly] = useState(false);
+  const [isoCopStatus, setIsoCopStatus] = useState<string>("NONE");
+
+  // Phase 14.1 Telecom Scam Signal state
+  const [telecomMsisdn, setTelecomMsisdn] = useState("+254712345678");
+  const [telecomCarrier, setTelecomCarrier] = useState<"SAFARICOM" | "AIRTEL" | "TELKOM">("SAFARICOM");
+  const [telecomSimulatedCall, setTelecomSimulatedCall] = useState<"IDLE" | "CALL_IN_PROGRESS" | "RECENT_CALL">("CALL_IN_PROGRESS");
+  const [telecomCallDuration, setTelecomCallDuration] = useState(320);
+  const [telecomSimSwapAge, setTelecomSimSwapAge] = useState<number | undefined>(undefined);
+  const [telecomQuerying, setTelecomQuerying] = useState(false);
+  const [telecomResult, setTelecomResult] = useState<TelecomSignalResponse | null>(null);
+  const [isoTelecomCallStatus, setIsoTelecomCallStatus] = useState<string>("NONE");
+  const [useParallelPipeline, setUseParallelPipeline] = useState<boolean>(true);
+
+  // Phase 14.2 Federated Mule Directory state
+  const [fedMuleEntries, setFedMuleEntries] = useState<FederatedMuleEntry[]>([]);
+  const [fedMuleQueryValue, setFedMuleQueryValue] = useState("01199922233");
+  const [fedMuleQueryType, setFedMuleQueryType] = useState<string>("BANK_ACCOUNT");
+  const [fedMuleQueryResult, setFedMuleQueryResult] = useState<QueryFederatedMuleResponse | null>(null);
+  const [fedMuleQuerying, setFedMuleQuerying] = useState(false);
+
+  // New mule enrollment form state
+  const [fedNewValue, setFedNewValue] = useState("");
+  const [fedNewType, setFedNewType] = useState<string>("BANK_ACCOUNT");
+  const [fedNewTier, setFedNewTier] = useState<string>("CORROBORATED_MULE");
+  const [fedNewBic, setFedNewBic] = useState("KCBKKENA");
+  const [fedNewReason, setFedNewReason] = useState("HIGH_VELOCITY_RAPID_CASHOUT");
+  const [fedRegistering, setFedRegistering] = useState(false);
+
+  // Phase 14.3 Multi-Tiered Mule Tracing & Graph Cascade state
+  const [muleTraces, setMuleTraces] = useState<MuleCascadeTrace[]>([]);
+  const [activeTrace, setActiveTrace] = useState<MuleCascadeTrace | null>(null);
+  const [traceRootAccount, setTraceRootAccount] = useState("01199887766");
+  const [traceRootAmount, setTraceRootAmount] = useState("500000");
+  const [traceRootTxId, setTraceRootTxId] = useState("TX-PESA-882299");
+  const [traceMaxHops, setTraceMaxHops] = useState(3);
+  const [traceRunning, setTraceRunning] = useState(false);
+  const [selectedXmlNotice, setSelectedXmlNotice] = useState<string | null>(null);
+
+  // Phase 15 Global Frontier Hardening State (Singapore Money Lock, Brazil BCB, India SIM Binding, BioCatch)
+  const [mlLockedBalance, setMlLockedBalance] = useState(450000.0);
+  const [mlAvailableBalance, setMlAvailableBalance] = useState(50000.0);
+  const [mlTotalBalance] = useState(500000.0);
+  const [mlDrainAttemptResult, setMlDrainAttemptResult] = useState<string | null>(null);
+  const [mlDigitalBlockedNotice, setMlDigitalBlockedNotice] = useState<string | null>(null);
+  const [mlBranchUnlockAmount, setMlBranchUnlockAmount] = useState("150000");
+  const [mlBranchOfficer, setMlBranchOfficer] = useState("teller-westlands-01");
+  const [mlBranchStation, setMlBranchStation] = useState("COUNTER-BR-04");
+  const [mlDualAuthorizer, setMlDualAuthorizer] = useState("manager-nairobi-02");
+  const [mlUnlockSuccessNotice, setMlUnlockSuccessNotice] = useState<string | null>(null);
+
+  // Precautionary Holds State (Brazil Bloqueio Cautelar)
+  const [precHoldsList, setPrecHoldsList] = useState<any[]>([
+    {
+      hold_id: "HOLD-BCB-9901",
+      tx_id: "TX-PIX-8822",
+      amount: 85000.0,
+      debtor: "ACC-VICTIM-01",
+      creditor: "ACC-MULE-TIER1",
+      state: "ACTIVE_HOLD_72H",
+      expires_in: "71h 45m",
+      reason: "Severe velocity anomaly & mule cascade pattern",
+    },
+    {
+      hold_id: "HOLD-BCB-9902",
+      tx_id: "TX-PIX-8845",
+      amount: 140000.0,
+      debtor: "ACC-VICTIM-02",
+      creditor: "ACC-MULE-TIER2",
+      state: "ACTIVE_HOLD_72H",
+      expires_in: "68h 12m",
+      reason: "BioCatch RAT linear trajectory detected",
+    },
+  ]);
+
+  // Biometrics & RAT Simulation State
+  const [bioSimRatLinear, setBioSimRatLinear] = useState(false);
+  const [bioSimMicroTremorLoss, setBioSimMicroTremorLoss] = useState(false);
+  const [bioSimActiveCall, setBioSimActiveCall] = useState(false);
+  const [bioSimHesitation, setBioSimHesitation] = useState(1200);
+  const [bioSimResult, setBioSimResult] = useState<any>(null);
+
+  // Phase 16 Global Frontier Complete Defenses State
+  const [ksActive, setKsActive] = useState(false);
+  const [ksRevokedCount] = useState(2);
+  const [ksNotice, setKsNotice] = useState<string | null>(null);
+  const [ksMaker, setKsMaker] = useState("teller-cbd-01");
+  const [ksChecker, setKsChecker] = useState("branch-mgr-02");
+  const [ksBranchCode] = useState("BR-NAIROBI-HQ");
+
+  const [srfBankCoolingFail, setSrfBankCoolingFail] = useState(true);
+  const [srfTelcoSpoofFail, setSrfTelcoSpoofFail] = useState(false);
+  const [srfAdjudicationResult, setSrfAdjudicationResult] = useState<any>(null);
+
+  const [safeAccounts] = useState<any[]>([
+    { id: "SAFE-1", payee: "ACC-LANDLORD-RENT", bic: "KCBKKENA", label: "Monthly Rent", cap: "1,000,000" },
+    { id: "SAFE-2", payee: "ACC-MOM-SAVINGS", bic: "EQBLKENA", label: "Mother Support", cap: "500,000" },
+  ]);
+  const [safeNonDesignatedAmount, setSafeNonDesignatedAmount] = useState("35000");
+  const [safeEvalResult, setSafeEvalResult] = useState<string | null>(null);
+
+  const [atmDelayedActive] = useState(true);
+  const [atmWithdrawalAttempt, setAtmWithdrawalAttempt] = useState<string | null>(null);
+
+  const [vpnToggle, setVpnToggle] = useState(false);
+  const [overseasToggle, setOverseasToggle] = useState(false);
+  const [ingressResult, setIngressResult] = useState<string | null>(null);
+
+  const [med2ClawbackResult] = useState<any>({
+    contestation_id: "MED2-CNT-8991A",
+    original_fraud: "100,000 BRL",
+    recovered_amount: "85,000 BRL (85%)",
+    status: "RESOLVED_7_DAY_WINDOW",
+    layers: [
+      { tier: "Tier 1 (Direct)", bic: "ITAU0001", hold: "20,000 BRL", status: "HOLD_PLACED_FULL" },
+      { tier: "Tier 2 (Split A)", bic: "BRAD0002", hold: "35,000 BRL", status: "HOLD_PLACED_FULL" },
+      { tier: "Tier 3 (Split B)", bic: "NUBK0003", hold: "30,000 BRL", status: "HOLD_PLACED_PARTIAL" },
+      { tier: "Tier 4 (Crypto)", bic: "BINANCE_GATE", hold: "0 BRL", status: "INSUFFICIENT_FUNDS" },
+    ],
+  });
+
+  const [ghElapsedMins, setGhElapsedMins] = useState(45);
+  const [ghReportResult, setGhReportResult] = useState<any>(null);
+
+  const [scameterInput, setScameterInput] = useState("0712345678");
+  const [scameterLookup, setScameterLookup] = useState<any>(null);
+  const [scameterWaiverSigned, setScameterWaiverSigned] = useState(false);
+
   const fetchData = async () => {
     setLoading(true);
     setError(null);
     try {
-      const [h, comps, vRuns, rels, susps, incs, drifts, pass, providers, qDrifts, ccRuns] = await Promise.all([
+      const [h, comps, vRuns, rels, susps, incs, drifts, pass, providers, qDrifts, ccRuns, fedMules, cascades] = await Promise.all([
         api.getSystemHealthOverview().catch(() => null),
         api.listGovernedComponents().catch(() => []),
         api.listValidationRuns().catch(() => []),
@@ -102,6 +247,8 @@ export const ProductionGovernanceView: React.FC<Props> = ({ currentPersona }) =>
         api.listAIProviders().catch(() => []),
         api.listQuantitativeDriftEvaluations().catch(() => []),
         api.listChampionChallengerRuns().catch(() => []),
+        api.listFederatedMules().catch(() => []),
+        api.listMuleCascadeTraces().catch(() => []),
       ]);
 
       setHealth(h);
@@ -115,6 +262,11 @@ export const ProductionGovernanceView: React.FC<Props> = ({ currentPersona }) =>
       setAiProviders(providers);
       setQuantDrifts(qDrifts);
       setChampionChallengerRuns(ccRuns);
+      setFedMuleEntries(fedMules);
+      setMuleTraces(cascades);
+      if (cascades && cascades.length > 0) {
+        setActiveTrace(cascades[0]);
+      }
 
       // Attempt to load default validation package
       try {
@@ -257,6 +409,47 @@ export const ProductionGovernanceView: React.FC<Props> = ({ currentPersona }) =>
     }
   };
 
+  const handleVerifyCop = async () => {
+    setCopVerifying(true);
+    try {
+      const res = await api.verifyConfirmationOfPayee({
+        intended_name: copIntendedName,
+        registered_name: copRegisteredName,
+        account_number: copAcctNumber,
+        account_type: copAcctType,
+        clearing_rail: copRail,
+        bank_bic: copBic,
+      });
+      setCopResult(res);
+      setIsoCopStatus(res.status);
+    } catch (err: any) {
+      alert(`Confirmation of Payee failed: ${err.message}`);
+    } finally {
+      setCopVerifying(false);
+    }
+  };
+
+  const handleQueryTelecom = async () => {
+    setTelecomQuerying(true);
+    try {
+      const res = await api.evaluateTelecomSignal({
+        msisdn: telecomMsisdn,
+        carrier: telecomCarrier,
+        simulated_call_status: telecomSimulatedCall !== "IDLE" ? telecomSimulatedCall : undefined,
+        simulated_call_duration_seconds: telecomCallDuration,
+        simulated_sim_swap_age_hours: telecomSimSwapAge,
+      });
+      setTelecomResult(res);
+      if (res.call_status === "CALL_IN_PROGRESS") {
+        setIsoTelecomCallStatus("CALL_IN_PROGRESS");
+      }
+    } catch (err: any) {
+      alert(`Telecom Query failed: ${err.message}`);
+    } finally {
+      setTelecomQuerying(false);
+    }
+  };
+
   const handleEvaluateInflightPayment = async () => {
     setIsoEvaluating(true);
     try {
@@ -268,17 +461,175 @@ export const ProductionGovernanceView: React.FC<Props> = ({ currentPersona }) =>
         debtor_name: "James Kariuki (Payer)",
         debtor_account: isoDebtorAcct,
         debtor_bic: "KCBKKENA",
-        creditor_name: "Kamau Enterprises (Mule)",
+        creditor_name: copIntendedName || "Kamau Enterprises (Mule)",
         creditor_account: isoCreditorAcct,
         creditor_bic: "EQBLKENA",
         remittance_narrative: isoNarrative,
         account_prior_transfers_count: 0,
+        cop_status: isoCopStatus !== "NONE" ? isoCopStatus : undefined,
+        cop_match_score: copResult?.match_score,
+        beneficiary_inflow_restriction: beneficiaryInflowRestriction,
+        debtor_channel_anomaly: debtorChannelAnomaly,
+        enable_graduated_controls: enableGraduatedControls,
+        telecom_call_status: isoTelecomCallStatus !== "NONE" ? isoTelecomCallStatus : undefined,
+        telecom_coercion_score: telecomResult?.scam_signal_score,
+        check_federated_mule_directory: true,
+        use_parallel_pipeline: useParallelPipeline,
+        sla_budget_ms: 45.0,
       });
       setIsoEvaluation(res);
     } catch (err: any) {
       alert(`Evaluation failed: ${err.message}`);
     } finally {
       setIsoEvaluating(false);
+    }
+  };
+
+  const handleQueryFederatedMule = async () => {
+    setFedMuleQuerying(true);
+    try {
+      const res = await api.queryFederatedMule({
+        value: fedMuleQueryValue,
+        entity_type: fedMuleQueryType,
+      });
+      setFedMuleQueryResult(res);
+    } catch (err: any) {
+      alert(`Federated Mule Query failed: ${err.message}`);
+    } finally {
+      setFedMuleQuerying(false);
+    }
+  };
+
+  const handleRegisterFederatedMule = async () => {
+    if (!fedNewValue.trim()) return;
+    setFedRegistering(true);
+    try {
+      const entry = await api.registerFederatedMule({
+        value: fedNewValue.trim(),
+        entity_type: fedNewType,
+        severity_tier: fedNewTier,
+        originating_bank_bic: fedNewBic,
+        reason_code: fedNewReason,
+      });
+      setFedMuleEntries((prev) => [entry, ...prev]);
+      setFedNewValue("");
+      alert(`Successfully enrolled blinded token into federated directory: ${entry.blinded_token.substring(0, 16)}...`);
+    } catch (err: any) {
+      alert(`Enrollment failed: ${err.message}`);
+    } finally {
+      setFedRegistering(false);
+    }
+  };
+
+  const handleTriggerMuleCascadeTrace = async () => {
+    if (!traceRootAccount.trim()) return;
+    setTraceRunning(true);
+    try {
+      const trace = await api.triggerMuleCascadeTrace({
+        root_account: traceRootAccount.trim(),
+        root_fraud_amount: traceRootAmount.trim(),
+        root_transaction_id: traceRootTxId.trim() || undefined,
+        max_hops: traceMaxHops,
+        local_bank_bic: "KCBKKENA",
+      });
+      setMuleTraces((prev) => [trace, ...prev]);
+      setActiveTrace(trace);
+      alert(`Mule Cascade Trace completed: ${trace.total_nodes_identified} nodes mapped across ${trace.max_depth_reached} hops. Recovery potential: ${(trace.recovery_potential_ratio * 100).toFixed(1)}%`);
+    } catch (err: any) {
+      alert(`Cascade Trace failed: ${err.message}`);
+    } finally {
+      setTraceRunning(false);
+    }
+  };
+
+  const handleExecuteDirective = async (
+    directiveId: string,
+    action: "EXECUTE_LOCAL_HOLD" | "DISPATCH_CAMT056" | "REJECT"
+  ) => {
+    if (!activeTrace) return;
+    try {
+      const res = await api.executeCascadeDirective(activeTrace.trace_id, {
+        directive_id: directiveId,
+        action,
+        justification: `Directive action executed by ${currentPersona.name}`,
+      });
+      const updated = await api.getMuleCascadeTrace(activeTrace.trace_id);
+      setActiveTrace(updated);
+      setMuleTraces((prev) => prev.map((t) => (t.trace_id === updated.trace_id ? updated : t)));
+
+      if (action === "DISPATCH_CAMT056" && res.camt056_xml) {
+        setSelectedXmlNotice(res.camt056_xml);
+      } else {
+        alert(`Directive ${directiveId} updated to ${res.status}`);
+      }
+    } catch (err: any) {
+      alert(`Failed to execute directive: ${err.message}`);
+    }
+  };
+
+  const handleSimulateDrainage = () => {
+    setMlDigitalBlockedNotice(null);
+    setMlDrainAttemptResult(
+      "BLOCKED by Singapore MAS Money Lock Policy: Attempted digital transfer of KES 120,000 exceeds liquid available balance of KES 50,000. Locked vault partition of KES 450,000 has zero digital transfer authorization."
+    );
+  };
+
+  const handleAttemptDigitalUnlock = () => {
+    setMlDrainAttemptResult(null);
+    setMlDigitalBlockedNotice(
+      "403 FORBIDDEN: Digital unlocking prohibited under MAS/ABS regulations. Account holder must attend an authorized bank branch counter with national photo ID or use physical ATM chip-and-PIN."
+    );
+  };
+
+  const handleBranchUnlock = () => {
+    const amt = parseFloat(mlBranchUnlockAmount) || 0;
+    if (amt <= 0 || amt > mlLockedBalance) return;
+    const newLocked = mlLockedBalance - amt;
+    const newAvail = mlAvailableBalance + amt;
+    setMlLockedBalance(newLocked);
+    setMlAvailableBalance(newAvail);
+    setMlUnlockSuccessNotice(
+      `SUCCESS: KES ${amt.toLocaleString()} unlocked at branch counter ${mlBranchStation} by Officer ${mlBranchOfficer} (Dual-authorized by ${mlDualAuthorizer}). Available liquid balance updated to KES ${newAvail.toLocaleString()}.`
+    );
+    setTimeout(() => setMlUnlockSuccessNotice(null), 8000);
+  };
+
+  const handleEscalateHold = (holdId: string) => {
+    setPrecHoldsList((prev) =>
+      prev.map((h) => {
+        if (h.hold_id === holdId) {
+          return { ...h, state: "ESCALATED_CLAWBACK_CAMT056" };
+        }
+        return h;
+      })
+    );
+    setSelectedXmlNotice(
+      `<?xml version="1.0" encoding="UTF-8"?>\n<Document xmlns="urn:iso:std:iso:20022:tech:xsd:camt.056.001.10">\n  <FIToFIPmtCxlReq>\n    <GrpHdr>\n      <MsgId>CAMT056-BCB-${holdId}</MsgId>\n      <NbOfTxs>1</NbOfTxs>\n    </GrpHdr>\n    <Undrlyg>\n      <TxInf>\n        <CxlId>CXL-${holdId}</CxlId>\n        <CxlRsnInf><Rsn><Cd>FRAD</Cd></Rsn><AddtlInf>BCB_BLOQUEIO_CAUTELAR_CONFIRMED_FRAUD</AddtlInf></CxlRsnInf>\n      </TxInf>\n    </Undrlyg>\n  </FIToFIPmtCxlReq>\n</Document>`
+    );
+  };
+
+  const handleEvaluateBiometrics = () => {
+    if (bioSimRatLinear || bioSimMicroTremorLoss) {
+      setBioSimResult({
+        verdict: "SUSPECTED_REMOTE_ACCESS_TROJAN",
+        score: 0.98,
+        action: "TERMINATE_SESSION_STEP_UP_IN_PERSON",
+        reason: "Cursor trajectory displays mathematical linearity (R² = 0.99) and loss of physiological micro-tremors (< 0.2 Hz), indicative of AnyDesk/TeamViewer session takeover.",
+      });
+    } else if (bioSimActiveCall && bioSimHesitation >= 10000) {
+      setBioSimResult({
+        verdict: "SUSPECTED_COACHED_VICTIM",
+        score: 0.85,
+        action: "INTERRUPT_WITH_COACHING_WARNING_MODAL",
+        reason: "Active phone call detected during payment entry with extreme cognitive hesitation (16,000 ms), indicative of voice phishing coercion.",
+      });
+    } else {
+      setBioSimResult({
+        verdict: "CLEAN_HUMAN",
+        score: 0.05,
+        action: "PROCEED",
+        reason: "Normal physiological bezier curvature and natural 9.5 Hz hand micro-tremors verified.",
+      });
     }
   };
 
@@ -380,7 +731,7 @@ export const ProductionGovernanceView: React.FC<Props> = ({ currentPersona }) =>
             { id: "drift", label: `Drift Monitoring (${driftRecords.length})` },
             { id: "passports", label: `Evidence Passports (${passports.length})` },
             { id: "modelrisk", label: `Model Risk & PSI (${quantDrifts.length})` },
-            { id: "forensics_iso", label: "Court Dossiers & ISO 20022" },
+            { id: "forensics_iso", label: "CoP, ISO 20022 & Evidence Dossiers" },
             { id: "aiproviders", label: `AI Providers (${aiProviders.length})` },
             { id: "readiness", label: "Bank Validation Package" },
           ].map((tab) => (
@@ -1204,7 +1555,7 @@ export const ProductionGovernanceView: React.FC<Props> = ({ currentPersona }) =>
                 <div key={prov.provider_id} className="p-4 rounded-lg bg-slate-900 border border-slate-800 space-y-2">
                   <div className="flex items-center justify-between">
                     <span className="text-base font-bold text-white">{prov.provider_name}</span>
-                    {getStatusBadge(prov.is_approved ? "APPROVED" : "REJECTED")}
+                    {getStatusBadge(prov.review_status === "PENDING_INDEPENDENT_REVIEW" ? "PENDING REVIEW" : (prov.is_approved ? "APPROVED" : "REJECTED"))}
                   </div>
                   <div className="text-xs font-mono text-indigo-300">
                     {prov.model_identifier} (v{prov.model_version})
@@ -1230,9 +1581,9 @@ export const ProductionGovernanceView: React.FC<Props> = ({ currentPersona }) =>
           <div className="space-y-8">
             {/* Header */}
             <div>
-              <h2 className="text-lg font-semibold text-white">Court-Ready Forensic Evidence Dossiers & ISO 20022 Core Banking Clearing</h2>
+              <h2 className="text-lg font-semibold text-white">Forensic Evidence Dossiers & Shadow ISO 20022 Clearing Risk</h2>
               <p className="text-xs text-slate-400">
-                Judicial admissibility packages under Section 106B of the Kenya Evidence Act and sub-100ms in-flight payment risk scoring.
+                Admissibility packages under Section 106B of the Kenya Evidence Act and shadow in-flight payment advisory risk scoring.
               </p>
             </div>
 
@@ -1242,10 +1593,10 @@ export const ProductionGovernanceView: React.FC<Props> = ({ currentPersona }) =>
               <div className="p-5 rounded-lg bg-slate-900 border border-slate-800 space-y-4">
                 <div className="border-b border-slate-800 pb-3">
                   <h3 className="text-sm font-bold text-white flex items-center">
-                    <span className="mr-2">⚖️</span> Section 106B Court Dossier Compiler
+                    <span className="mr-2">⚖️</span> Forensic Evidence Dossier Compiler
                   </h3>
                   <p className="text-xs text-slate-400 mt-1">
-                    Compile an immutable, tamper-evident judicial evidence package with chain of custody and sworn statutory declaration.
+                    Compile an immutable, tamper-evident judicial evidence package with chain of custody and provenance verification.
                   </p>
                 </div>
 
@@ -1302,7 +1653,7 @@ export const ProductionGovernanceView: React.FC<Props> = ({ currentPersona }) =>
                     onClick={handleCreateDossier}
                     className="w-full py-2 bg-indigo-600 hover:bg-indigo-500 font-semibold text-white rounded transition shadow-sm"
                   >
-                    Compile Court-Ready Forensic Dossier
+                    Compile Draft Evidence Dossier (Uncertified)
                   </button>
                 </div>
 
@@ -1320,8 +1671,12 @@ export const ProductionGovernanceView: React.FC<Props> = ({ currentPersona }) =>
                             TAMPER-EVIDENT HASH
                           </span>
                         )}
-                        <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-300 font-mono">
-                          {activeDossier.status}
+                        <span className={`px-2 py-0.5 rounded font-mono ${
+                          activeDossier.status === "DRAFT_UNVERIFIED"
+                            ? "bg-amber-950 text-amber-300 border border-amber-700 font-bold"
+                            : "bg-slate-800 text-slate-300"
+                        }`}>
+                          {activeDossier.status === "DRAFT_UNVERIFIED" ? "DRAFT UNVERIFIED FORENSIC DOSSIER" : activeDossier.status}
                         </span>
                       </div>
                     </div>
@@ -1368,21 +1723,290 @@ export const ProductionGovernanceView: React.FC<Props> = ({ currentPersona }) =>
                         rel="noreferrer"
                         className="px-3 py-1 bg-indigo-700 hover:bg-indigo-600 text-white rounded font-medium transition text-center"
                       >
-                        Export Court Dossier (HTML)
+                        Export Draft Dossier (HTML)
                       </a>
                     </div>
                   </div>
                 )}
               </div>
 
-              {/* Section 2: ISO 20022 In-Flight Real-Time Risk Simulator */}
+              {/* Section 2: Confirmation of Payee (CoP) Pre-Flight Verification */}
               <div className="p-5 rounded-lg bg-slate-900 border border-slate-800 space-y-4">
                 <div className="border-b border-slate-800 pb-3">
                   <h3 className="text-sm font-bold text-white flex items-center">
-                    <span className="mr-2">⚡</span> ISO 20022 In-Flight Risk Scoring (&lt;100ms)
+                    <span className="mr-2">🔍</span> Confirmation of Payee (CoP) Pre-Flight Directory
                   </h3>
                   <p className="text-xs text-slate-400 mt-1">
-                    Simulate real-time pacs.008 customer credit transfers across Kenya clearing rails before clearing window confirmation.
+                    Pre-clearing beneficiary name verification under UK PSR & CBK rules. Checks intended name against legal account holder.
+                  </p>
+                </div>
+
+                <div className="space-y-3 text-xs">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-slate-400 block mb-1">Intended Payee Name (Payer Input)</label>
+                      <input
+                        value={copIntendedName}
+                        onChange={(e) => setCopIntendedName(e.target.value)}
+                        className="w-full bg-slate-950 border border-slate-800 rounded px-2.5 py-1.5 text-white"
+                        placeholder="e.g. Patrick Mwangi"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block mb-1">Registered Account Holder</label>
+                      <input
+                        value={copRegisteredName}
+                        onChange={(e) => setCopRegisteredName(e.target.value)}
+                        className="w-full bg-slate-950 border border-slate-800 rounded px-2.5 py-1.5 text-white"
+                        placeholder="e.g. Patrick Kariuki Mwangi"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-4 gap-3">
+                    <div>
+                      <label className="text-slate-400 block mb-1">Account Number / MSISDN</label>
+                      <input
+                        value={copAcctNumber}
+                        onChange={(e) => setCopAcctNumber(e.target.value)}
+                        className="w-full bg-slate-950 border border-slate-800 rounded px-2.5 py-1.5 text-white font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block mb-1">Account Type</label>
+                      <select
+                        value={copAcctType}
+                        onChange={(e) => setCopAcctType(e.target.value as "PERSONAL" | "BUSINESS")}
+                        className="w-full bg-slate-950 border border-slate-800 rounded px-2.5 py-1.5 text-white"
+                      >
+                        <option value="PERSONAL">PERSONAL</option>
+                        <option value="BUSINESS">BUSINESS</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block mb-1">Clearing Rail</label>
+                      <select
+                        value={copRail}
+                        onChange={(e) => setCopRail(e.target.value)}
+                        className="w-full bg-slate-950 border border-slate-800 rounded px-2.5 py-1.5 text-white"
+                      >
+                        <option value="PESALINK">PESALINK</option>
+                        <option value="MPESA_B2C">M-PESA (Daraja)</option>
+                        <option value="KEPSS_RTGS">KEPSS (RTGS)</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block mb-1">Bank BIC</label>
+                      <input
+                        value={copBic}
+                        onChange={(e) => setCopBic(e.target.value)}
+                        className="w-full bg-slate-950 border border-slate-800 rounded px-2.5 py-1.5 text-white font-mono"
+                        placeholder="e.g. KCBKKENA"
+                      />
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={handleVerifyCop}
+                    disabled={copVerifying}
+                    className="w-full py-2 bg-indigo-600 hover:bg-indigo-500 font-semibold text-white rounded transition shadow-sm flex items-center justify-center"
+                  >
+                    {copVerifying ? "Verifying Directory..." : "Verify Payee (Confirmation of Payee)"}
+                  </button>
+                </div>
+
+                {copResult && (
+                  <div className="mt-4 p-4 rounded bg-slate-950 border border-slate-800 text-xs space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-white text-sm">CoP Verification Outcome</span>
+                      <span
+                        className={`px-2.5 py-1 rounded font-bold text-xs ${
+                          copResult.status === "MATCH"
+                            ? "bg-emerald-950 text-emerald-300 border border-emerald-700"
+                            : copResult.status === "CLOSE_MATCH"
+                            ? "bg-amber-950 text-amber-300 border border-amber-700"
+                            : "bg-rose-950 text-rose-300 border border-rose-700"
+                        }`}
+                      >
+                        {copResult.status}
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 text-slate-400">
+                      <div>
+                        Match Score: <strong className="text-white">{(copResult.match_score * 100).toFixed(1)}%</strong>
+                      </div>
+                      <div>
+                        Reason: <strong className="text-white font-mono text-[11px]">{copResult.reason_code}</strong>
+                      </div>
+                    </div>
+
+                    {copResult.suggested_name && (
+                      <div className="p-2 rounded bg-amber-950/60 border border-amber-800/80 text-amber-200">
+                        Did you mean: <strong className="text-white">{copResult.suggested_name}</strong>?
+                      </div>
+                    )}
+
+                    <div className="p-2.5 rounded bg-slate-900 text-slate-200 border border-slate-800 leading-relaxed">
+                      {copResult.advisory_message}
+                    </div>
+
+                    <div className="pt-2 border-t border-slate-800 text-[10px] text-slate-500 font-mono break-all">
+                      Digest: {copResult.inquiry_digest}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Section 3: Telecom "Scam Signal" Live Carrier Telemetry (GSMA / Safaricom / Airtel) */}
+              <div className="p-5 rounded-lg bg-slate-900 border border-slate-800 space-y-4">
+                <div className="border-b border-slate-800 pb-3">
+                  <h3 className="text-sm font-bold text-white flex items-center">
+                    <span className="mr-2">📡</span> Telecom "Scam Signal" Carrier Gateway (GSMA Open Gateway)
+                  </h3>
+                  <p className="text-xs text-slate-400 mt-1">
+                    Direct telco network telemetry from Safaricom / Airtel to detect real-time telephone coaching, imposter calls, and SIM swaps prior to instant clearing.
+                  </p>
+                </div>
+
+                <div className="space-y-3 text-xs">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-slate-400 block mb-1">Carrier Network</label>
+                      <select
+                        value={telecomCarrier}
+                        onChange={(e) => setTelecomCarrier(e.target.value as any)}
+                        className="w-full bg-slate-950 border border-slate-800 rounded px-2.5 py-1.5 text-white"
+                      >
+                        <option value="SAFARICOM">Safaricom PLC (Kenya)</option>
+                        <option value="AIRTEL">Airtel Kenya</option>
+                        <option value="TELKOM">Telkom Kenya</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block mb-1">Target MSISDN (Mobile Number)</label>
+                      <input
+                        value={telecomMsisdn}
+                        onChange={(e) => setTelecomMsisdn(e.target.value)}
+                        className="w-full bg-slate-950 border border-slate-800 rounded px-2.5 py-1.5 text-white font-mono"
+                        placeholder="+254712345678"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-3">
+                    <div>
+                      <label className="text-slate-400 block mb-1">Simulated Call State</label>
+                      <select
+                        value={telecomSimulatedCall}
+                        onChange={(e) => setTelecomSimulatedCall(e.target.value as any)}
+                        className="w-full bg-slate-950 border border-slate-800 rounded px-2.5 py-1.5 text-white"
+                      >
+                        <option value="CALL_IN_PROGRESS">Active Voice Call In Progress</option>
+                        <option value="RECENT_CALL">Call Terminated &lt;5m Ago</option>
+                        <option value="IDLE">Idle (No Call)</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block mb-1">Call Duration (Seconds)</label>
+                      <input
+                        type="number"
+                        value={telecomCallDuration}
+                        onChange={(e) => setTelecomCallDuration(parseInt(e.target.value) || 0)}
+                        className="w-full bg-slate-950 border border-slate-800 rounded px-2.5 py-1.5 text-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block mb-1">SIM Swap Age (Hours, Opt)</label>
+                      <input
+                        type="number"
+                        value={telecomSimSwapAge ?? ""}
+                        onChange={(e) => setTelecomSimSwapAge(e.target.value ? parseFloat(e.target.value) : undefined)}
+                        placeholder="e.g. 12 (within 24h)"
+                        className="w-full bg-slate-950 border border-slate-800 rounded px-2.5 py-1.5 text-white"
+                      />
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={handleQueryTelecom}
+                    disabled={telecomQuerying}
+                    className="w-full py-2 bg-purple-600 hover:bg-purple-500 font-semibold text-white rounded transition shadow-sm flex items-center justify-center"
+                  >
+                    {telecomQuerying ? "Querying Carrier Gateway..." : "Query Telecom Scam Signal Telemetry"}
+                  </button>
+                </div>
+
+                {telecomResult && (
+                  <div className="mt-4 p-4 rounded bg-slate-950 border border-slate-800 text-xs space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center space-x-2">
+                        <span className="font-bold text-white text-sm">Carrier Telemetry</span>
+                        {telecomResult.call_status === "CALL_IN_PROGRESS" && (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-rose-600 text-white animate-pulse">
+                            🔴 LIVE CALL IN PROGRESS ({telecomResult.call_duration_seconds}s)
+                          </span>
+                        )}
+                      </div>
+                      <span
+                        className={`px-2.5 py-1 rounded font-bold text-xs ${
+                          telecomResult.is_high_coercion_risk
+                            ? "bg-rose-950 text-rose-300 border border-rose-700"
+                            : "bg-emerald-950 text-emerald-300 border border-emerald-700"
+                        }`}
+                      >
+                        {telecomResult.is_high_coercion_risk ? "HIGH COERCION RISK" : "NORMAL TELECOM PROFILE"}
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-2 text-slate-400">
+                      <div>
+                        Coercion Score: <strong className="text-white">{(telecomResult.scam_signal_score * 100).toFixed(1)}%</strong>
+                      </div>
+                      <div>
+                        SIM Status: <strong className="text-white">{telecomResult.sim_swap_status}</strong>
+                      </div>
+                      <div>
+                        Carrier: <strong className="text-white">{telecomResult.carrier}</strong>
+                      </div>
+                    </div>
+
+                    {telecomResult.coercion_indicators.length > 0 && (
+                      <div>
+                        <span className="text-slate-400 block mb-1">Carrier Telemetry Indicators:</span>
+                        <ul className="list-disc list-inside space-y-0.5 text-amber-300">
+                          {telecomResult.coercion_indicators.map((ind, idx) => (
+                            <li key={idx}>{ind}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+
+                    {telecomResult.statutory_warning && (
+                      <div className="p-2.5 rounded bg-rose-950/60 border border-rose-800/80 text-rose-200 leading-relaxed">
+                        {telecomResult.statutory_warning}
+                      </div>
+                    )}
+
+                    <div className="p-2.5 rounded bg-slate-900 text-slate-200 border border-slate-800">
+                      <strong>Advisory Action:</strong> {telecomResult.advisory_action}
+                    </div>
+
+                    <div className="pt-2 border-t border-slate-800 text-[10px] text-slate-500 font-mono break-all">
+                      Digest: {telecomResult.query_digest}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Section 4: ISO 20022 In-Flight Real-Time Risk & Graduated Controls */}
+              <div className="p-5 rounded-lg bg-slate-900 border border-slate-800 space-y-4">
+                <div className="border-b border-slate-800 pb-3">
+                  <h3 className="text-sm font-bold text-white flex items-center">
+                    <span className="mr-2">⚡</span> Shadow Advisory Payment Risk & Graduated Controls (PBOC / Swiss SIC5)
+                  </h3>
+                  <p className="text-xs text-slate-400 mt-1">
+                    Simulate shadow pacs.008 customer credit transfers across Kenya clearing rails. Toroka provides advisory risk scoring only and sends no clearing instructions.
                   </p>
                 </div>
 
@@ -1440,12 +2064,84 @@ export const ProductionGovernanceView: React.FC<Props> = ({ currentPersona }) =>
                     />
                   </div>
 
+                  {/* Graduated Controls & CoP Linking Options */}
+                  <div className="p-3 rounded bg-slate-950 border border-slate-800 space-y-2">
+                    <span className="font-semibold text-slate-300 block mb-1">Graduated Control Flags (PBOC Art. 18 / UK PSR)</span>
+                    <div className="grid grid-cols-2 gap-2 text-[11px]">
+                      <label className="flex items-center space-x-2 text-slate-300 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={enableGraduatedControls}
+                          onChange={(e) => setEnableGraduatedControls(e.target.checked)}
+                          className="rounded border-slate-800"
+                        />
+                        <span>Enable 15m Reversible Escrow Delay</span>
+                      </label>
+                      <label className="flex items-center space-x-2 text-slate-300 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={beneficiaryInflowRestriction}
+                          onChange={(e) => setBeneficiaryInflowRestriction(e.target.checked)}
+                          className="rounded border-slate-800"
+                        />
+                        <span>Beneficiary Inflow-Only Hold</span>
+                      </label>
+                      <label className="flex items-center space-x-2 text-slate-300 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={debtorChannelAnomaly}
+                          onChange={(e) => setDebtorChannelAnomaly(e.target.checked)}
+                          className="rounded border-slate-800"
+                        />
+                        <span>Debtor Non-Counter Restriction</span>
+                      </label>
+                      <div className="flex items-center space-x-2">
+                        <span className="text-slate-400">CoP Flag:</span>
+                        <select
+                          value={isoCopStatus}
+                          onChange={(e) => setIsoCopStatus(e.target.value)}
+                          className="bg-slate-900 border border-slate-800 rounded px-1.5 py-0.5 text-white text-[11px]"
+                        >
+                          <option value="NONE">NONE (Unchecked)</option>
+                          <option value="MATCH">MATCH (Verified)</option>
+                          <option value="CLOSE_MATCH">CLOSE_MATCH (Review)</option>
+                          <option value="NO_MATCH">NO_MATCH (Impersonation)</option>
+                        </select>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <span className="text-slate-400">Live Call:</span>
+                        <select
+                          value={isoTelecomCallStatus}
+                          onChange={(e) => setIsoTelecomCallStatus(e.target.value)}
+                          className="bg-slate-900 border border-slate-800 rounded px-1.5 py-0.5 text-white text-[11px]"
+                        >
+                          <option value="NONE">NONE (Unchecked)</option>
+                          <option value="CALL_IN_PROGRESS">Active Call (Coaching)</option>
+                          <option value="RECENT_CALL">Recent Call (&lt;5m)</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between pt-2 border-t border-slate-800/80">
+                      <label className="flex items-center space-x-2 text-[11px] text-slate-300 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={useParallelPipeline}
+                          onChange={(e) => setUseParallelPipeline(e.target.checked)}
+                          className="rounded border-slate-700 bg-slate-900 text-indigo-600 focus:ring-0"
+                        />
+                        <span className="font-semibold text-indigo-300">Swiss SIC5 Parallel Pipeline (&lt;45ms SLA)</span>
+                      </label>
+                      <span className="text-[10px] text-slate-500 font-mono">Concurrent CoP + Telco + Mules</span>
+                    </div>
+                  </div>
+
                   <button
                     onClick={handleEvaluateInflightPayment}
                     disabled={isoEvaluating}
                     className="w-full py-2 bg-emerald-600 hover:bg-emerald-500 font-semibold text-white rounded transition shadow-sm flex items-center justify-center"
                   >
-                    {isoEvaluating ? "Evaluating in &lt;100ms..." : "Evaluate In-Flight Clearing Decision"}
+                    {isoEvaluating ? "Evaluating in &lt;45ms..." : "Evaluate In-Flight Clearing Decision"}
                   </button>
                 </div>
 
@@ -1458,10 +2154,16 @@ export const ProductionGovernanceView: React.FC<Props> = ({ currentPersona }) =>
                           className={`px-2.5 py-1 rounded font-bold text-xs ${
                             isoEvaluation.decision === "ALLOW"
                               ? "bg-emerald-950 text-emerald-300 border border-emerald-700"
-                              : isoEvaluation.decision === "STEP_UP_AUTH"
-                              ? "bg-amber-950 text-amber-300 border border-amber-700"
-                              : isoEvaluation.decision === "QUARANTINE_HOLD"
+                              : isoEvaluation.decision === "DELAY_SETTLEMENT_15M"
+                              ? "bg-purple-950 text-purple-300 border border-purple-700"
+                              : isoEvaluation.decision === "INFLOW_ONLY"
                               ? "bg-orange-950 text-orange-300 border border-orange-700"
+                              : isoEvaluation.decision === "RESTRICT_NON_COUNTER"
+                              ? "bg-amber-950 text-amber-300 border border-amber-700"
+                              : isoEvaluation.decision === "STEP_UP_AUTH"
+                              ? "bg-blue-950 text-blue-300 border border-blue-700"
+                              : isoEvaluation.decision === "QUARANTINE_HOLD"
+                              ? "bg-yellow-950 text-yellow-300 border border-yellow-700"
                               : "bg-rose-950 text-rose-300 border border-rose-700"
                           }`}
                         >
@@ -1472,6 +2174,55 @@ export const ProductionGovernanceView: React.FC<Props> = ({ currentPersona }) =>
                         </span>
                       </div>
                     </div>
+
+                    {isoEvaluation.is_parallel_pipeline && (
+                      <div className="p-3 rounded bg-slate-900 border border-indigo-900/50 space-y-2 text-xs">
+                        <div className="flex items-center justify-between">
+                          <span className="font-bold text-indigo-300 flex items-center">
+                            <span className="mr-1.5">⚡</span> Swiss SIC5 Parallel Pipeline Telemetry
+                          </span>
+                          <div className="flex items-center space-x-2">
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-semibold ${
+                              isoEvaluation.is_sla_compliant
+                                ? "bg-emerald-950 text-emerald-300 border border-emerald-700"
+                                : "bg-rose-950 text-rose-300 border border-rose-700"
+                            }`}>
+                              {isoEvaluation.is_sla_compliant ? "SLA COMPLIANT (<45ms)" : "SLA BREACHED"}
+                            </span>
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-semibold ${
+                              isoEvaluation.circuit_breaker_tripped
+                                ? "bg-amber-950 text-amber-300 border border-amber-700"
+                                : "bg-slate-800 text-slate-300"
+                            }`}>
+                              {isoEvaluation.circuit_breaker_tripped ? "CIRCUIT BREAKER TRIPPED" : "CIRCUIT BREAKER HEALTHY"}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1 text-[11px] font-mono">
+                          <div className="p-1.5 bg-slate-950 rounded border border-slate-800">
+                            <div className="text-slate-400 text-[10px]">CoP Feed</div>
+                            <div className="text-white font-bold">{isoEvaluation.cop_latency_ms?.toFixed(1) ?? "0.0"} ms</div>
+                            <div className="text-[9px] text-emerald-400">{isoEvaluation.feed_statuses?.["cop"] || "SUCCESS"}</div>
+                          </div>
+                          <div className="p-1.5 bg-slate-950 rounded border border-slate-800">
+                            <div className="text-slate-400 text-[10px]">Telecom Feed</div>
+                            <div className="text-white font-bold">{isoEvaluation.telecom_latency_ms?.toFixed(1) ?? "0.0"} ms</div>
+                            <div className="text-[9px] text-emerald-400">{isoEvaluation.feed_statuses?.["telecom"] || "SUCCESS"}</div>
+                          </div>
+                          <div className="p-1.5 bg-slate-950 rounded border border-slate-800">
+                            <div className="text-slate-400 text-[10px]">Mule Directory</div>
+                            <div className="text-white font-bold">{isoEvaluation.federated_mule_latency_ms?.toFixed(1) ?? "0.0"} ms</div>
+                            <div className="text-[9px] text-emerald-400">{isoEvaluation.feed_statuses?.["federated_mule"] || "SUCCESS"}</div>
+                          </div>
+                          <div className="p-1.5 bg-slate-950 rounded border border-slate-800">
+                            <div className="text-slate-400 text-[10px]">Behavioral / Model</div>
+                            <div className="text-white font-bold">{isoEvaluation.behavioral_latency_ms?.toFixed(1) ?? "0.0"} ms</div>
+                            <div className="text-[9px] text-emerald-400">{isoEvaluation.feed_statuses?.["behavioral"] || "SUCCESS"}</div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
 
                     <div className="grid grid-cols-2 gap-2 text-slate-400">
                       <div>
@@ -1489,6 +2240,30 @@ export const ProductionGovernanceView: React.FC<Props> = ({ currentPersona }) =>
                       </div>
                     </div>
 
+                    {isoEvaluation.is_telecom_coerced && (
+                      <div className="p-2.5 rounded bg-rose-950/80 border border-rose-700 text-rose-200 flex items-center space-x-2">
+                        <span className="text-base animate-pulse">📞</span>
+                        <div>
+                          <strong className="text-white block font-semibold">Active Telephone Coaching / ATO In Progress</strong>
+                          <span className="text-[11px] text-rose-300">
+                            Debtor is engaged on an active voice call during payment authorization. Reversible 15-minute escrow hold enforced.
+                          </span>
+                        </div>
+                      </div>
+                    )}
+
+                    {isoEvaluation.is_federated_mule && (
+                      <div className="p-2.5 rounded bg-rose-950/90 border border-rose-600 text-rose-200 flex items-center space-x-2">
+                        <span className="text-base">⛔</span>
+                        <div>
+                          <strong className="text-white block font-semibold">Federated Interbank Blacklist Hit (PBOC Art. 21 / US EWS)</strong>
+                          <span className="text-[11px] text-rose-300">
+                            Creditor account matches a {isoEvaluation.federated_mule_tier || "CORROBORATED MULE"} recorded across participant institutions. Outbound settlement block enforced.
+                          </span>
+                        </div>
+                      </div>
+                    )}
+
                     {isoEvaluation.triggered_rules.length > 0 && (
                       <div>
                         <span className="text-slate-400 block mb-1">Triggered Risk Rules:</span>
@@ -1501,6 +2276,1270 @@ export const ProductionGovernanceView: React.FC<Props> = ({ currentPersona }) =>
                     )}
                   </div>
                 )}
+              </div>
+
+              {/* Section 5: Federated Mule Directory & Hash-Linked Interbank Blacklist */}
+              <div className="p-5 rounded-lg bg-slate-900 border border-slate-800 space-y-4">
+                <div className="border-b border-slate-800 pb-3 flex items-center justify-between">
+                  <div>
+                    <h3 className="text-sm font-bold text-white flex items-center">
+                      <span className="mr-2">🛡️</span> Federated Mule Directory & Hash-Linked Interbank Blacklist
+                    </h3>
+                    <p className="text-xs text-slate-400 mt-1">
+                      Zero-knowledge blinded token queries (PBOC Art. 21 / US EWS / Swiss SMPC). Cross-institution matching without exposing confidential customer lists.
+                    </p>
+                  </div>
+                  <span className="px-2.5 py-1 rounded bg-indigo-950 text-indigo-300 border border-indigo-700 font-mono text-[11px]">
+                    {fedMuleEntries.length} Federated Records
+                  </span>
+                </div>
+
+                {/* Query Tool */}
+                <div className="p-3 rounded bg-slate-950 border border-slate-800 space-y-3 text-xs">
+                  <span className="font-semibold text-slate-300 block">Blinded Directory Lookup</span>
+                  <div className="grid grid-cols-3 gap-3">
+                    <div>
+                      <label className="text-slate-400 block mb-1">Entity Type</label>
+                      <select
+                        value={fedMuleQueryType}
+                        onChange={(e) => setFedMuleQueryType(e.target.value)}
+                        className="w-full bg-slate-900 border border-slate-800 rounded px-2.5 py-1.5 text-white"
+                      >
+                        <option value="BANK_ACCOUNT">Bank Account</option>
+                        <option value="MSISDN">Mobile MSISDN</option>
+                        <option value="NATIONAL_ID">National ID</option>
+                        <option value="PAYBILL_TILL">Paybill / Till</option>
+                      </select>
+                    </div>
+                    <div className="col-span-2">
+                      <label className="text-slate-400 block mb-1">Identifier (Cleartext or Blinded Token)</label>
+                      <div className="flex space-x-2">
+                        <input
+                          value={fedMuleQueryValue}
+                          onChange={(e) => setFedMuleQueryValue(e.target.value)}
+                          className="flex-1 bg-slate-900 border border-slate-800 rounded px-2.5 py-1.5 text-white font-mono"
+                          placeholder="e.g. 01199922233 or +254711..."
+                        />
+                        <button
+                          onClick={handleQueryFederatedMule}
+                          disabled={fedMuleQuerying}
+                          className="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-500 font-semibold text-white rounded transition"
+                        >
+                          {fedMuleQuerying ? "Querying..." : "Check Blacklist"}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {fedMuleQueryResult && (
+                    <div className={`p-3 rounded border text-xs space-y-2 ${
+                      fedMuleQueryResult.is_match
+                        ? "bg-rose-950/70 border-rose-700 text-rose-200"
+                        : "bg-emerald-950/70 border-emerald-700 text-emerald-200"
+                    }`}>
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-sm">
+                          {fedMuleQueryResult.is_match ? "⛔ BLACKLIST MATCH FOUND" : "✅ CLEAN IDENTIFIER"}
+                        </span>
+                        <span className="font-mono text-[10px] text-slate-400">
+                          Token: {fedMuleQueryResult.blinded_token.substring(0, 16)}...
+                        </span>
+                      </div>
+                      {fedMuleQueryResult.is_match && (
+                        <div className="grid grid-cols-3 gap-2 pt-1 border-t border-rose-800/60 text-slate-300">
+                          <div>Severity: <strong className="text-white">{fedMuleQueryResult.severity_tier}</strong></div>
+                          <div>Origin Bank: <strong className="text-white">{fedMuleQueryResult.originating_bank_bic || "N/A"}</strong></div>
+                          <div>Reason: <strong className="text-white font-mono text-[11px]">{fedMuleQueryResult.reason_code}</strong></div>
+                        </div>
+                      )}
+                      <div className="text-[11px] leading-relaxed">
+                        {fedMuleQueryResult.recommended_action}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Directory Table */}
+                <div className="overflow-x-auto text-xs">
+                  <table className="w-full text-left text-slate-300">
+                    <thead className="bg-slate-950 text-slate-400 border-b border-slate-800">
+                      <tr>
+                        <th className="p-2.5">Masked Preview</th>
+                        <th className="p-2.5">Type</th>
+                        <th className="p-2.5">Severity Tier</th>
+                        <th className="p-2.5">Originating BIC</th>
+                        <th className="p-2.5">Reason Code</th>
+                        <th className="p-2.5">Blinded Token</th>
+                        <th className="p-2.5">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800/60 font-mono text-[11px]">
+                      {fedMuleEntries.slice(0, 8).map((m) => (
+                        <tr key={m.entry_id} className="hover:bg-slate-950/50 transition">
+                          <td className="p-2.5 text-white font-semibold">{m.cleartext_preview}</td>
+                          <td className="p-2.5 text-slate-400">{m.entity_type}</td>
+                          <td className="p-2.5">
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                              m.severity_tier === "CONFIRMED_SYNDICATE_CONTROLLER"
+                                ? "bg-rose-950 text-rose-300 border border-rose-700"
+                                : m.severity_tier === "CORROBORATED_MULE"
+                                ? "bg-amber-950 text-amber-300 border border-amber-700"
+                                : "bg-blue-950 text-blue-300 border border-blue-700"
+                            }`}>
+                              {m.severity_tier}
+                            </span>
+                          </td>
+                          <td className="p-2.5 text-indigo-300">{m.originating_bank_bic || "LOCAL"}</td>
+                          <td className="p-2.5 text-slate-300">{m.reason_code}</td>
+                          <td className="p-2.5 text-slate-500">{m.blinded_token.substring(0, 12)}...</td>
+                          <td className="p-2.5">
+                            <span className={`px-1.5 py-0.5 rounded text-[10px] ${
+                              m.status === "ACTIVE" ? "bg-emerald-950 text-emerald-300" : "bg-slate-800 text-slate-400"
+                            }`}>
+                              {m.status}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                      {fedMuleEntries.length === 0 && (
+                        <tr>
+                          <td colSpan={7} className="p-4 text-center text-slate-500 font-sans">
+                            No federated mule records enrolled yet.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Enrollment Drawer */}
+                <div className="p-3 rounded bg-slate-950 border border-slate-800 space-y-3 text-xs">
+                  <span className="font-semibold text-slate-300 block">Enroll Suspect / Corroborated Entity</span>
+                  <div className="grid grid-cols-4 gap-3">
+                    <div>
+                      <label className="text-slate-400 block mb-1">Entity Type</label>
+                      <select
+                        value={fedNewType}
+                        onChange={(e) => setFedNewType(e.target.value)}
+                        className="w-full bg-slate-900 border border-slate-800 rounded px-2.5 py-1.5 text-white"
+                      >
+                        <option value="BANK_ACCOUNT">Bank Account</option>
+                        <option value="MSISDN">Mobile MSISDN</option>
+                        <option value="NATIONAL_ID">National ID</option>
+                        <option value="PAYBILL_TILL">Paybill / Till</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block mb-1">Severity Tier</label>
+                      <select
+                        value={fedNewTier}
+                        onChange={(e) => setFedNewTier(e.target.value)}
+                        className="w-full bg-slate-900 border border-slate-800 rounded px-2.5 py-1.5 text-white"
+                      >
+                        <option value="CORROBORATED_MULE">CORROBORATED MULE</option>
+                        <option value="CONFIRMED_SYNDICATE_CONTROLLER">SYNDICATE CONTROLLER</option>
+                        <option value="SUSPECT_MULE">SUSPECT MULE</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block mb-1">Originating BIC</label>
+                      <input
+                        value={fedNewBic}
+                        onChange={(e) => setFedNewBic(e.target.value)}
+                        className="w-full bg-slate-900 border border-slate-800 rounded px-2.5 py-1.5 text-white font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block mb-1">Reason Code</label>
+                      <select
+                        value={fedNewReason}
+                        onChange={(e) => setFedNewReason(e.target.value)}
+                        className="w-full bg-slate-900 border border-slate-800 rounded px-2.5 py-1.5 text-white"
+                      >
+                        <option value="HIGH_VELOCITY_RAPID_CASHOUT">HIGH_VELOCITY_RAPID_CASHOUT</option>
+                        <option value="DIRECT_FRAUD_VICTIM_TRANSFER">DIRECT_FRAUD_VICTIM_TRANSFER</option>
+                        <option value="CREDENTIAL_STUFFING_BURST">CREDENTIAL_STUFFING_BURST</option>
+                        <option value="MONEY_MULE_ADVERTISER">MONEY_MULE_ADVERTISER</option>
+                        <option value="ACCOUNT_TAKEOVER_RECIPIENT">ACCOUNT_TAKEOVER_RECIPIENT</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block mb-1">Raw Identifier</label>
+                      <div className="flex space-x-2">
+                        <input
+                          value={fedNewValue}
+                          onChange={(e) => setFedNewValue(e.target.value)}
+                          placeholder="e.g. 01100998877"
+                          className="flex-1 bg-slate-900 border border-slate-800 rounded px-2.5 py-1.5 text-white font-mono"
+                        />
+                        <button
+                          onClick={handleRegisterFederatedMule}
+                          disabled={fedRegistering}
+                          className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 font-semibold text-white rounded transition whitespace-nowrap"
+                        >
+                          {fedRegistering ? "Enrolling..." : "Enroll Blinded"}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Section 6: Multi-Tiered Mule Tracing & Graph Cascade (China PBOC / UK PSR Interbank Rapid Freezing) */}
+            <div className="p-5 rounded-lg bg-slate-900 border border-slate-800 space-y-6">
+              <div className="border-b border-slate-800 pb-3 flex flex-wrap items-center justify-between gap-4">
+                <div>
+                  <h3 className="text-sm font-bold text-white flex items-center">
+                    <span className="mr-2">🕸️</span> Multi-Tiered Mule Tracing & Graph Cascade (China PBOC / UK PSR Rapid Freeze)
+                  </h3>
+                  <p className="text-xs text-slate-400 mt-1">
+                    Causal breadth-first-search tracing of downstream money laundering hops (Tier 1 Direct Recipient &rarr; Tier 2 Layering Mules &rarr; Tier 3 Cashout Gateways) with automated interbank holds.
+                  </p>
+                </div>
+                <div className="flex items-center space-x-3">
+                  {muleTraces.length > 0 && (
+                    <div className="flex items-center space-x-2">
+                      <label className="text-slate-400 text-xs">History:</label>
+                      <select
+                        value={activeTrace?.trace_id || ""}
+                        onChange={(e) => {
+                          const found = muleTraces.find((t) => t.trace_id === e.target.value);
+                          if (found) setActiveTrace(found);
+                        }}
+                        className="bg-slate-950 border border-slate-800 rounded px-2 py-1 text-xs text-white font-mono"
+                      >
+                        {muleTraces.map((t) => (
+                          <option key={t.trace_id} value={t.trace_id}>
+                            {t.trace_id.substring(0, 10)}... ({t.root_account})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                  {activeTrace && (
+                    <div className="flex items-center space-x-3 bg-slate-950 px-3 py-1.5 rounded border border-slate-800 text-xs">
+                      <span className="text-slate-400">Trace: <span className="font-mono text-white">{activeTrace.trace_id}</span></span>
+                      <span className="text-emerald-400 font-semibold">
+                        {(activeTrace.recovery_potential_ratio * 100).toFixed(1)}% Recovery Potential
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Trace Trigger Form */}
+              <div className="p-4 rounded bg-slate-950 border border-slate-800 space-y-3">
+                <span className="text-xs font-semibold text-slate-200">Initiate Rapid Dispersion Incident Trace</span>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 text-xs">
+                  <div>
+                    <label className="text-slate-400 block mb-1">Root Fraud Account</label>
+                    <input
+                      value={traceRootAccount}
+                      onChange={(e) => setTraceRootAccount(e.target.value)}
+                      placeholder="01199887766"
+                      className="w-full bg-slate-900 border border-slate-800 rounded px-2.5 py-1.5 text-white font-mono"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-slate-400 block mb-1">Stolen Amount (KES)</label>
+                    <input
+                      value={traceRootAmount}
+                      onChange={(e) => setTraceRootAmount(e.target.value)}
+                      placeholder="500000"
+                      className="w-full bg-slate-900 border border-slate-800 rounded px-2.5 py-1.5 text-white font-mono"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-slate-400 block mb-1">Root Transaction Ref</label>
+                    <input
+                      value={traceRootTxId}
+                      onChange={(e) => setTraceRootTxId(e.target.value)}
+                      placeholder="TX-PESA-882299"
+                      className="w-full bg-slate-900 border border-slate-800 rounded px-2.5 py-1.5 text-white font-mono"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-slate-400 block mb-1">Max Graph Hops</label>
+                    <select
+                      value={traceMaxHops}
+                      onChange={(e) => setTraceMaxHops(Number(e.target.value))}
+                      className="w-full bg-slate-900 border border-slate-800 rounded px-2.5 py-1.5 text-white"
+                    >
+                      <option value={1}>1 Hop (Direct Beneficiary)</option>
+                      <option value={2}>2 Hops (Secondary Dispersion)</option>
+                      <option value={3}>3 Hops (Full Syndicate Tree)</option>
+                    </select>
+                  </div>
+                  <div className="flex items-end">
+                    <button
+                      onClick={handleTriggerMuleCascadeTrace}
+                      disabled={traceRunning}
+                      className="w-full py-1.5 px-3 bg-red-600 hover:bg-red-500 font-semibold text-white rounded transition shadow-sm"
+                    >
+                      {traceRunning ? "Tracing..." : "Execute Graph Trace"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Recovery Potential Progress Meter */}
+              {activeTrace && (
+                <div className="p-4 rounded bg-slate-950 border border-slate-800 space-y-2">
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="text-slate-300 font-semibold">Consortium Recovery Potential Meter</span>
+                    <span className="text-slate-400 font-mono">
+                      Frozen/Held: <span className="text-emerald-400 font-bold">KES {Number(activeTrace.total_frozen_or_held_amount).toLocaleString()}</span> / KES {Number(activeTrace.root_fraud_amount).toLocaleString()}
+                    </span>
+                  </div>
+                  <div className="w-full bg-slate-800 rounded-full h-2.5 overflow-hidden">
+                    <div
+                      className="bg-emerald-500 h-2.5 rounded-full transition-all duration-500"
+                      style={{ width: `${Math.min(100, Math.max(0, activeTrace.recovery_potential_ratio * 100))}%` }}
+                    />
+                  </div>
+                  <div className="flex justify-between text-[11px] text-slate-500">
+                    <span>{activeTrace.total_nodes_identified} Nodes Identified</span>
+                    <span>Max Depth: Tier {activeTrace.max_depth_reached}</span>
+                    <span>{activeTrace.edges.length} Dispersal Edges</span>
+                  </div>
+                </div>
+              )}
+
+              {/* Visual Hop Cards: Tier 1 -> Tier 2 -> Tier 3 */}
+              {activeTrace && activeTrace.nodes.length > 0 && (
+                <div className="space-y-3">
+                  <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider">Mule Network Topology & Tiers</h4>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    {/* Tier 1 Direct Beneficiary */}
+                    <div className="p-4 rounded bg-red-950/20 border border-red-900/50 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-red-400 flex items-center">
+                          <span className="w-2 h-2 rounded-full bg-red-500 mr-2" /> Tier 1: Direct Beneficiary
+                        </span>
+                        <span className="text-[10px] bg-red-900/60 text-red-200 px-1.5 py-0.5 rounded font-mono">Hop 1</span>
+                      </div>
+                      {activeTrace.nodes.filter(n => n.tier_level === 1).map(n => (
+                        <div key={n.node_key} className="p-2.5 bg-slate-950 rounded border border-red-900/30 text-xs space-y-1">
+                          <div className="flex justify-between font-mono">
+                            <span className="text-white font-bold">{n.node_key}</span>
+                            <span className="text-red-400">{n.bank_bic}</span>
+                          </div>
+                          <div className="text-[11px] text-slate-400 flex justify-between">
+                            <span>Retained: KES {Number(n.retained_balance_estimate).toLocaleString()}</span>
+                            <span>Velocity: {n.velocity_minutes}m</span>
+                          </div>
+                          <div className="text-[10px] text-red-300 font-semibold">
+                            Directive: {n.recommended_directive} ({n.directive_status})
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Tier 2 Secondary Dispersion */}
+                    <div className="p-4 rounded bg-amber-950/20 border border-amber-900/50 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-amber-400 flex items-center">
+                          <span className="w-2 h-2 rounded-full bg-amber-500 mr-2" /> Tier 2: Layering Mules
+                        </span>
+                        <span className="text-[10px] bg-amber-900/60 text-amber-200 px-1.5 py-0.5 rounded font-mono">Hop 2</span>
+                      </div>
+                      {activeTrace.nodes.filter(n => n.tier_level === 2).length === 0 ? (
+                        <div className="text-xs text-slate-500 italic p-3 text-center">No Tier 2 dispersion detected</div>
+                      ) : (
+                        activeTrace.nodes.filter(n => n.tier_level === 2).map(n => (
+                          <div key={n.node_key} className="p-2.5 bg-slate-950 rounded border border-amber-900/30 text-xs space-y-1">
+                            <div className="flex justify-between font-mono">
+                              <span className="text-white font-bold">{n.node_key}</span>
+                              <span className="text-amber-400">{n.bank_bic}</span>
+                            </div>
+                            <div className="text-[11px] text-slate-400 flex justify-between">
+                              <span>Inflow: KES {Number(n.total_inflow).toLocaleString()}</span>
+                              <span>Dispersion: {(n.dispersion_ratio * 100).toFixed(0)}%</span>
+                            </div>
+                            <div className="text-[10px] text-amber-300 font-semibold">
+                              Directive: {n.recommended_directive} ({n.directive_status})
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+
+                    {/* Tier 3 Cashout Gateway */}
+                    <div className="p-4 rounded bg-purple-950/20 border border-purple-900/50 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-purple-400 flex items-center">
+                          <span className="w-2 h-2 rounded-full bg-purple-500 mr-2" /> Tier 3: Cashout Gateways
+                        </span>
+                        <span className="text-[10px] bg-purple-900/60 text-purple-200 px-1.5 py-0.5 rounded font-mono">Hop 3</span>
+                      </div>
+                      {activeTrace.nodes.filter(n => n.tier_level === 3).length === 0 ? (
+                        <div className="text-xs text-slate-500 italic p-3 text-center">No Tier 3 exit nodes detected</div>
+                      ) : (
+                        activeTrace.nodes.filter(n => n.tier_level === 3).map(n => (
+                          <div key={n.node_key} className="p-2.5 bg-slate-950 rounded border border-purple-900/30 text-xs space-y-1">
+                            <div className="flex justify-between font-mono">
+                              <span className="text-white font-bold">{n.node_key}</span>
+                              <span className="text-purple-400">{n.bank_bic}</span>
+                            </div>
+                            <div className="text-[11px] text-slate-400 flex justify-between">
+                              <span>Exit Inflow: KES {Number(n.total_inflow).toLocaleString()}</span>
+                              <span>Risk: {(n.risk_score * 100).toFixed(0)}%</span>
+                            </div>
+                            <div className="text-[10px] text-purple-300 font-semibold">
+                              Directive: {n.recommended_directive} ({n.directive_status})
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Directives Table with Execution Controls */}
+              {activeTrace && activeTrace.directives.length > 0 && (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider">Automated Interbank Freezing Directives</h4>
+                    <span className="text-xs text-slate-500">{activeTrace.directives.length} Actionable Directives</span>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs border border-slate-800 rounded">
+                      <thead className="bg-slate-950 text-slate-400 border-b border-slate-800">
+                        <tr>
+                          <th className="p-2.5">Target Node</th>
+                          <th className="p-2.5">Tier</th>
+                          <th className="p-2.5">Bank BIC</th>
+                          <th className="p-2.5">Action Directive</th>
+                          <th className="p-2.5">Target Amount</th>
+                          <th className="p-2.5">Status</th>
+                          <th className="p-2.5 text-right">Execution Action</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-800">
+                        {activeTrace.directives.map((dir) => (
+                          <tr key={dir.directive_id} className="hover:bg-slate-950/60 transition">
+                            <td className="p-2.5 font-mono text-white font-semibold">{dir.node_key}</td>
+                            <td className="p-2.5">
+                              <span className={`px-2 py-0.5 rounded text-[10px] font-semibold ${
+                                dir.tier_level === 1 ? "bg-red-900/60 text-red-200" :
+                                dir.tier_level === 2 ? "bg-amber-900/60 text-amber-200" : "bg-purple-900/60 text-purple-200"
+                              }`}>
+                                Tier {dir.tier_level}
+                              </span>
+                            </td>
+                            <td className="p-2.5 font-mono text-slate-300">{dir.bank_bic}</td>
+                            <td className="p-2.5">
+                              <span className="text-slate-200 font-semibold">{dir.directive_type}</span>
+                              <div className="text-[10px] text-slate-400 mt-0.5">{dir.recommended_action}</div>
+                            </td>
+                            <td className="p-2.5 font-mono text-emerald-400">
+                              KES {Number(dir.target_amount).toLocaleString()}
+                            </td>
+                            <td className="p-2.5">
+                              <span className={`px-2 py-0.5 rounded text-[10px] font-semibold ${
+                                dir.status === "EXECUTED" ? "bg-emerald-900/60 text-emerald-300" :
+                                dir.status === "REJECTED" ? "bg-slate-800 text-slate-400" : "bg-amber-900/60 text-amber-200"
+                              }`}>
+                                {dir.status}
+                              </span>
+                            </td>
+                            <td className="p-2.5 text-right space-x-1.5 whitespace-nowrap">
+                              {dir.status === "PENDING" ? (
+                                <>
+                                  {dir.is_internal ? (
+                                    <button
+                                      onClick={() => handleExecuteDirective(dir.directive_id, "EXECUTE_LOCAL_HOLD")}
+                                      className="px-2.5 py-1 bg-red-600 hover:bg-red-500 font-semibold text-white rounded text-[11px] transition"
+                                    >
+                                      Execute Freeze
+                                    </button>
+                                  ) : (
+                                    <button
+                                      onClick={() => handleExecuteDirective(dir.directive_id, "DISPATCH_CAMT056")}
+                                      className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-500 font-semibold text-white rounded text-[11px] transition"
+                                    >
+                                      Dispatch camt.056
+                                    </button>
+                                  )}
+                                  <button
+                                    onClick={() => handleExecuteDirective(dir.directive_id, "REJECT")}
+                                    className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white rounded text-[11px] transition"
+                                  >
+                                    Dismiss
+                                  </button>
+                                </>
+                              ) : dir.camt056_xml ? (
+                                <button
+                                  onClick={() => setSelectedXmlNotice(dir.camt056_xml || "")}
+                                  className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-indigo-300 rounded text-[11px] font-mono transition"
+                                >
+                                  View camt.056 XML
+                                </button>
+                              ) : (
+                                <span className="text-[11px] text-slate-500 font-mono">Done</span>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* ISO 20022 camt.056 Modal / XML Viewer */}
+              {selectedXmlNotice && (
+                <div className="p-4 rounded bg-slate-950 border border-indigo-900/50 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-indigo-300 flex items-center">
+                      <span className="mr-2">📄</span> ISO 20022 camt.056.001.10 FIToFIPaymentCancellationRequest Dispatched
+                    </span>
+                    <button
+                      onClick={() => setSelectedXmlNotice(null)}
+                      className="text-xs text-slate-400 hover:text-white px-2 py-0.5 rounded bg-slate-900"
+                    >
+                      Close Viewer
+                    </button>
+                  </div>
+                  <pre className="p-3 bg-slate-900 rounded text-[11px] text-emerald-400 font-mono overflow-x-auto max-h-60 border border-slate-800">
+                    {selectedXmlNotice}
+                  </pre>
+                </div>
+              )}
+            </div>
+
+            {/* Section 7: Global Frontier Defense Suite (Singapore MAS, Brazil BCB, India NPCI & BioCatch) */}
+            <div className="p-5 rounded-lg bg-slate-900 border border-slate-800 space-y-6">
+              <div className="border-b border-slate-800 pb-3 flex flex-wrap items-center justify-between gap-4">
+                <div>
+                  <h3 className="text-sm font-bold text-white flex items-center">
+                    <span className="mr-2">🛡️</span> Global Frontier Defense Suite (Singapore MAS, Brazil BCB, India NPCI & BioCatch)
+                  </h3>
+                  <p className="text-xs text-slate-400 mt-1">
+                    Customer-controlled non-digital vault partitioning (Money Lock), statutory 72-hour precautionary holds (Bloqueio Cautelar), hardware SIM binding, and mathematical RAT cursor linearity biometrics.
+                  </p>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <span className="px-2.5 py-1 rounded bg-emerald-950/80 border border-emerald-800/60 text-[11px] text-emerald-300 font-semibold">
+                    🇸🇬 MAS Money Lock Active
+                  </span>
+                  <span className="px-2.5 py-1 rounded bg-indigo-950/80 border border-indigo-800/60 text-[11px] text-indigo-300 font-semibold">
+                    🇧🇷 BCB 72h Precautionary Gate
+                  </span>
+                  <span className="px-2.5 py-1 rounded bg-purple-950/80 border border-purple-800/60 text-[11px] text-purple-300 font-semibold">
+                    🇮🇳 NPCI SIM Anchor
+                  </span>
+                </div>
+              </div>
+
+              {/* Three Column Feature Grid */}
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                {/* Column 1: Singapore MAS Money Lock Vault */}
+                <div className="p-4 rounded bg-slate-950 border border-slate-800 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-slate-200 flex items-center">
+                      <span className="mr-1.5">🔒</span> Singapore MAS Money Lock
+                    </span>
+                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-900/60 text-amber-200">
+                      NON-DIGITAL VAULT
+                    </span>
+                  </div>
+
+                  <div className="p-3 rounded bg-slate-900 border border-slate-800 space-y-2">
+                    <div className="flex justify-between text-xs">
+                      <span className="text-slate-400">Total Account Balance:</span>
+                      <span className="text-white font-mono font-bold">KES {mlTotalBalance.toLocaleString()}</span>
+                    </div>
+                    <div className="flex justify-between text-xs">
+                      <span className="text-amber-400 font-semibold">Locked Vault Balance (MAS):</span>
+                      <span className="text-amber-300 font-mono font-bold">KES {mlLockedBalance.toLocaleString()}</span>
+                    </div>
+                    <div className="flex justify-between text-xs border-t border-slate-800 pt-1.5">
+                      <span className="text-emerald-400 font-semibold">Available Liquid Balance:</span>
+                      <span className="text-emerald-300 font-mono font-bold">KES {mlAvailableBalance.toLocaleString()}</span>
+                    </div>
+                  </div>
+
+                  {/* Actions & Drainage Simulator */}
+                  <div className="space-y-2 pt-1">
+                    <button
+                      onClick={handleSimulateDrainage}
+                      className="w-full py-1.5 bg-rose-950/80 hover:bg-rose-900 border border-rose-800/60 text-rose-200 rounded text-xs font-semibold transition"
+                    >
+                      ⚡ Test Account Takeover (Sweep KES 120,000)
+                    </button>
+                    <button
+                      onClick={handleAttemptDigitalUnlock}
+                      className="w-full py-1.5 bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 rounded text-xs font-semibold transition"
+                    >
+                      🚫 Attempt Digital Vault Unlock (Simulate API Hack)
+                    </button>
+                  </div>
+
+                  {mlDrainAttemptResult && (
+                    <div className="p-2.5 rounded bg-rose-950/90 border border-rose-800 text-[11px] text-rose-200 space-y-1">
+                      <div className="font-bold flex items-center text-rose-300">
+                        <span className="mr-1">🛡️</span> Digital Drainage Blocked
+                      </div>
+                      <div>{mlDrainAttemptResult}</div>
+                    </div>
+                  )}
+
+                  {mlDigitalBlockedNotice && (
+                    <div className="p-2.5 rounded bg-amber-950/90 border border-amber-800 text-[11px] text-amber-200 space-y-1">
+                      <div className="font-bold flex items-center text-amber-300">
+                        <span className="mr-1">⚠️</span> Policy Violation
+                      </div>
+                      <div>{mlDigitalBlockedNotice}</div>
+                    </div>
+                  )}
+
+                  {/* Physical Branch Unlock Panel */}
+                  <div className="p-3 rounded bg-slate-900 border border-slate-800 space-y-2 pt-2">
+                    <span className="text-[11px] font-bold text-slate-300 uppercase tracking-wider block">
+                      Physical Branch Counter Unlock (Maker-Checker)
+                    </span>
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      <div>
+                        <label className="text-[10px] text-slate-400">Unlock Amount (KES)</label>
+                        <input
+                          type="number"
+                          value={mlBranchUnlockAmount}
+                          onChange={(e) => setMlBranchUnlockAmount(e.target.value)}
+                          className="w-full mt-0.5 p-1 rounded bg-slate-950 border border-slate-800 text-white font-mono text-xs"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] text-slate-400">Station / Terminal</label>
+                        <input
+                          type="text"
+                          value={mlBranchStation}
+                          onChange={(e) => setMlBranchStation(e.target.value)}
+                          className="w-full mt-0.5 p-1 rounded bg-slate-950 border border-slate-800 text-white font-mono text-xs"
+                        />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      <div>
+                        <label className="text-[10px] text-slate-400">Teller Officer</label>
+                        <input
+                          type="text"
+                          value={mlBranchOfficer}
+                          onChange={(e) => setMlBranchOfficer(e.target.value)}
+                          className="w-full mt-0.5 p-1 rounded bg-slate-950 border border-slate-800 text-white font-mono text-xs"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] text-slate-400">Dual Authorizer</label>
+                        <input
+                          type="text"
+                          value={mlDualAuthorizer}
+                          onChange={(e) => setMlDualAuthorizer(e.target.value)}
+                          className="w-full mt-0.5 p-1 rounded bg-slate-950 border border-slate-800 text-white font-mono text-xs"
+                        />
+                      </div>
+                    </div>
+                    <button
+                      onClick={handleBranchUnlock}
+                      className="w-full mt-1 py-1.5 bg-emerald-700 hover:bg-emerald-600 text-white rounded text-xs font-semibold transition"
+                    >
+                      Authorize In-Person Branch Unlock
+                    </button>
+                    {mlUnlockSuccessNotice && (
+                      <div className="p-2 rounded bg-emerald-950/80 border border-emerald-800 text-[10px] text-emerald-300 font-mono">
+                        {mlUnlockSuccessNotice}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Column 2: Brazil BCB Bloqueio Cautelar 72h */}
+                <div className="p-4 rounded bg-slate-950 border border-slate-800 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-slate-200 flex items-center">
+                      <span className="mr-1.5">⏱️</span> Brazil BCB Bloqueio Cautelar
+                    </span>
+                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-900/60 text-indigo-200">
+                      72H PRECAUTIONARY HOLD
+                    </span>
+                  </div>
+
+                  <div className="p-3 rounded bg-slate-900 border border-slate-800 space-y-2">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-slate-400">Statutory Basis:</span>
+                      <span className="text-indigo-300 font-mono text-[11px]">Resolução BCB nº 493/2025</span>
+                    </div>
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-slate-400">Nighttime Limit (20h-06h):</span>
+                      <span className="text-emerald-400 font-mono font-semibold">Active (Max KES 20,000)</span>
+                    </div>
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-slate-400">Korea FSS Recall Window:</span>
+                      <span className="text-slate-200 font-mono text-[11px]">3h Delay / 30m Cutoff</span>
+                    </div>
+                  </div>
+
+                  {/* Quarantined Holds List */}
+                  <div className="space-y-2">
+                    <span className="text-[11px] font-bold text-slate-300 uppercase tracking-wider block">
+                      Active Inbound Quarantined Funds
+                    </span>
+                    {precHoldsList.map((hold) => (
+                      <div key={hold.hold_id} className="p-2.5 rounded bg-slate-900 border border-slate-800 space-y-2">
+                        <div className="flex justify-between items-center text-xs">
+                          <span className="font-mono text-white font-semibold">{hold.hold_id}</span>
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-semibold ${
+                            hold.state === "ESCALATED_CLAWBACK_CAMT056"
+                              ? "bg-purple-900/60 text-purple-300"
+                              : "bg-amber-900/60 text-amber-200"
+                          }`}>
+                            {hold.state}
+                          </span>
+                        </div>
+                        <div className="text-[11px] text-slate-400">
+                          Amount: <span className="font-mono text-emerald-400 font-semibold">KES {hold.amount.toLocaleString()}</span> | Remaining: <span className="font-mono text-amber-300">{hold.expires_in}</span>
+                        </div>
+                        <div className="text-[10px] text-slate-500">{hold.reason}</div>
+                        {hold.state !== "ESCALATED_CLAWBACK_CAMT056" && (
+                          <div className="flex space-x-2 pt-1">
+                            <button
+                              onClick={() => handleEscalateHold(hold.hold_id)}
+                              className="px-2 py-1 bg-purple-700 hover:bg-purple-600 text-white rounded text-[10px] font-semibold transition"
+                            >
+                              Dispatch camt.056 Clawback
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Column 3: India SIM Binding & BioCatch Biometrics */}
+                <div className="p-4 rounded bg-slate-950 border border-slate-800 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-slate-200 flex items-center">
+                      <span className="mr-1.5">🔬</span> BioCatch RAT & Coercion Telemetry
+                    </span>
+                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-purple-900/60 text-purple-200">
+                      PHYSICS TELEMETRY
+                    </span>
+                  </div>
+
+                  <div className="p-3 rounded bg-slate-900 border border-slate-800 space-y-2">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-slate-400">Hardware Anchor (NPCI):</span>
+                      <span className="text-emerald-400 font-mono text-[11px]">BOUND_TRUSTED (IMEI/SIM)</span>
+                    </div>
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-slate-400">Emulator Enforcement:</span>
+                      <span className="text-slate-200 font-mono text-[11px]">HARD_BLOCK (Bluestacks/QEMU)</span>
+                    </div>
+                  </div>
+
+                  {/* Interactive Biometrics Physics Sandbox */}
+                  <div className="space-y-3 pt-1 text-xs">
+                    <span className="text-[11px] font-bold text-slate-300 uppercase tracking-wider block">
+                      In-Session Kinematics Simulator
+                    </span>
+                    <div className="space-y-2">
+                      <label className="flex items-center space-x-2 text-slate-300 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={bioSimRatLinear}
+                          onChange={(e) => setBioSimRatLinear(e.target.checked)}
+                          className="rounded bg-slate-900 border-slate-700 text-indigo-600 focus:ring-0"
+                        />
+                        <span>Simulate RAT Linear Cursor Trajectory (R² = 0.99)</span>
+                      </label>
+                      <label className="flex items-center space-x-2 text-slate-300 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={bioSimMicroTremorLoss}
+                          onChange={(e) => setBioSimMicroTremorLoss(e.target.checked)}
+                          className="rounded bg-slate-900 border-slate-700 text-indigo-600 focus:ring-0"
+                        />
+                        <span>Loss of Human Micro-Tremors (&lt; 0.2 Hz)</span>
+                      </label>
+                      <label className="flex items-center space-x-2 text-slate-300 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={bioSimActiveCall}
+                          onChange={(e) => setBioSimActiveCall(e.target.checked)}
+                          className="rounded bg-slate-900 border-slate-700 text-indigo-600 focus:ring-0"
+                        />
+                        <span>Active GSM Voice Call Concurrency (Coached Victim)</span>
+                      </label>
+                    </div>
+
+                    <div>
+                      <div className="flex justify-between text-[11px] text-slate-400 mb-1">
+                        <span>Cognitive Hesitation Dwell:</span>
+                        <span className="font-mono text-white">{bioSimHesitation} ms</span>
+                      </div>
+                      <input
+                        type="range"
+                        min="500"
+                        max="25000"
+                        step="500"
+                        value={bioSimHesitation}
+                        onChange={(e) => setBioSimHesitation(Number(e.target.value))}
+                        className="w-full accent-indigo-500"
+                      />
+                    </div>
+
+                    <button
+                      onClick={handleEvaluateBiometrics}
+                      className="w-full py-1.5 bg-indigo-700 hover:bg-indigo-600 text-white rounded text-xs font-semibold transition"
+                    >
+                      Evaluate In-Session Kinematics
+                    </button>
+
+                    {bioSimResult && (
+                      <div className={`p-3 rounded border text-xs space-y-1.5 ${
+                        bioSimResult.verdict === "SUSPECTED_REMOTE_ACCESS_TROJAN"
+                          ? "bg-rose-950/90 border-rose-800 text-rose-200"
+                          : bioSimResult.verdict === "SUSPECTED_COACHED_VICTIM"
+                          ? "bg-amber-950/90 border-amber-800 text-amber-200"
+                          : "bg-emerald-950/90 border-emerald-800 text-emerald-200"
+                      }`}>
+                        <div className="font-bold flex items-center justify-between">
+                          <span>Verdict: {bioSimResult.verdict}</span>
+                          <span className="font-mono">Risk: {(bioSimResult.score * 100).toFixed(0)}%</span>
+                        </div>
+                        <div className="text-[11px]">{bioSimResult.reason}</div>
+                        <div className="text-[10px] font-mono font-semibold uppercase">Action: {bioSimResult.action}</div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Section 8: Global Frontier Defenses Complete (Singapore SRF, Korea FSS, Brazil MED 2.0, India 1930 & HK Scameter) */}
+            <div className="p-5 rounded-lg bg-slate-900 border border-slate-800 space-y-6">
+              <div className="border-b border-slate-800 pb-3 flex flex-wrap items-center justify-between gap-4">
+                <div>
+                  <h3 className="text-sm font-bold text-white flex items-center">
+                    <span className="mr-2">🌐</span> Global Frontier Defenses Complete (Singapore SRF, Korea FSS, Brazil MED 2.0, India 1930 & HK Scameter)
+                  </h3>
+                  <p className="text-xs text-slate-400 mt-1">
+                    Statutory waterfall liability arbitration, 24/7 customer panic kill switch, designated safe accounts, 30-min anti-runner ATM holds, 5-layer cascading clawbacks, Golden Hour emergency broadcasts, and liability shielding waivers.
+                  </p>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <span className="px-2 py-0.5 rounded bg-rose-950/80 border border-rose-800/60 text-[10px] text-rose-300 font-semibold">
+                    🇸🇬 24/7 Kill Switch & SRF
+                  </span>
+                  <span className="px-2 py-0.5 rounded bg-blue-950/80 border border-blue-800/60 text-[10px] text-blue-300 font-semibold">
+                    🇰🇷 Safe Accounts & ATM Hold
+                  </span>
+                  <span className="px-2 py-0.5 rounded bg-amber-950/80 border border-amber-800/60 text-[10px] text-amber-300 font-semibold">
+                    🇧🇷 MED 2.0 5-Layer
+                  </span>
+                  <span className="px-2 py-0.5 rounded bg-purple-950/80 border border-purple-800/60 text-[10px] text-purple-300 font-semibold">
+                    🇮🇳 1930 Golden Hour
+                  </span>
+                  <span className="px-2 py-0.5 rounded bg-emerald-950/80 border border-emerald-800/60 text-[10px] text-emerald-300 font-semibold">
+                    🇭🇰 Scameter Waiver
+                  </span>
+                </div>
+              </div>
+
+              {/* 3-Column Grid for Section 8 */}
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                {/* Column 1: Singapore 24/7 Kill Switch & SRF Waterfall */}
+                <div className="p-4 rounded bg-slate-950 border border-slate-800 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-slate-200 flex items-center">
+                      <span className="mr-1.5">🚨</span> Singapore MAS SRF & Kill Switch
+                    </span>
+                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                      ksActive ? "bg-rose-900/60 text-rose-200" : "bg-slate-800 text-slate-400"
+                    }`}>
+                      {ksActive ? "KILL SWITCH ACTIVE" : "ARMED (STANDBY)"}
+                    </span>
+                  </div>
+
+                  <div className="p-3 rounded bg-slate-900 border border-slate-800 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-slate-400">Customer Emergency Panic Trigger:</span>
+                      <button
+                        onClick={() => {
+                          setKsActive(!ksActive);
+                          setKsNotice(
+                            !ksActive
+                              ? `EMERGENCY KILL SWITCH ACTIVATED: ${ksRevokedCount} OAuth sessions terminated. Outbound clearing rails hard-locked.`
+                              : "Kill switch deactivated via branch dual-custody verification."
+                          );
+                        }}
+                        className={`px-2.5 py-1 text-[11px] font-bold rounded transition ${
+                          ksActive
+                            ? "bg-slate-800 hover:bg-slate-700 text-slate-300"
+                            : "bg-rose-600 hover:bg-rose-500 text-white"
+                        }`}
+                      >
+                        {ksActive ? "Reset Panic Button" : "Trigger Panic Trigger"}
+                      </button>
+                    </div>
+                    {ksNotice && (
+                      <div className={`p-2 rounded text-[11px] ${ksActive ? "bg-rose-950/80 text-rose-300 border border-rose-800" : "bg-emerald-950/80 text-emerald-300 border border-emerald-800"}`}>
+                        {ksNotice}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Dual-Officer Deactivation Form */}
+                  <div className="p-3 rounded bg-slate-900 border border-slate-800 space-y-2">
+                    <div className="text-[11px] font-bold text-slate-300">Branch Dual-Custody Deactivation Gate</div>
+                    <div className="grid grid-cols-2 gap-2 text-[10px]">
+                      <div>
+                        <span className="text-slate-500">Maker Officer:</span>
+                        <input
+                          type="text"
+                          value={ksMaker}
+                          onChange={(e) => setKsMaker(e.target.value)}
+                          className="w-full mt-0.5 p-1 rounded bg-slate-950 border border-slate-800 text-white text-[11px]"
+                        />
+                      </div>
+                      <div>
+                        <span className="text-slate-500">Checker Officer:</span>
+                        <input
+                          type="text"
+                          value={ksChecker}
+                          onChange={(e) => setKsChecker(e.target.value)}
+                          className="w-full mt-0.5 p-1 rounded bg-slate-950 border border-slate-800 text-white text-[11px]"
+                        />
+                      </div>
+                    </div>
+                    <div className="text-[10px] text-slate-400">Branch Code: <span className="font-mono text-white">{ksBranchCode}</span> (In-Person KYC Mandatory)</div>
+                  </div>
+
+                  {/* SRF Waterfall Adjudicator */}
+                  <div className="p-3 rounded bg-slate-900 border border-slate-800 space-y-2">
+                    <div className="text-[11px] font-bold text-slate-300">MAS-IMDA SRF Waterfall Adjudication</div>
+                    <div className="space-y-1 text-xs">
+                      <label className="flex items-center text-slate-300 text-[11px]">
+                        <input
+                          type="checkbox"
+                          checked={srfBankCoolingFail}
+                          onChange={(e) => setSrfBankCoolingFail(e.target.checked)}
+                          className="mr-2 rounded border-slate-800"
+                        />
+                        Bank breached 12h token cooling duty
+                      </label>
+                      <label className="flex items-center text-slate-300 text-[11px]">
+                        <input
+                          type="checkbox"
+                          checked={srfTelcoSpoofFail}
+                          onChange={(e) => setSrfTelcoSpoofFail(e.target.checked)}
+                          className="mr-2 rounded border-slate-800"
+                        />
+                        Telco failed SMS sender ID anti-spoofing
+                      </label>
+                    </div>
+                    <button
+                      onClick={() => {
+                        let verdict = "CONSUMER_100_PERCENT";
+                        let party = "CONSUMER";
+                        let bankAmt = "0.00";
+                        let telcoAmt = "0.00";
+                        let consumerAmt = "150,000.00";
+                        if (srfBankCoolingFail && srfTelcoSpoofFail) {
+                          verdict = "SHARED_50_50_BANK_TELCO";
+                          party = "BANK & TELCO JOINT";
+                          bankAmt = "75,000.00 KES";
+                          telcoAmt = "75,000.00 KES";
+                          consumerAmt = "0.00 KES";
+                        } else if (srfBankCoolingFail) {
+                          verdict = "BANK_100_PERCENT";
+                          party = "FINANCIAL INSTITUTION";
+                          bankAmt = "150,000.00 KES";
+                          telcoAmt = "0.00 KES";
+                          consumerAmt = "0.00 KES";
+                        } else if (srfTelcoSpoofFail) {
+                          verdict = "TELCO_100_PERCENT";
+                          party = "TELECOM OPERATOR";
+                          bankAmt = "0.00 KES";
+                          telcoAmt = "150,000.00 KES";
+                          consumerAmt = "0.00 KES";
+                        }
+                        setSrfAdjudicationResult({ verdict, party, bankAmt, telcoAmt, consumerAmt });
+                      }}
+                      className="w-full py-1 text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white rounded transition"
+                    >
+                      Adjudicate Claim Waterfall
+                    </button>
+                    {srfAdjudicationResult && (
+                      <div className="p-2 rounded bg-slate-950 border border-slate-800 text-[10px] space-y-1">
+                        <div className="font-bold text-indigo-300">Verdict: {srfAdjudicationResult.verdict}</div>
+                        <div className="text-slate-400">Primary Liable: {srfAdjudicationResult.party}</div>
+                        <div className="text-slate-300">Bank Pays: {srfAdjudicationResult.bankAmt} | Telco Pays: {srfAdjudicationResult.telcoAmt}</div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Column 2: South Korea FSS Designated Safe Accounts & Delayed ATM */}
+                <div className="p-4 rounded bg-slate-950 border border-slate-800 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-slate-200 flex items-center">
+                      <span className="mr-1.5">🇰🇷</span> South Korea FSS Controls
+                    </span>
+                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-900/60 text-blue-200">
+                      입금계좌지정 & 지연인출
+                    </span>
+                  </div>
+
+                  {/* Designated Safe Accounts Registry */}
+                  <div className="p-3 rounded bg-slate-900 border border-slate-800 space-y-2">
+                    <div className="text-[11px] font-bold text-slate-300">Pre-Registered Designated Safe Accounts</div>
+                    <div className="space-y-1">
+                      {safeAccounts.map((acc) => (
+                        <div key={acc.id} className="flex justify-between items-center text-[11px] p-1.5 rounded bg-slate-950 border border-slate-800">
+                          <div>
+                            <span className="font-semibold text-white">{acc.label}</span>
+                            <div className="text-[9px] text-slate-500 font-mono">{acc.payee} ({acc.bic})</div>
+                          </div>
+                          <span className="text-[10px] text-emerald-400 font-mono font-bold">Limit: {acc.cap}</span>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="border-t border-slate-800 pt-2 space-y-1.5">
+                      <div className="text-[10px] text-slate-400">Transfer to Non-Designated Payee:</div>
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          value={safeNonDesignatedAmount}
+                          onChange={(e) => setSafeNonDesignatedAmount(e.target.value)}
+                          className="w-28 p-1 rounded bg-slate-950 border border-slate-800 text-white text-[11px]"
+                          placeholder="Amount"
+                        />
+                        <button
+                          onClick={() => {
+                            const amt = parseFloat(safeNonDesignatedAmount) || 0;
+                            if (amt > 10000) {
+                              setSafeEvalResult("STEP_UP_AUTH: Non-designated payee exceeds 10,000 KES micro-limit. Physical branch authorization required.");
+                            } else {
+                              setSafeEvalResult(`ALLOW: Transfer of ${amt} KES approved under non-designated micro-limit.`);
+                            }
+                          }}
+                          className="flex-1 py-1 text-xs font-semibold bg-blue-600 hover:bg-blue-500 text-white rounded transition"
+                        >
+                          Simulate Transfer
+                        </button>
+                      </div>
+                      {safeEvalResult && (
+                        <div className={`p-2 rounded text-[10px] ${safeEvalResult.includes("STEP_UP") ? "bg-amber-950/80 text-amber-300 border border-amber-800" : "bg-emerald-950/80 text-emerald-300 border border-emerald-800"}`}>
+                          {safeEvalResult}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Delayed ATM Cash-Out Service (30m) */}
+                  <div className="p-3 rounded bg-slate-900 border border-slate-800 space-y-2">
+                    <div className="flex justify-between items-center">
+                      <span className="text-[11px] font-bold text-slate-300">Delayed ATM Cashout (지연인출제도)</span>
+                      <span className="text-[10px] font-mono text-amber-400 font-bold">28m 45s Remaining</span>
+                    </div>
+                    <div className="text-[10px] text-slate-400">Electronic deposit of KES 120,000 received at 11:45. Mandatory 30-minute anti-runner cash withdrawal hold active.</div>
+                    <button
+                      onClick={() => {
+                        if (atmDelayedActive) {
+                          setAtmWithdrawalAttempt("ATM CASH-OUT BLOCKED: 30-minute electronic deposit hold in effect. Runner extraction intercepted.");
+                        } else {
+                          setAtmWithdrawalAttempt("ATM CASH-OUT PERMITTED: 30-minute quarantine concluded.");
+                        }
+                      }}
+                      className="w-full py-1 text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 rounded transition"
+                    >
+                      Attempt ATM Physical Cash-Out
+                    </button>
+                    {atmWithdrawalAttempt && (
+                      <div className="p-2 rounded text-[10px] bg-rose-950/80 text-rose-300 border border-rose-800">
+                        {atmWithdrawalAttempt}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Ingress Shield Switches */}
+                  <div className="p-3 rounded bg-slate-900 border border-slate-800 space-y-2">
+                    <div className="text-[11px] font-bold text-slate-300">Overseas & VPN Ingress Shield (해외IP차단)</div>
+                    <div className="flex justify-between text-xs">
+                      <label className="flex items-center text-slate-300 text-[11px]">
+                        <input
+                          type="checkbox"
+                          checked={vpnToggle}
+                          onChange={(e) => setVpnToggle(e.target.checked)}
+                          className="mr-2 rounded border-slate-800"
+                        />
+                        Commercial VPN / Tor
+                      </label>
+                      <label className="flex items-center text-slate-300 text-[11px]">
+                        <input
+                          type="checkbox"
+                          checked={overseasToggle}
+                          onChange={(e) => setOverseasToggle(e.target.checked)}
+                          className="mr-2 rounded border-slate-800"
+                        />
+                        Unregistered Overseas IP
+                      </label>
+                    </div>
+                    <button
+                      onClick={() => {
+                        if (vpnToggle) {
+                          setIngressResult("BLOCK_VPN_OR_TOR: Remote connection through anonymized VPN/Tor proxy hard-blocked.");
+                        } else if (overseasToggle) {
+                          setIngressResult("BLOCK_OVERSEAS_UNREGISTERED: Ingress from foreign subnet rejected. Branch travel registration required.");
+                        } else {
+                          setIngressResult("ALLOW: Domestic carrier residential IP reputation clean.");
+                        }
+                      }}
+                      className="w-full py-1 text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white rounded transition"
+                    >
+                      Evaluate IP Ingress
+                    </button>
+                    {ingressResult && (
+                      <div className={`p-2 rounded text-[10px] ${ingressResult.includes("BLOCK") ? "bg-rose-950/80 text-rose-300 border border-rose-800" : "bg-emerald-950/80 text-emerald-300 border border-emerald-800"}`}>
+                        {ingressResult}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Column 3: Brazil MED 2.0 5-Layer Clawback, India 1930 & HK Scameter */}
+                <div className="p-4 rounded bg-slate-950 border border-slate-800 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-slate-200 flex items-center">
+                      <span className="mr-1.5">⚡</span> MED 2.0, India 1930 & HK Scameter
+                    </span>
+                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-purple-900/60 text-purple-200">
+                      5-HOP & GOLDEN HOUR
+                    </span>
+                  </div>
+
+                  {/* Pix MED 2.0 Cascading Clawback Table */}
+                  <div className="p-3 rounded bg-slate-900 border border-slate-800 space-y-2">
+                    <div className="flex justify-between items-center text-[11px]">
+                      <span className="font-bold text-slate-300">Brazil Pix MED 2.0 Multi-Hop Cascade</span>
+                      <span className="text-[10px] text-emerald-400 font-bold">{med2ClawbackResult.recovered_amount}</span>
+                    </div>
+                    <div className="space-y-1">
+                      {med2ClawbackResult.layers.map((l: any, idx: number) => (
+                        <div key={idx} className="flex justify-between items-center text-[10px] p-1.5 rounded bg-slate-950 border border-slate-800">
+                          <div>
+                            <span className="text-slate-300 font-semibold">{l.tier}</span>
+                            <span className="text-slate-500 ml-1.5 font-mono">{l.bic}</span>
+                          </div>
+                          <div className="text-right">
+                            <span className="text-amber-300 font-mono font-bold">{l.hold}</span>
+                            <div className="text-[8px] text-slate-500">{l.status}</div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* India 1930 Golden Hour Emergency Intake */}
+                  <div className="p-3 rounded bg-slate-900 border border-slate-800 space-y-2">
+                    <div className="flex justify-between items-center text-[11px]">
+                      <span className="font-bold text-slate-300">India I4C 1930 Golden Hour Protocol</span>
+                      <span className="text-[10px] font-mono text-purple-400 font-bold">{ghElapsedMins} min elapsed</span>
+                    </div>
+                    <div className="space-y-1">
+                      <div className="flex justify-between text-[10px] text-slate-400">
+                        <span>Incident Reporting Delay:</span>
+                        <span>{ghElapsedMins} min / 120 min</span>
+                      </div>
+                      <input
+                        type="range"
+                        min="5"
+                        max="180"
+                        value={ghElapsedMins}
+                        onChange={(e) => setGhElapsedMins(parseInt(e.target.value))}
+                        className="w-full accent-purple-500"
+                      />
+                    </div>
+                    <button
+                      onClick={() => {
+                        const isGolden = ghElapsedMins <= 120;
+                        setGhReportResult({
+                          isGolden,
+                          broadcastId: isGolden ? `SW-FRZ-I4C-9901` : null,
+                          status: isGolden ? "GOLDEN_HOUR_ACTIVE" : "STANDARD_WINDOW_ACTIVE",
+                          action: isGolden
+                            ? "BROADCAST_DISPATCHED: Clearing switch freeze transmitted across all receiving FIs."
+                            : "STANDARD_PROCESSING: Historical investigation queue activated.",
+                        });
+                      }}
+                      className="w-full py-1 text-xs font-semibold bg-purple-600 hover:bg-purple-500 text-white rounded transition"
+                    >
+                      Submit 1930 Emergency Intake
+                    </button>
+                    {ghReportResult && (
+                      <div className={`p-2 rounded text-[10px] ${ghReportResult.isGolden ? "bg-purple-950/80 text-purple-300 border border-purple-800" : "bg-slate-950 text-slate-400 border border-slate-800"}`}>
+                        <div className="font-bold">Status: {ghReportResult.status}</div>
+                        <div>{ghReportResult.action}</div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Hong Kong FPS Scameter Shield */}
+                  <div className="p-3 rounded bg-slate-900 border border-slate-800 space-y-2">
+                    <div className="text-[11px] font-bold text-slate-300">HK FPS Scameter & Liability Shield</div>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={scameterInput}
+                        onChange={(e) => setScameterInput(e.target.value)}
+                        className="flex-1 p-1 rounded bg-slate-950 border border-slate-800 text-white text-[11px]"
+                        placeholder="Proxy (Phone/Email)"
+                      />
+                      <button
+                        onClick={() => {
+                          if (scameterInput.includes("0712345678")) {
+                            setScameterLookup({
+                              risk: "HIGH_RISK_POLICE_RECORD",
+                              policeCase: "HKPF-CYBER-9912",
+                              warning: "CRITICAL: Police Scam Record Detected. Recipient flagged in confirmed cybercrime dossier.",
+                            });
+                          } else {
+                            setScameterLookup({
+                              risk: "CLEAR",
+                              policeCase: null,
+                              warning: "No active police crime reports linked to proxy ID.",
+                            });
+                          }
+                        }}
+                        className="py-1 px-2 text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 rounded transition"
+                      >
+                        Lookup
+                      </button>
+                    </div>
+
+                    {scameterLookup && (
+                      <div className="p-2 rounded text-[10px] bg-rose-950/80 text-rose-300 border border-rose-800 space-y-1.5">
+                        <div className="font-bold flex justify-between">
+                          <span>{scameterLookup.risk}</span>
+                          <span className="font-mono">{scameterLookup.policeCase}</span>
+                        </div>
+                        <div className="text-[9px]">{scameterLookup.warning}</div>
+                        {scameterLookup.risk === "HIGH_RISK_POLICE_RECORD" && (
+                          <button
+                            onClick={() => setScameterWaiverSigned(true)}
+                            className="w-full py-1 text-[10px] font-bold bg-rose-700 hover:bg-rose-600 text-white rounded transition"
+                          >
+                            {scameterWaiverSigned ? "Liability Waiver Signed (Bank Shielded)" : "Sign Statutory Liability Waiver"}
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
               </div>
             </div>
           </div>

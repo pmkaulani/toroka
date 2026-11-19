@@ -79,10 +79,12 @@ class SemanticGroundingReport:
     numeric_mismatches: int
     ungrounded_claims: int
     evaluations: tuple[ClaimSemanticEvaluation, ...]
+    methodology: str = "HEURISTIC_TRIAGE"
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "is_valid": self.is_valid,
+            "methodology": self.methodology,
             "total_claims": self.total_claims,
             "entailed_claims": self.entailed_claims,
             "contradicted_claims": self.contradicted_claims,
@@ -131,7 +133,7 @@ def evaluate_claim_semantics(
 
     cited_items = [items_by_id[eid] for eid in claim.evidence_ids if eid in items_by_id]
 
-    if not cited_items and claim.kind == ClaimKind.FACT:
+    if not cited_items:
         return ClaimSemanticEvaluation(
             claim_id=claim.claim_id,
             status=EntailmentStatus.UNGROUNDED,
@@ -140,7 +142,7 @@ def evaluate_claim_semantics(
             evidence_polarity="NEUTRAL",
             extracted_claim_numbers=(),
             extracted_evidence_numbers=(),
-            reason="Factual claim lacks cited evidence records in context",
+            reason="Claim lacks resolved or cited evidence records in context",
             cited_evidence_ids=claim.evidence_ids,
         )
 
@@ -194,6 +196,25 @@ def evaluate_claim_semantics(
             extracted_claim_numbers=tuple(claim_numbers),
             extracted_evidence_numbers=tuple(evidence_numbers),
             reason=f"Claim introduces ungrounded financial figures not found in cited evidence: {missing_numbers}",
+            cited_evidence_ids=claim.evidence_ids,
+        )
+
+    # Positive overlap check: require non-trivial corroboration
+    STOPWORDS = {"the", "a", "an", "is", "was", "are", "were", "to", "in", "of", "and", "or", "for", "on", "at", "by", "from", "with", "this", "that", "it"}
+    claim_words = {w for w in re.findall(r"\b[A-Za-z0-9_-]{3,}\b", claim.statement.lower()) if w not in STOPWORDS}
+    evidence_words = {w for w in re.findall(r"\b[A-Za-z0-9_-]{3,}\b", evidence_text.lower()) if w not in STOPWORDS}
+
+    overlap = claim_words & evidence_words
+    if len(claim_words) >= 2 and len(overlap) == 0 and len(claim_numbers) == 0:
+        return ClaimSemanticEvaluation(
+            claim_id=claim.claim_id,
+            status=EntailmentStatus.UNGROUNDED,
+            claim_text=claim.statement,
+            polarity=claim_polarity,
+            evidence_polarity=evidence_polarity,
+            extracted_claim_numbers=tuple(claim_numbers),
+            extracted_evidence_numbers=tuple(evidence_numbers),
+            reason="Claim text has zero keyword or factual corroboration in the cited evidence excerpt",
             cited_evidence_ids=claim.evidence_ids,
         )
 

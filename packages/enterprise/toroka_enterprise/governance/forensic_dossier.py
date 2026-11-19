@@ -1,8 +1,9 @@
 """Court-Ready Forensic Evidence Dossier & Section 106B Electronic Records Admissibility.
 
 Provides legally binding evidentiary dossier packages for law enforcement (DCI / BFIU),
-judicial presentation, and regulatory discovery under the Kenya Evidence Act (Cap 80, Sec 106B),
-UK PACE Section 69, and US Federal Rule of Evidence 902(13)/(14).
+judicial presentation, and regulatory discovery under the Kenya Evidence Act (Cap 80, Sec 106B)
+and US Federal Rule of Evidence 902(13)/(14). Note: UK PACE Section 69 was repealed in 1999
+and is not cited as active law.
 """
 from __future__ import annotations
 
@@ -11,6 +12,8 @@ import hmac
 import html
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
+from decimal import Decimal
+from enum import StrEnum
 from typing import Any
 
 from .deployment import _canonical_utc, canonical_json
@@ -20,6 +23,17 @@ from .pki import (
     SignatureBundle,
     verify_asymmetric_signature,
 )
+
+
+class EvidenceProvenance(StrEnum):
+    """Explicit provenance taxonomy for forensic evidence items."""
+    OBSERVED = "OBSERVED"
+    BANK_SOURCE_RECORD = "BANK_SOURCE_RECORD"
+    ANALYST_SUPPLIED = "ANALYST_SUPPLIED"
+    DERIVED = "DERIVED"
+    INFERRED = "INFERRED"
+    UNKNOWN = "UNKNOWN"
+
 
 
 @dataclass(frozen=True)
@@ -89,7 +103,7 @@ def forensic_dossier_payload(
     installation_id: str,
     title: str,
     incident_type: str,
-    fraud_loss_amount: float,
+    fraud_loss_amount: Decimal | float | str,
     currency: str,
     examiner_subject: str,
     examiner_role: str,
@@ -105,6 +119,7 @@ def forensic_dossier_payload(
     
     Excludes chain_of_custody, status, and signature_bundle: these are mutable
     lifecycle tracking fields that append as custody is transferred or signed.
+    Uses stringified Decimal representation for financial currency integrity.
     """
     sorted_mules = sorted(
         (dict(m) for m in identified_mule_nodes),
@@ -115,6 +130,7 @@ def forensic_dossier_payload(
         key=lambda e: (str(e.get("evidence_id", e.get("event_id", ""))), canonical_json(e)),
     )
     cert_dict = section_106b_certificate.to_dict() if section_106b_certificate else None
+    dec_amount_str = f"{Decimal(str(fraud_loss_amount)):.4f}"
 
     return {
         "schema": "toroka.forensic-dossier.v1",
@@ -123,7 +139,7 @@ def forensic_dossier_payload(
         "installation_id": installation_id,
         "title": title,
         "incident_type": incident_type,
-        "fraud_loss_amount": float(fraud_loss_amount),
+        "fraud_loss_amount": dec_amount_str,
         "currency": currency,
         "examiner_subject": examiner_subject,
         "examiner_role": examiner_role,
@@ -151,7 +167,7 @@ class ForensicDossier:
     installation_id: str
     title: str
     incident_type: str
-    fraud_loss_amount: float
+    fraud_loss_amount: Decimal | float
     currency: str
     examiner_subject: str
     examiner_role: str
@@ -166,6 +182,8 @@ class ForensicDossier:
     signature_bundle: SignatureBundle | None = None
 
     def __post_init__(self) -> None:
+        if not isinstance(self.fraud_loss_amount, Decimal):
+            self.fraud_loss_amount = Decimal(str(self.fraud_loss_amount))
         if not self.dossier_digest:
             self.dossier_digest = compute_forensic_dossier_digest(
                 dossier_id=self.dossier_id,
@@ -301,7 +319,7 @@ class ForensicDossier:
             installation_id=data["installation_id"],
             title=data["title"],
             incident_type=data["incident_type"],
-            fraud_loss_amount=float(data["fraud_loss_amount"]),
+            fraud_loss_amount=Decimal(str(data["fraud_loss_amount"])),
             currency=data["currency"],
             examiner_subject=data["examiner_subject"],
             examiner_role=data["examiner_role"],
@@ -318,6 +336,13 @@ class ForensicDossier:
 
     def render_html_dossier(self) -> str:
         """Renders publication-grade, court-admissible HTML dossier with legal styling."""
+        draft_banner = ""
+        if not self.signature_bundle or not self.section_106b_certificate:
+            draft_banner = """
+            <div style="background-color: #fff3cd; color: #856404; border: 2px solid #ffeeba; padding: 15px; margin-bottom: 20px; text-align: center; font-weight: bold; font-size: 14pt; letter-spacing: 1px;">
+                DRAFT UNVERIFIED FORENSIC DOSSIER — NOT YET CERTIFIED UNDER SECTION 106B EVIDENCE ACT
+            </div>
+            """
         cert_html = ""
         if self.section_106b_certificate:
             c = self.section_106b_certificate
@@ -409,6 +434,7 @@ class ForensicDossier:
 </style>
 </head>
 <body>
+{draft_banner}
 <div class="header">
     <h1>REPUBLIC OF KENYA</h1>
     <h2>BANKING FRAUD INVESTIGATIONS UNIT & FINANCIAL CRIME COMPLIANCE</h2>

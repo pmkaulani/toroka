@@ -144,17 +144,18 @@ def test_canonical_release_manifest_integrity_and_tamper_detection(
     )
     assert reg_resp.status_code == 201
 
-    # 2. Independent evaluation run
+    # 2. Independent evaluation run via trusted execution runner
+    token_charlie = token_factory(sub="validator.charlie", roles=["BANK_AUTHORISER"])
     val_resp = oidc_client.post(
-        "/api/enterprise/v1/governance/validation-runs",
-        headers={"Authorization": f"Bearer {token_alice}"},
+        "/api/enterprise/v1/governance/validation-runs/execute-trusted",
+        headers={"Authorization": f"Bearer {token_charlie}"},
         json={
+            "plan_id": "plan-det-01",
             "component_id": "det_integrity_test",
             "component_version": "1.0.0",
             "dataset_digest": "d" * 64,
             "configuration_digest": "b" * 64,
-            "metrics": [{"name": "precision", "value": 0.95, "threshold": 0.90, "direction": "gte", "result": "pass"}],
-            "evaluator": "independent_model_validator",
+            "metrics": [{"name": "precision", "target_value": 0.90, "threshold": 0.90, "direction": "gte"}],
         },
     )
     assert val_resp.status_code == 201
@@ -171,6 +172,8 @@ def test_canonical_release_manifest_integrity_and_tamper_detection(
         },
     )
     assert app_resp.status_code == 200
+    app_data = app_resp.json()
+    approval_rec_id = app_data["approval_record_id"]
 
     # 4. Attest all 13 mandatory readiness gates
     gates_summary = []
@@ -201,7 +204,7 @@ def test_canonical_release_manifest_integrity_and_tamper_detection(
             "environment": "validation",
             "components": {"det_integrity_test": "1.0.0"},
             "validation_runs": [val_data["run_id"]],
-            "approval_records": ["app_valid_01"],
+            "approval_records": [approval_rec_id],
             "readiness_gates": gates_summary,
         },
     )

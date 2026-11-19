@@ -68,6 +68,14 @@ import {
   ChampionChallengerRun,
   ForensicDossier,
   InflightPaymentEvaluation,
+  CopVerifyResponse,
+  TelecomSignalResponse,
+  FederatedMuleEntry,
+  QueryFederatedMuleResponse,
+  MuleCascadeTrace,
+  TriggerMuleCascadeTracePayload,
+  ExecuteCascadeDirectivePayload,
+  ExecuteCascadeDirectiveResponse,
 } from "./types";
 
 export const BANK_PERSONAS: Persona[] = [
@@ -1020,9 +1028,108 @@ export const api = {
     creditor_bic?: string;
     remittance_narrative?: string;
     account_prior_transfers_count?: number;
+    cop_status?: string | null;
+    cop_match_score?: number | null;
+    beneficiary_inflow_restriction?: boolean;
+    debtor_channel_anomaly?: boolean;
+    enable_graduated_controls?: boolean;
+    telecom_call_status?: string | null;
+    telecom_coercion_score?: number | null;
+    check_federated_mule_directory?: boolean;
+    use_parallel_pipeline?: boolean;
+    sla_budget_ms?: number;
+    simulated_latencies?: Record<string, number>;
   }): Promise<InflightPaymentEvaluation> =>
     request<InflightPaymentEvaluation>("/api/enterprise/v1/governance/integrations/iso20022/evaluate-inflight", {
       method: "POST",
       body: JSON.stringify(payload),
     }),
+
+  verifyConfirmationOfPayee: (payload: {
+    intended_name: string;
+    registered_name: string;
+    account_number: string;
+    account_type?: "PERSONAL" | "BUSINESS";
+    clearing_rail?: string;
+    bank_bic?: string;
+  }): Promise<CopVerifyResponse> =>
+    request<CopVerifyResponse>("/api/enterprise/v1/governance/integrations/cop/verify", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  evaluateTelecomSignal: (payload: {
+    msisdn: string;
+    carrier?: "SAFARICOM" | "AIRTEL" | "TELKOM" | "UNKNOWN";
+    query_id?: string;
+    simulated_call_status?: "IDLE" | "CALL_IN_PROGRESS" | "RECENT_CALL" | "UNKNOWN";
+    simulated_call_duration_seconds?: number;
+    simulated_sim_swap_age_hours?: number;
+  }): Promise<TelecomSignalResponse> =>
+    request<TelecomSignalResponse>("/api/enterprise/v1/governance/integrations/telecom/scam-signal", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  registerFederatedMule: (payload: {
+    entity_type: string;
+    value: string;
+    severity_tier?: string;
+    originating_bank_bic?: string;
+    reason_code?: string;
+    dossier_reference?: string;
+    ttl_days?: number;
+  }): Promise<FederatedMuleEntry> =>
+    request<FederatedMuleEntry>("/api/enterprise/v1/governance/integrations/federated-mules/register", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  queryFederatedMule: (payload: {
+    entity_type: string;
+    value: string;
+    is_already_blinded?: boolean;
+  }): Promise<QueryFederatedMuleResponse> =>
+    request<QueryFederatedMuleResponse>("/api/enterprise/v1/governance/integrations/federated-mules/query", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  listFederatedMules: (params?: { entity_type?: string; status?: string }): Promise<FederatedMuleEntry[]> => {
+    const qs = new URLSearchParams();
+    if (params?.entity_type) qs.append("entity_type", params.entity_type);
+    if (params?.status) qs.append("status", params.status);
+    const q = qs.toString() ? `?${qs.toString()}` : "";
+    return request<FederatedMuleEntry[]>(`/api/enterprise/v1/governance/integrations/federated-mules/entries${q}`);
+  },
+
+  updateFederatedMuleStatus: (entryId: string, payload: { status: string; justification: string }): Promise<FederatedMuleEntry> =>
+    request<FederatedMuleEntry>(`/api/enterprise/v1/governance/integrations/federated-mules/entries/${encodeURIComponent(entryId)}/status`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    }),
+
+  triggerMuleCascadeTrace: (payload: TriggerMuleCascadeTracePayload): Promise<MuleCascadeTrace> =>
+    request<MuleCascadeTrace>("/api/enterprise/v1/governance/intelligence/mule-cascade/trace", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  listMuleCascadeTraces: (): Promise<MuleCascadeTrace[]> =>
+    request<MuleCascadeTrace[]>("/api/enterprise/v1/governance/intelligence/mule-cascade/traces"),
+
+  getMuleCascadeTrace: (traceId: string): Promise<MuleCascadeTrace> =>
+    request<MuleCascadeTrace>(`/api/enterprise/v1/governance/intelligence/mule-cascade/traces/${encodeURIComponent(traceId)}`),
+
+  executeCascadeDirective: (
+    traceId: string,
+    payload: ExecuteCascadeDirectivePayload
+  ): Promise<ExecuteCascadeDirectiveResponse> =>
+    request<ExecuteCascadeDirectiveResponse>(
+      `/api/enterprise/v1/governance/intelligence/mule-cascade/traces/${encodeURIComponent(traceId)}/directives/${encodeURIComponent(payload.directive_id)}/execute`,
+      {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }
+    ),
 };
