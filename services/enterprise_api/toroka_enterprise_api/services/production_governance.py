@@ -156,6 +156,31 @@ from toroka_enterprise.intelligence.mule_cascade import (
     MuleCascadeTraceResult,
     CascadeHoldDirectiveType,
 )
+from toroka_enterprise.governance.money_lock import (
+    MoneyLockAccountVault,
+    MoneyLockStatus,
+    MoneyLockUnlockChannel,
+    MoneyLockPolicyViolationError,
+    MoneyLockExclusionError,
+)
+from toroka_enterprise.integrations.precautionary_hold import (
+    PrecautionaryHoldEngine,
+    PrecautionaryHoldDirective,
+    PrecautionaryHoldState,
+    NighttimeWindowPolicy,
+    DelayedTransferRecallPolicy,
+)
+from toroka_enterprise.governance.sim_binding import (
+    SimBindingEngine,
+    SimBindingEnrollment,
+    HardwareBindingAssertion,
+    HardwareBindingStatus,
+)
+from toroka_enterprise.intelligence.behavioral_biometrics import (
+    BehavioralBiometricsEngine,
+    BiometricsTelemetry,
+    BiometricsVerdict,
+)
 from toroka_enterprise.intelligence.copilot.contracts import (
     ClaimKind,
     EvidenceContext,
@@ -183,12 +208,15 @@ from toroka_enterprise.intelligence.models import (
     InflightPaymentRiskRecord,
     IntelligenceEventRecord,
     IntelligenceSignalRecord,
+    MoneyLockAccountRecord,
     MuleCascadeTraceRecord,
     NetworkFindingRecord,
+    PrecautionaryHoldRecord,
     ProductionReleaseRecord,
     QuantitativeDriftEvaluationRecord,
     ReadinessAttestationRecord,
     SignerTrustRecord,
+    SimBindingRecord,
     SuspensionAuditRecord,
     TelecomScamSignalRecord,
     ValidationRunRecord,
@@ -220,7 +248,15 @@ from ..governance_schemas import (
     GovernedComponentResponse,
     InflightPaymentEvaluationRequest,
     InflightPaymentEvaluationResponse,
+    MoneyLockAccountResponse,
+    MoneyLockBranchUnlockRequest,
+    MoneyLockLockRequest,
     MuleCascadeTraceResponse,
+    PrecautionaryHoldCreateRequest,
+    PrecautionaryHoldEscalateRequest,
+    PrecautionaryHoldRecallRequest,
+    PrecautionaryHoldReleaseRequest,
+    PrecautionaryHoldResponse,
     ProductionReleaseResponse,
     QuantitativeDriftEvaluationResponse,
     QueryFederatedMuleRequest,
@@ -236,6 +272,8 @@ from ..governance_schemas import (
     SemanticVerifyRequest,
     SemanticVerifyResponse,
     SignArtifactRequest,
+    SimBindingEnrollRequest,
+    SimBindingEnrollResponse,
     SuspendComponentRequest,
     SuspensionRecordResponse,
     SystemHealthOverviewResponse,
@@ -3556,7 +3594,11 @@ class ProductionGovernanceService:
                 cop_override_status=request.cop_status,
                 cop_override_score=request.cop_match_score,
                 cop_registered_name=None,
-                telecom_enabled=(request.telecom_call_status is not None or request.telecom_coercion_score is not None),
+                telecom_enabled=(
+                    request.telecom_call_status is not None
+                    or request.telecom_coercion_score is not None
+                    or bool(request.simulated_latencies and "telecom" in request.simulated_latencies)
+                ),
                 telecom_msisdn=request.debtor_msisdn,
                 telecom_override_status=request.telecom_call_status,
                 telecom_override_score=request.telecom_coercion_score,
@@ -3630,6 +3672,197 @@ class ProductionGovernanceService:
                 federated_mule_match=federated_match,
             )
 
+        # Phase 15 Variables
+        money_lock_act = False
+        money_lock_avail = None
+        money_lock_locked = None
+        is_money_lock_br = False
+        is_night_breach = False
+        night_ceiling = None
+        hold_id = None
+        hold_state = None
+        sim_status = None
+        is_emulator = False
+        bio_verdict = None
+        bio_risk_score = None
+        is_rat = False
+
+        decision_str = eval_result.decision.value
+        risk_score_val = eval_result.risk_score
+        risk_tier_str = eval_result.risk_tier.value
+        rules_list = list(eval_result.triggered_rules)
+        rec_action = eval_result.recommended_action
+
+        # 1. Phase 15.0: Singapore MAS Money Lock Vault Check
+        if request.check_money_lock:
+            ml_rec = self.session.execute(
+                select(MoneyLockAccountRecord).where(
+                    MoneyLockAccountRecord.installation_id == self.installation_id,
+                    MoneyLockAccountRecord.account_id == transfer.debtor.account_number,
+                )
+            ).scalar_one_or_none()
+            if ml_rec:
+                money_lock_act = (ml_rec.status == "LOCKED")
+                money_lock_avail = float(ml_rec.available_balance)
+                money_lock_locked = float(ml_rec.locked_vault_balance)
+                if money_lock_act and transfer.amount > ml_rec.available_balance:
+                    is_money_lock_br = True
+                    decision_str = "BLOCK"
+                    risk_score_val = 1.0
+                    risk_tier_str = "CRITICAL"
+                    rules_list.append("MONEY_LOCK_EXCLUSION_EXCEEDS_LIQUID_AVAILABLE")
+                    rec_action = (
+                        f"REJECT_PAYMENT_MONEY_LOCK_PROTECTED: Outbound transfer of {transfer.amount} {transfer.currency} "
+                        f"exceeds available liquid balance of {ml_rec.available_balance}. Locked vault balance of "
+                        f"{ml_rec.locked_vault_balance} is strictly protected under Singapore MAS Money Lock policy."
+                    )
+                    ml_trail = list(ml_rec.audit_trail or [])
+                    ml_trail.append({
+                        "event_id": str(uuid.uuid4()),
+                        "event_type": "MONEY_LOCK_DIGITAL_DRAINAGE_PREVENTED",
+                        "amount": float(transfer.amount),
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                        "actor": actor_subject,
+                    })
+                    ml_rec.audit_trail = ml_trail
+
+        # 2. Phase 15.1: Brazil BCB Limite Noturno / Nighttime Limits
+        if request.enforce_nighttime_limits:
+            night_policy = NighttimeWindowPolicy()
+            night_ceiling = float(night_policy.max_nighttime_amount)
+            if request.client_local_hour is not None:
+                check_dt = datetime(2026, 11, 19, request.client_local_hour, 0, tzinfo=timezone.utc)
+            else:
+                check_dt = datetime.now(timezone.utc)
+            night_eval = night_policy.evaluate_nighttime_ceiling(transfer.amount, check_dt)
+            if night_eval["is_breach"]:
+                is_night_breach = True
+                rules_list.append("STATUTORY_NIGHTTIME_LIMIT_EXCEEDED_BCB")
+                if decision_str in ("PROCEED", "ALLOW"):
+                    decision_str = "STEP_UP_AUTH"
+                    rec_action = "DELAY_UNTIL_DAYLIGHT_CLEARING"
+
+        # 3. Phase 15.2: India NPCI SIM & Hardware Binding
+        if request.sim_is_emulator:
+            is_emulator = True
+            decision_str = "BLOCK"
+            risk_score_val = max(risk_score_val, 0.98)
+            risk_tier_str = "CRITICAL"
+            rules_list.append("EMULATOR_ENVIRONMENT_PROHIBITED_NPCI")
+            rec_action = "HARD_BLOCK_EMULATOR_DETECTED"
+        elif request.sim_is_rooted:
+            decision_str = "BLOCK"
+            risk_score_val = max(risk_score_val, 0.95)
+            risk_tier_str = "CRITICAL"
+            rules_list.append("ROOTED_COMPROMISED_DEVICE_NPCI")
+            rec_action = "HARD_BLOCK_ROOTED_DEVICE"
+
+        if request.sim_device_imei_hash:
+            sim_rec = self.session.execute(
+                select(SimBindingRecord).where(
+                    SimBindingRecord.installation_id == self.installation_id,
+                    SimBindingRecord.account_id == transfer.debtor.account_number,
+                )
+            ).scalar_one_or_none()
+            if sim_rec:
+                enrollment = SimBindingEnrollment(
+                    account_id=sim_rec.account_id,
+                    installation_id=sim_rec.installation_id,
+                    bound_device_imei_hash=sim_rec.bound_device_imei_hash,
+                    bound_sim_iccid_hash=sim_rec.bound_sim_iccid_hash,
+                    enrolled_at=sim_rec.enrolled_at,
+                    last_verified_at=sim_rec.last_verified_at,
+                    status=HardwareBindingStatus(sim_rec.status),
+                    carrier_name=sim_rec.carrier_name,
+                )
+                assertion = HardwareBindingAssertion(
+                    device_imei_hash=request.sim_device_imei_hash,
+                    sim_iccid_hash=request.sim_iccid_hash or sim_rec.bound_sim_iccid_hash,
+                    app_instance_id="app-inst",
+                    client_timestamp=datetime.now(timezone.utc),
+                    is_emulator=request.sim_is_emulator,
+                    is_rooted=request.sim_is_rooted,
+                    sim_swap_hours_ago=request.sim_swap_hours_ago,
+                )
+                b_status, b_msg, b_det = SimBindingEngine.verify_assertion(enrollment, assertion)
+                sim_status = b_status.value
+                if b_status == HardwareBindingStatus.SIM_SWAP_DETECTED_COOLDOWN:
+                    decision_str = "BLOCK"
+                    risk_score_val = max(risk_score_val, 0.95)
+                    risk_tier_str = "CRITICAL"
+                    rules_list.append("SIM_SWAP_24H_COOLDOWN_ACTIVE")
+                    rec_action = "COOLING_OFF_HOLD"
+                elif b_status == HardwareBindingStatus.DEVICE_MISMATCH:
+                    rules_list.append("DEVICE_HARDWARE_MISMATCH_NPCI")
+                    if decision_str in ("PROCEED", "ALLOW"):
+                        decision_str = "STEP_UP_AUTH"
+                        rec_action = "STEP_UP_IN_PERSON_BRANCH"
+
+        # 4. Phase 15.3: BioCatch Behavioral Biometrics (RAT & Coached Victim)
+        if (
+            request.biometrics_trajectory_r2 is not None
+            or request.biometrics_is_active_call is not None
+            or request.biometrics_is_remote_software is not None
+        ):
+            bio_telemetry = BiometricsTelemetry(
+                trajectory_linearity_r2=request.biometrics_trajectory_r2 if request.biometrics_trajectory_r2 is not None else 0.45,
+                micro_tremor_hz=request.biometrics_micro_tremor_hz if request.biometrics_micro_tremor_hz is not None else 9.5,
+                typing_hesitation_ms=request.biometrics_hesitation_ms if request.biometrics_hesitation_ms is not None else 1200,
+                backspace_count=request.biometrics_backspaces if request.biometrics_backspaces is not None else 1,
+                is_active_voice_call=bool(request.biometrics_is_active_call),
+                is_remote_software_detected=bool(request.biometrics_is_remote_software),
+            )
+            bio_res = BehavioralBiometricsEngine.evaluate(bio_telemetry)
+            bio_verdict = bio_res.verdict.value
+            bio_risk_score = bio_res.risk_score
+            for fl in bio_res.detected_flags:
+                rules_list.append(f"BIOMETRICS_{fl}")
+
+            if bio_res.verdict == BiometricsVerdict.SUSPECTED_REMOTE_ACCESS_TROJAN:
+                is_rat = True
+                decision_str = "BLOCK"
+                risk_score_val = max(risk_score_val, 0.96)
+                risk_tier_str = "CRITICAL"
+                rules_list.append("REMOTE_ACCESS_TROJAN_CURSOR_LINEARITY_DETECTED")
+                rec_action = "TERMINATE_SESSION_STEP_UP_IN_PERSON"
+            elif bio_res.verdict == BiometricsVerdict.SUSPECTED_COACHED_VICTIM:
+                rules_list.append("COACHED_VICTIM_VOICE_CALL_HESITATION_DETECTED")
+                risk_score_val = max(risk_score_val, 0.82)
+                if decision_str in ("PROCEED", "ALLOW"):
+                    decision_str = "STEP_UP_AUTH"
+                    rec_action = "INTERRUPT_WITH_COACHING_WARNING_MODAL"
+
+        # 5. Phase 15.1: Precautionary Hold (Bloqueio Cautelar 72h) Trigger
+        if decision_str == "BLOCK" or risk_score_val >= 0.85 or is_rat or is_money_lock_br:
+            hold_directive = PrecautionaryHoldEngine.create_precautionary_hold(
+                installation_id=self.installation_id,
+                tx_id=transfer.tx_id,
+                amount=transfer.amount,
+                debtor_account=transfer.debtor.account_number,
+                creditor_account=transfer.creditor.account_number,
+                reason="; ".join(rules_list) or "Precautionary block triggered by high-risk anomaly.",
+                currency=transfer.currency,
+            )
+            hold_rec = PrecautionaryHoldRecord(
+                hold_id=hold_directive.hold_id,
+                installation_id=self.installation_id,
+                tx_id=hold_directive.tx_id,
+                amount=hold_directive.amount,
+                currency=hold_directive.currency,
+                debtor_account=hold_directive.debtor_account,
+                creditor_account=hold_directive.creditor_account,
+                state=hold_directive.state.value,
+                placed_at=hold_directive.placed_at,
+                expires_at=hold_directive.expires_at,
+                reason=hold_directive.reason,
+                statutory_basis=hold_directive.statutory_basis,
+                created_at=datetime.now(timezone.utc),
+                updated_at=datetime.now(timezone.utc),
+            )
+            self.session.add(hold_rec)
+            hold_id = hold_directive.hold_id
+            hold_state = hold_directive.state.value
+
         record = InflightPaymentRiskRecord(
             evaluation_id=f"eval-pmt-{uuid.uuid4().hex[:12]}",
             installation_id=self.installation_id,
@@ -3639,11 +3872,11 @@ class ProductionGovernanceService:
             currency=transfer.currency,
             debtor_account=transfer.debtor.account_number,
             creditor_account=transfer.creditor.account_number,
-            decision=eval_result.decision.value,
-            risk_score=eval_result.risk_score,
-            risk_tier=eval_result.risk_tier.value,
-            triggered_rules=list(eval_result.triggered_rules),
-            recommended_action=eval_result.recommended_action,
+            decision=decision_str,
+            risk_score=risk_score_val,
+            risk_tier=risk_tier_str,
+            triggered_rules=rules_list,
+            recommended_action=rec_action,
             integration_mode="SHADOW",
             latency_ms=eval_result.latency_ms,
             is_parallel_pipeline=is_parallel,
@@ -3655,6 +3888,11 @@ class ProductionGovernanceService:
                 "federated_mule": fed_lat,
                 "behavioral": beh_lat,
             } if is_parallel else {},
+            biometrics_verdict=bio_verdict,
+            biometrics_risk_score=bio_risk_score,
+            is_rat_detected=is_rat,
+            sim_binding_status=sim_status,
+            is_nighttime_breach=is_night_breach,
             evaluated_at=eval_result.evaluated_at,
         )
         self.session.add(record)
@@ -3687,6 +3925,19 @@ class ProductionGovernanceService:
             behavioral_latency_ms=beh_lat,
             feed_statuses=feed_statuses_dict,
             circuit_breaker_tripped=circuit_tripped,
+            money_lock_active=money_lock_act,
+            money_lock_available_balance=money_lock_avail,
+            money_lock_locked_balance=money_lock_locked,
+            is_money_lock_breach=is_money_lock_br,
+            is_nighttime_breach=is_night_breach,
+            nighttime_ceiling=night_ceiling,
+            precautionary_hold_id=hold_id,
+            precautionary_hold_state=hold_state,
+            sim_binding_status=sim_status,
+            is_emulator_detected=is_emulator,
+            biometrics_verdict=bio_verdict,
+            biometrics_risk_score=bio_risk_score,
+            is_rat_detected=is_rat,
         )
 
     def verify_confirmation_of_payee(
@@ -4423,4 +4674,463 @@ class ProductionGovernanceService:
         )
         self.session.commit()
         return self._to_validation_run_response(run_record)
+
+    # ==============================================================================
+    # Phase 15.0: Singapore MAS Money Lock Vault Partitioning Service Methods
+    # ==============================================================================
+
+    def lock_money_vault(
+        self,
+        account_id: str,
+        amount: Decimal,
+        actor: str,
+    ) -> MoneyLockAccountResponse:
+        """Lock funds into customer non-digital vault partition (Singapore MAS/ABS)."""
+        now = _utc_now()
+        rec = self.session.execute(
+            select(MoneyLockAccountRecord).where(
+                MoneyLockAccountRecord.installation_id == self.installation_id,
+                MoneyLockAccountRecord.account_id == account_id,
+            )
+        ).scalar_one_or_none()
+
+        if not rec:
+            total = max(Decimal("500000.00"), amount)
+            rec = MoneyLockAccountRecord(
+                account_id=account_id,
+                installation_id=self.installation_id,
+                currency="KES",
+                total_balance=total,
+                locked_vault_balance=Decimal("0.0"),
+                available_balance=total,
+                status="UNLOCKED",
+                audit_trail=[],
+                created_at=now,
+                updated_at=now,
+            )
+            self.session.add(rec)
+
+        vault = MoneyLockAccountVault(
+            account_id=rec.account_id,
+            installation_id=rec.installation_id,
+            currency=rec.currency,
+            total_balance=rec.total_balance,
+            locked_vault_balance=rec.locked_vault_balance,
+            status=MoneyLockStatus(rec.status),
+        )
+        try:
+            vault.lock_funds(amount=amount, actor=actor)
+        except (ValueError, MoneyLockPolicyViolationError) as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=str(exc),
+            ) from exc
+
+        rec.locked_vault_balance = vault.locked_vault_balance
+        rec.available_balance = vault.available_balance
+        rec.status = vault.status.value
+        rec.last_locked_at = vault.last_locked_at
+        rec.updated_at = now
+
+        trail = list(rec.audit_trail or [])
+        trail.append({
+            "event_id": str(uuid.uuid4()),
+            "event_type": "MONEY_LOCK_FUNDS_LOCKED",
+            "amount": float(amount),
+            "actor": actor,
+            "timestamp": now.isoformat(),
+        })
+        rec.audit_trail = trail
+        self.session.commit()
+        self.session.refresh(rec)
+        return self._to_money_lock_response(rec)
+
+    def attempt_digital_unlock(self, account_id: str, actor: str) -> None:
+        """Digital unlocking is strictly prohibited under Singapore MAS Money Lock rules."""
+        rec = self.session.execute(
+            select(MoneyLockAccountRecord).where(
+                MoneyLockAccountRecord.installation_id == self.installation_id,
+                MoneyLockAccountRecord.account_id == account_id,
+            )
+        ).scalar_one_or_none()
+        if rec:
+            trail = list(rec.audit_trail or [])
+            trail.append({
+                "event_id": str(uuid.uuid4()),
+                "event_type": "MONEY_LOCK_DIGITAL_UNLOCK_REJECTED",
+                "actor": actor,
+                "timestamp": _utc_now().isoformat(),
+            })
+            rec.audit_trail = trail
+            self.session.commit()
+
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                "Digital unlocking is strictly prohibited under Singapore MAS Money Lock policy. "
+                "To unlock funds, the account holder must physically attend an authorized bank branch "
+                "counter with national photo identification, or authenticate via a physical ATM terminal "
+                "using hardware chip-and-PIN."
+            ),
+        )
+
+    def branch_unlock_money_vault(
+        self,
+        account_id: str,
+        amount: Decimal,
+        officer_id: str,
+        station_id: str,
+        dual_authorizer_id: str | None = None,
+        channel: str = "PHYSICAL_BRANCH_COUNTER",
+    ) -> MoneyLockAccountResponse:
+        """Authorized physical branch counter or ATM unlock."""
+        now = _utc_now()
+        rec = self.session.execute(
+            select(MoneyLockAccountRecord).where(
+                MoneyLockAccountRecord.installation_id == self.installation_id,
+                MoneyLockAccountRecord.account_id == account_id,
+            )
+        ).scalar_one_or_none()
+
+        if not rec:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Money Lock account {account_id} not found.",
+            )
+
+        vault = MoneyLockAccountVault(
+            account_id=rec.account_id,
+            installation_id=rec.installation_id,
+            currency=rec.currency,
+            total_balance=rec.total_balance,
+            locked_vault_balance=rec.locked_vault_balance,
+            status=MoneyLockStatus(rec.status),
+        )
+        try:
+            vault.unlock_funds_branch(
+                amount_to_unlock=amount,
+                officer_id=officer_id,
+                station_id=station_id,
+                channel=MoneyLockUnlockChannel(channel),
+                dual_authorizer_id=dual_authorizer_id,
+            )
+        except (ValueError, MoneyLockPolicyViolationError) as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=str(exc),
+            ) from exc
+
+        rec.locked_vault_balance = vault.locked_vault_balance
+        rec.available_balance = vault.available_balance
+        rec.status = vault.status.value
+        rec.last_unlocked_at = vault.last_unlocked_at
+        rec.unlock_channel = channel
+        rec.unlock_officer_id = officer_id
+        rec.unlock_station_id = station_id
+        rec.dual_authorizer_id = dual_authorizer_id
+        rec.updated_at = now
+
+        trail = list(rec.audit_trail or [])
+        trail.append({
+            "event_id": str(uuid.uuid4()),
+            "event_type": "MONEY_LOCK_OFFICER_UNLOCKED",
+            "amount": float(amount),
+            "officer_id": officer_id,
+            "station_id": station_id,
+            "dual_authorizer_id": dual_authorizer_id,
+            "channel": channel,
+            "timestamp": now.isoformat(),
+        })
+        rec.audit_trail = trail
+        self.session.commit()
+        self.session.refresh(rec)
+        return self._to_money_lock_response(rec)
+
+    def get_money_lock_account(self, account_id: str) -> MoneyLockAccountResponse:
+        rec = self.session.execute(
+            select(MoneyLockAccountRecord).where(
+                MoneyLockAccountRecord.installation_id == self.installation_id,
+                MoneyLockAccountRecord.account_id == account_id,
+            )
+        ).scalar_one_or_none()
+        if not rec:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Money Lock account {account_id} not found.",
+            )
+        return self._to_money_lock_response(rec)
+
+    def list_money_lock_accounts(self) -> list[MoneyLockAccountResponse]:
+        records = self.session.execute(
+            select(MoneyLockAccountRecord).where(
+                MoneyLockAccountRecord.installation_id == self.installation_id,
+            ).order_by(MoneyLockAccountRecord.updated_at.desc())
+        ).scalars().all()
+        return [self._to_money_lock_response(r) for r in records]
+
+    def _to_money_lock_response(self, rec: MoneyLockAccountRecord) -> MoneyLockAccountResponse:
+        return MoneyLockAccountResponse(
+            account_id=rec.account_id,
+            installation_id=rec.installation_id,
+            currency=rec.currency,
+            total_balance=float(rec.total_balance),
+            locked_vault_balance=float(rec.locked_vault_balance),
+            available_balance=float(rec.available_balance),
+            status=rec.status,
+            last_locked_at=rec.last_locked_at.isoformat() if rec.last_locked_at else None,
+            last_unlocked_at=rec.last_unlocked_at.isoformat() if rec.last_unlocked_at else None,
+            unlock_channel=rec.unlock_channel,
+            unlock_officer_id=rec.unlock_officer_id,
+            unlock_station_id=rec.unlock_station_id,
+            dual_authorizer_id=rec.dual_authorizer_id,
+            audit_trail=rec.audit_trail or [],
+        )
+
+    # ==============================================================================
+    # Phase 15.1: Brazil BCB Bloqueio Cautelar 72h & Recall Service Methods
+    # ==============================================================================
+
+    def create_precautionary_hold(
+        self,
+        request: PrecautionaryHoldCreateRequest,
+    ) -> PrecautionaryHoldResponse:
+        directive = PrecautionaryHoldEngine.create_precautionary_hold(
+            installation_id=self.installation_id,
+            tx_id=request.tx_id,
+            amount=request.amount,
+            debtor_account=request.debtor_account,
+            creditor_account=request.creditor_account,
+            reason=request.reason,
+            currency=request.currency,
+            duration_hours=request.duration_hours,
+        )
+        rec = PrecautionaryHoldRecord(
+            hold_id=directive.hold_id,
+            installation_id=self.installation_id,
+            tx_id=directive.tx_id,
+            amount=directive.amount,
+            currency=directive.currency,
+            debtor_account=directive.debtor_account,
+            creditor_account=directive.creditor_account,
+            state=directive.state.value,
+            placed_at=directive.placed_at,
+            expires_at=directive.expires_at,
+            reason=directive.reason,
+            statutory_basis=directive.statutory_basis,
+            created_at=_utc_now(),
+            updated_at=_utc_now(),
+        )
+        self.session.add(rec)
+        self.session.commit()
+        self.session.refresh(rec)
+        return self._to_precautionary_hold_response(rec)
+
+    def release_precautionary_hold(
+        self,
+        hold_id: str,
+        request: PrecautionaryHoldReleaseRequest,
+    ) -> PrecautionaryHoldResponse:
+        rec = self.session.execute(
+            select(PrecautionaryHoldRecord).where(
+                PrecautionaryHoldRecord.installation_id == self.installation_id,
+                PrecautionaryHoldRecord.hold_id == hold_id,
+            )
+        ).scalar_one_or_none()
+        if not rec:
+            raise HTTPException(status_code=404, detail=f"Hold {hold_id} not found.")
+
+        directive = PrecautionaryHoldDirective(
+            hold_id=rec.hold_id,
+            installation_id=rec.installation_id,
+            tx_id=rec.tx_id,
+            amount=rec.amount,
+            currency=rec.currency,
+            debtor_account=rec.debtor_account,
+            creditor_account=rec.creditor_account,
+            state=PrecautionaryHoldState(rec.state),
+            placed_at=rec.placed_at,
+            expires_at=rec.expires_at,
+            reason=rec.reason,
+        )
+        try:
+            PrecautionaryHoldEngine.release_hold(directive, request.officer_id, request.resolution_notes)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+        rec.state = directive.state.value
+        rec.decision_officer_id = directive.decision_officer_id
+        rec.resolution_notes = directive.resolution_notes
+        rec.updated_at = _utc_now()
+        self.session.commit()
+        self.session.refresh(rec)
+        return self._to_precautionary_hold_response(rec)
+
+    def escalate_precautionary_hold_to_camt056(
+        self,
+        hold_id: str,
+        request: PrecautionaryHoldEscalateRequest,
+    ) -> PrecautionaryHoldResponse:
+        rec = self.session.execute(
+            select(PrecautionaryHoldRecord).where(
+                PrecautionaryHoldRecord.installation_id == self.installation_id,
+                PrecautionaryHoldRecord.hold_id == hold_id,
+            )
+        ).scalar_one_or_none()
+        if not rec:
+            raise HTTPException(status_code=404, detail=f"Hold {hold_id} not found.")
+
+        directive = PrecautionaryHoldDirective(
+            hold_id=rec.hold_id,
+            installation_id=rec.installation_id,
+            tx_id=rec.tx_id,
+            amount=rec.amount,
+            currency=rec.currency,
+            debtor_account=rec.debtor_account,
+            creditor_account=rec.creditor_account,
+            state=PrecautionaryHoldState(rec.state),
+            placed_at=rec.placed_at,
+            expires_at=rec.expires_at,
+            reason=rec.reason,
+        )
+        try:
+            PrecautionaryHoldEngine.escalate_to_camt056_clawback(
+                directive, request.officer_id, request.resolution_notes
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+        rec.state = directive.state.value
+        rec.decision_officer_id = directive.decision_officer_id
+        rec.resolution_notes = directive.resolution_notes
+        rec.camt056_xml = directive.camt056_xml
+        rec.updated_at = _utc_now()
+        self.session.commit()
+        self.session.refresh(rec)
+        return self._to_precautionary_hold_response(rec)
+
+    def recall_precautionary_hold(
+        self,
+        hold_id: str,
+        request: PrecautionaryHoldRecallRequest,
+    ) -> PrecautionaryHoldResponse:
+        rec = self.session.execute(
+            select(PrecautionaryHoldRecord).where(
+                PrecautionaryHoldRecord.installation_id == self.installation_id,
+                PrecautionaryHoldRecord.hold_id == hold_id,
+            )
+        ).scalar_one_or_none()
+        if not rec:
+            raise HTTPException(status_code=404, detail=f"Hold {hold_id} not found.")
+
+        policy = DelayedTransferRecallPolicy()
+        req_dt = datetime.fromisoformat(request.recall_requested_at) if request.recall_requested_at else _utc_now()
+        can_recall, msg = policy.evaluate_recall(rec.placed_at, req_dt)
+        if not can_recall:
+            raise HTTPException(status_code=400, detail=msg)
+
+        rec.state = PrecautionaryHoldState.RECALLED_BY_SENDER.value
+        rec.resolution_notes = f"Sender recall accepted: {msg}"
+        rec.updated_at = _utc_now()
+        self.session.commit()
+        self.session.refresh(rec)
+        return self._to_precautionary_hold_response(rec)
+
+    def list_precautionary_holds(self) -> list[PrecautionaryHoldResponse]:
+        records = self.session.execute(
+            select(PrecautionaryHoldRecord).where(
+                PrecautionaryHoldRecord.installation_id == self.installation_id,
+            ).order_by(PrecautionaryHoldRecord.placed_at.desc())
+        ).scalars().all()
+        return [self._to_precautionary_hold_response(r) for r in records]
+
+    def _to_precautionary_hold_response(self, rec: PrecautionaryHoldRecord) -> PrecautionaryHoldResponse:
+        return PrecautionaryHoldResponse(
+            hold_id=rec.hold_id,
+            installation_id=rec.installation_id,
+            tx_id=rec.tx_id,
+            amount=float(rec.amount),
+            currency=rec.currency,
+            debtor_account=rec.debtor_account,
+            creditor_account=rec.creditor_account,
+            state=rec.state,
+            placed_at=rec.placed_at.isoformat(),
+            expires_at=rec.expires_at.isoformat(),
+            reason=rec.reason,
+            statutory_basis=rec.statutory_basis,
+            decision_officer_id=rec.decision_officer_id,
+            resolution_notes=rec.resolution_notes,
+            camt056_xml=rec.camt056_xml,
+        )
+
+    # ==============================================================================
+    # Phase 15.2: India NPCI SIM & Hardware Binding Service Methods
+    # ==============================================================================
+
+    def enroll_sim_binding(
+        self,
+        request: SimBindingEnrollRequest,
+    ) -> SimBindingEnrollResponse:
+        enrollment = SimBindingEngine.enroll_binding(
+            account_id=request.account_id,
+            installation_id=self.installation_id,
+            device_imei=request.device_imei,
+            sim_iccid=request.sim_iccid,
+            carrier_name=request.carrier_name,
+        )
+        rec = self.session.execute(
+            select(SimBindingRecord).where(
+                SimBindingRecord.installation_id == self.installation_id,
+                SimBindingRecord.account_id == request.account_id,
+            )
+        ).scalar_one_or_none()
+
+        if not rec:
+            rec = SimBindingRecord(
+                account_id=enrollment.account_id,
+                installation_id=self.installation_id,
+                bound_device_imei_hash=enrollment.bound_device_imei_hash,
+                bound_sim_iccid_hash=enrollment.bound_sim_iccid_hash,
+                carrier_name=enrollment.carrier_name,
+                status=enrollment.status.value,
+                enrolled_at=enrollment.enrolled_at,
+                last_verified_at=enrollment.last_verified_at,
+            )
+            self.session.add(rec)
+        else:
+            rec.bound_device_imei_hash = enrollment.bound_device_imei_hash
+            rec.bound_sim_iccid_hash = enrollment.bound_sim_iccid_hash
+            rec.carrier_name = enrollment.carrier_name
+            rec.status = enrollment.status.value
+            rec.last_verified_at = enrollment.last_verified_at
+
+        self.session.commit()
+        self.session.refresh(rec)
+        return SimBindingEnrollResponse(
+            account_id=rec.account_id,
+            installation_id=rec.installation_id,
+            bound_device_imei_hash=rec.bound_device_imei_hash,
+            bound_sim_iccid_hash=rec.bound_sim_iccid_hash,
+            carrier_name=rec.carrier_name,
+            status=rec.status,
+            enrolled_at=rec.enrolled_at.isoformat(),
+        )
+
+    def get_sim_binding(self, account_id: str) -> SimBindingEnrollResponse:
+        rec = self.session.execute(
+            select(SimBindingRecord).where(
+                SimBindingRecord.installation_id == self.installation_id,
+                SimBindingRecord.account_id == account_id,
+            )
+        ).scalar_one_or_none()
+        if not rec:
+            raise HTTPException(status_code=404, detail=f"SIM binding for account {account_id} not found.")
+        return SimBindingEnrollResponse(
+            account_id=rec.account_id,
+            installation_id=rec.installation_id,
+            bound_device_imei_hash=rec.bound_device_imei_hash,
+            bound_sim_iccid_hash=rec.bound_sim_iccid_hash,
+            carrier_name=rec.carrier_name,
+            status=rec.status,
+            enrolled_at=rec.enrolled_at.isoformat(),
+        )
 

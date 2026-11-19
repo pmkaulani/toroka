@@ -34,7 +34,15 @@ from ..governance_schemas import (
     GovernedComponentResponse,
     InflightPaymentEvaluationRequest,
     InflightPaymentEvaluationResponse,
+    MoneyLockAccountResponse,
+    MoneyLockBranchUnlockRequest,
+    MoneyLockLockRequest,
     MuleCascadeTraceResponse,
+    PrecautionaryHoldCreateRequest,
+    PrecautionaryHoldEscalateRequest,
+    PrecautionaryHoldRecallRequest,
+    PrecautionaryHoldReleaseRequest,
+    PrecautionaryHoldResponse,
     ProductionReleaseResponse,
     PromoteReleaseRequest,
     QuantitativeDriftEvaluationResponse,
@@ -52,6 +60,8 @@ from ..governance_schemas import (
     SemanticVerifyRequest,
     SemanticVerifyResponse,
     SignArtifactRequest,
+    SimBindingEnrollRequest,
+    SimBindingEnrollResponse,
     SuspendComponentRequest,
     SuspensionRecordResponse,
     SystemHealthOverviewResponse,
@@ -1300,6 +1310,232 @@ def execute_cascade_directive(
         request=request,
         actor_subject=principal.subject,
     )
+
+
+# ==============================================================================
+# Phase 15.0: Singapore MAS Money Lock Vault Partitioning Endpoints
+# ==============================================================================
+
+@router.post(
+    "/money-lock/accounts/{account_id}/lock",
+    response_model=MoneyLockAccountResponse,
+)
+def lock_money_vault(
+    account_id: str,
+    request: MoneyLockLockRequest,
+    principal: EnterprisePrincipal = Depends(get_current_principal),
+    installation_id: str = Depends(get_installation_id),
+    db: Session = Depends(get_db),
+) -> MoneyLockAccountResponse:
+    effective_inst = principal.installation_id or installation_id
+    service = ProductionGovernanceService(db, effective_inst)
+    return service.lock_money_vault(
+        account_id=account_id,
+        amount=request.amount,
+        actor=request.actor or principal.subject,
+    )
+
+
+@router.post(
+    "/money-lock/accounts/{account_id}/attempt-digital-unlock",
+    status_code=status.HTTP_403_FORBIDDEN,
+)
+def attempt_digital_unlock(
+    account_id: str,
+    principal: EnterprisePrincipal = Depends(get_current_principal),
+    installation_id: str = Depends(get_installation_id),
+    db: Session = Depends(get_db),
+) -> None:
+    """Attempts digital unlocking; strictly rejected under Singapore MAS Money Lock policy."""
+    effective_inst = principal.installation_id or installation_id
+    service = ProductionGovernanceService(db, effective_inst)
+    service.attempt_digital_unlock(
+        account_id=account_id,
+        actor=principal.subject,
+    )
+
+
+@router.post(
+    "/money-lock/accounts/{account_id}/branch-unlock",
+    response_model=MoneyLockAccountResponse,
+    dependencies=[
+        Depends(require_roles(ROLE_AUTHORISER, ROLE_SYSTEM_ADMINISTRATOR))
+    ],
+)
+def branch_unlock_money_vault(
+    account_id: str,
+    request: MoneyLockBranchUnlockRequest,
+    principal: EnterprisePrincipal = Depends(get_current_principal),
+    installation_id: str = Depends(get_installation_id),
+    db: Session = Depends(get_db),
+) -> MoneyLockAccountResponse:
+    effective_inst = principal.installation_id or installation_id
+    service = ProductionGovernanceService(db, effective_inst)
+    return service.branch_unlock_money_vault(
+        account_id=account_id,
+        amount=request.amount,
+        officer_id=request.officer_id,
+        station_id=request.station_id,
+        dual_authorizer_id=request.dual_authorizer_id,
+        channel=request.channel,
+    )
+
+
+@router.get(
+    "/money-lock/accounts/{account_id}",
+    response_model=MoneyLockAccountResponse,
+)
+def get_money_lock_account(
+    account_id: str,
+    principal: EnterprisePrincipal = Depends(get_current_principal),
+    installation_id: str = Depends(get_installation_id),
+    db: Session = Depends(get_db),
+) -> MoneyLockAccountResponse:
+    effective_inst = principal.installation_id or installation_id
+    service = ProductionGovernanceService(db, effective_inst)
+    return service.get_money_lock_account(account_id=account_id)
+
+
+@router.get(
+    "/money-lock/accounts",
+    response_model=list[MoneyLockAccountResponse],
+)
+def list_money_lock_accounts(
+    principal: EnterprisePrincipal = Depends(get_current_principal),
+    installation_id: str = Depends(get_installation_id),
+    db: Session = Depends(get_db),
+) -> list[MoneyLockAccountResponse]:
+    effective_inst = principal.installation_id or installation_id
+    service = ProductionGovernanceService(db, effective_inst)
+    return service.list_money_lock_accounts()
+
+
+# ==============================================================================
+# Phase 15.1: Brazil BCB Bloqueio Cautelar 72h Precautionary Hold Endpoints
+# ==============================================================================
+
+@router.post(
+    "/precautionary-holds",
+    response_model=PrecautionaryHoldResponse,
+    dependencies=[
+        Depends(require_roles(ROLE_INVESTIGATOR, ROLE_AUTHORISER, ROLE_SYSTEM_ADMINISTRATOR))
+    ],
+)
+def create_precautionary_hold(
+    request: PrecautionaryHoldCreateRequest,
+    principal: EnterprisePrincipal = Depends(get_current_principal),
+    installation_id: str = Depends(get_installation_id),
+    db: Session = Depends(get_db),
+) -> PrecautionaryHoldResponse:
+    effective_inst = principal.installation_id or installation_id
+    service = ProductionGovernanceService(db, effective_inst)
+    return service.create_precautionary_hold(request=request)
+
+
+@router.post(
+    "/precautionary-holds/{hold_id}/release",
+    response_model=PrecautionaryHoldResponse,
+    dependencies=[
+        Depends(require_roles(ROLE_AUTHORISER, ROLE_SYSTEM_ADMINISTRATOR))
+    ],
+)
+def release_precautionary_hold(
+    hold_id: str,
+    request: PrecautionaryHoldReleaseRequest,
+    principal: EnterprisePrincipal = Depends(get_current_principal),
+    installation_id: str = Depends(get_installation_id),
+    db: Session = Depends(get_db),
+) -> PrecautionaryHoldResponse:
+    effective_inst = principal.installation_id or installation_id
+    service = ProductionGovernanceService(db, effective_inst)
+    return service.release_precautionary_hold(hold_id=hold_id, request=request)
+
+
+@router.post(
+    "/precautionary-holds/{hold_id}/escalate",
+    response_model=PrecautionaryHoldResponse,
+    dependencies=[
+        Depends(require_roles(ROLE_AUTHORISER, ROLE_SYSTEM_ADMINISTRATOR))
+    ],
+)
+def escalate_precautionary_hold_to_camt056(
+    hold_id: str,
+    request: PrecautionaryHoldEscalateRequest,
+    principal: EnterprisePrincipal = Depends(get_current_principal),
+    installation_id: str = Depends(get_installation_id),
+    db: Session = Depends(get_db),
+) -> PrecautionaryHoldResponse:
+    effective_inst = principal.installation_id or installation_id
+    service = ProductionGovernanceService(db, effective_inst)
+    return service.escalate_precautionary_hold_to_camt056(hold_id=hold_id, request=request)
+
+
+@router.post(
+    "/precautionary-holds/{hold_id}/recall",
+    response_model=PrecautionaryHoldResponse,
+)
+def recall_precautionary_hold(
+    hold_id: str,
+    request: PrecautionaryHoldRecallRequest,
+    principal: EnterprisePrincipal = Depends(get_current_principal),
+    installation_id: str = Depends(get_installation_id),
+    db: Session = Depends(get_db),
+) -> PrecautionaryHoldResponse:
+    effective_inst = principal.installation_id or installation_id
+    service = ProductionGovernanceService(db, effective_inst)
+    return service.recall_precautionary_hold(hold_id=hold_id, request=request)
+
+
+@router.get(
+    "/precautionary-holds",
+    response_model=list[PrecautionaryHoldResponse],
+)
+def list_precautionary_holds(
+    principal: EnterprisePrincipal = Depends(get_current_principal),
+    installation_id: str = Depends(get_installation_id),
+    db: Session = Depends(get_db),
+) -> list[PrecautionaryHoldResponse]:
+    effective_inst = principal.installation_id or installation_id
+    service = ProductionGovernanceService(db, effective_inst)
+    return service.list_precautionary_holds()
+
+
+# ==============================================================================
+# Phase 15.2: India NPCI Cryptographic SIM & Hardware Binding Endpoints
+# ==============================================================================
+
+@router.post(
+    "/sim-binding/enroll",
+    response_model=SimBindingEnrollResponse,
+    dependencies=[
+        Depends(require_roles(ROLE_INVESTIGATOR, ROLE_AUTHORISER, ROLE_SYSTEM_ADMINISTRATOR))
+    ],
+)
+def enroll_sim_binding(
+    request: SimBindingEnrollRequest,
+    principal: EnterprisePrincipal = Depends(get_current_principal),
+    installation_id: str = Depends(get_installation_id),
+    db: Session = Depends(get_db),
+) -> SimBindingEnrollResponse:
+    effective_inst = principal.installation_id or installation_id
+    service = ProductionGovernanceService(db, effective_inst)
+    return service.enroll_sim_binding(request=request)
+
+
+@router.get(
+    "/sim-binding/accounts/{account_id}",
+    response_model=SimBindingEnrollResponse,
+)
+def get_sim_binding(
+    account_id: str,
+    principal: EnterprisePrincipal = Depends(get_current_principal),
+    installation_id: str = Depends(get_installation_id),
+    db: Session = Depends(get_db),
+) -> SimBindingEnrollResponse:
+    effective_inst = principal.installation_id or installation_id
+    service = ProductionGovernanceService(db, effective_inst)
+    return service.get_sim_binding(account_id=account_id)
+
 
 
 

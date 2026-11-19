@@ -142,6 +142,49 @@ export const ProductionGovernanceView: React.FC<Props> = ({ currentPersona }) =>
   const [traceRunning, setTraceRunning] = useState(false);
   const [selectedXmlNotice, setSelectedXmlNotice] = useState<string | null>(null);
 
+  // Phase 15 Global Frontier Hardening State (Singapore Money Lock, Brazil BCB, India SIM Binding, BioCatch)
+  const [mlLockedBalance, setMlLockedBalance] = useState(450000.0);
+  const [mlAvailableBalance, setMlAvailableBalance] = useState(50000.0);
+  const [mlTotalBalance] = useState(500000.0);
+  const [mlDrainAttemptResult, setMlDrainAttemptResult] = useState<string | null>(null);
+  const [mlDigitalBlockedNotice, setMlDigitalBlockedNotice] = useState<string | null>(null);
+  const [mlBranchUnlockAmount, setMlBranchUnlockAmount] = useState("150000");
+  const [mlBranchOfficer, setMlBranchOfficer] = useState("teller-westlands-01");
+  const [mlBranchStation, setMlBranchStation] = useState("COUNTER-BR-04");
+  const [mlDualAuthorizer, setMlDualAuthorizer] = useState("manager-nairobi-02");
+  const [mlUnlockSuccessNotice, setMlUnlockSuccessNotice] = useState<string | null>(null);
+
+  // Precautionary Holds State (Brazil Bloqueio Cautelar)
+  const [precHoldsList, setPrecHoldsList] = useState<any[]>([
+    {
+      hold_id: "HOLD-BCB-9901",
+      tx_id: "TX-PIX-8822",
+      amount: 85000.0,
+      debtor: "ACC-VICTIM-01",
+      creditor: "ACC-MULE-TIER1",
+      state: "ACTIVE_HOLD_72H",
+      expires_in: "71h 45m",
+      reason: "Severe velocity anomaly & mule cascade pattern",
+    },
+    {
+      hold_id: "HOLD-BCB-9902",
+      tx_id: "TX-PIX-8845",
+      amount: 140000.0,
+      debtor: "ACC-VICTIM-02",
+      creditor: "ACC-MULE-TIER2",
+      state: "ACTIVE_HOLD_72H",
+      expires_in: "68h 12m",
+      reason: "BioCatch RAT linear trajectory detected",
+    },
+  ]);
+
+  // Biometrics & RAT Simulation State
+  const [bioSimRatLinear, setBioSimRatLinear] = useState(false);
+  const [bioSimMicroTremorLoss, setBioSimMicroTremorLoss] = useState(false);
+  const [bioSimActiveCall, setBioSimActiveCall] = useState(false);
+  const [bioSimHesitation, setBioSimHesitation] = useState(1200);
+  const [bioSimResult, setBioSimResult] = useState<any>(null);
+
   const fetchData = async () => {
     setLoading(true);
     setError(null);
@@ -475,6 +518,72 @@ export const ProductionGovernanceView: React.FC<Props> = ({ currentPersona }) =>
       }
     } catch (err: any) {
       alert(`Failed to execute directive: ${err.message}`);
+    }
+  };
+
+  const handleSimulateDrainage = () => {
+    setMlDigitalBlockedNotice(null);
+    setMlDrainAttemptResult(
+      "BLOCKED by Singapore MAS Money Lock Policy: Attempted digital transfer of KES 120,000 exceeds liquid available balance of KES 50,000. Locked vault partition of KES 450,000 has zero digital transfer authorization."
+    );
+  };
+
+  const handleAttemptDigitalUnlock = () => {
+    setMlDrainAttemptResult(null);
+    setMlDigitalBlockedNotice(
+      "403 FORBIDDEN: Digital unlocking prohibited under MAS/ABS regulations. Account holder must attend an authorized bank branch counter with national photo ID or use physical ATM chip-and-PIN."
+    );
+  };
+
+  const handleBranchUnlock = () => {
+    const amt = parseFloat(mlBranchUnlockAmount) || 0;
+    if (amt <= 0 || amt > mlLockedBalance) return;
+    const newLocked = mlLockedBalance - amt;
+    const newAvail = mlAvailableBalance + amt;
+    setMlLockedBalance(newLocked);
+    setMlAvailableBalance(newAvail);
+    setMlUnlockSuccessNotice(
+      `SUCCESS: KES ${amt.toLocaleString()} unlocked at branch counter ${mlBranchStation} by Officer ${mlBranchOfficer} (Dual-authorized by ${mlDualAuthorizer}). Available liquid balance updated to KES ${newAvail.toLocaleString()}.`
+    );
+    setTimeout(() => setMlUnlockSuccessNotice(null), 8000);
+  };
+
+  const handleEscalateHold = (holdId: string) => {
+    setPrecHoldsList((prev) =>
+      prev.map((h) => {
+        if (h.hold_id === holdId) {
+          return { ...h, state: "ESCALATED_CLAWBACK_CAMT056" };
+        }
+        return h;
+      })
+    );
+    setSelectedXmlNotice(
+      `<?xml version="1.0" encoding="UTF-8"?>\n<Document xmlns="urn:iso:std:iso:20022:tech:xsd:camt.056.001.10">\n  <FIToFIPmtCxlReq>\n    <GrpHdr>\n      <MsgId>CAMT056-BCB-${holdId}</MsgId>\n      <NbOfTxs>1</NbOfTxs>\n    </GrpHdr>\n    <Undrlyg>\n      <TxInf>\n        <CxlId>CXL-${holdId}</CxlId>\n        <CxlRsnInf><Rsn><Cd>FRAD</Cd></Rsn><AddtlInf>BCB_BLOQUEIO_CAUTELAR_CONFIRMED_FRAUD</AddtlInf></CxlRsnInf>\n      </TxInf>\n    </Undrlyg>\n  </FIToFIPmtCxlReq>\n</Document>`
+    );
+  };
+
+  const handleEvaluateBiometrics = () => {
+    if (bioSimRatLinear || bioSimMicroTremorLoss) {
+      setBioSimResult({
+        verdict: "SUSPECTED_REMOTE_ACCESS_TROJAN",
+        score: 0.98,
+        action: "TERMINATE_SESSION_STEP_UP_IN_PERSON",
+        reason: "Cursor trajectory displays mathematical linearity (R² = 0.99) and loss of physiological micro-tremors (< 0.2 Hz), indicative of AnyDesk/TeamViewer session takeover.",
+      });
+    } else if (bioSimActiveCall && bioSimHesitation >= 10000) {
+      setBioSimResult({
+        verdict: "SUSPECTED_COACHED_VICTIM",
+        score: 0.85,
+        action: "INTERRUPT_WITH_COACHING_WARNING_MODAL",
+        reason: "Active phone call detected during payment entry with extreme cognitive hesitation (16,000 ms), indicative of voice phishing coercion.",
+      });
+    } else {
+      setBioSimResult({
+        verdict: "CLEAN_HUMAN",
+        score: 0.05,
+        action: "PROCEED",
+        reason: "Normal physiological bezier curvature and natural 9.5 Hz hand micro-tremors verified.",
+      });
     }
   };
 
@@ -2653,6 +2762,314 @@ export const ProductionGovernanceView: React.FC<Props> = ({ currentPersona }) =>
                   </pre>
                 </div>
               )}
+            </div>
+
+            {/* Section 7: Global Frontier Defense Suite (Singapore MAS, Brazil BCB, India NPCI & BioCatch) */}
+            <div className="p-5 rounded-lg bg-slate-900 border border-slate-800 space-y-6">
+              <div className="border-b border-slate-800 pb-3 flex flex-wrap items-center justify-between gap-4">
+                <div>
+                  <h3 className="text-sm font-bold text-white flex items-center">
+                    <span className="mr-2">🛡️</span> Global Frontier Defense Suite (Singapore MAS, Brazil BCB, India NPCI & BioCatch)
+                  </h3>
+                  <p className="text-xs text-slate-400 mt-1">
+                    Customer-controlled non-digital vault partitioning (Money Lock), statutory 72-hour precautionary holds (Bloqueio Cautelar), hardware SIM binding, and mathematical RAT cursor linearity biometrics.
+                  </p>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <span className="px-2.5 py-1 rounded bg-emerald-950/80 border border-emerald-800/60 text-[11px] text-emerald-300 font-semibold">
+                    🇸🇬 MAS Money Lock Active
+                  </span>
+                  <span className="px-2.5 py-1 rounded bg-indigo-950/80 border border-indigo-800/60 text-[11px] text-indigo-300 font-semibold">
+                    🇧🇷 BCB 72h Precautionary Gate
+                  </span>
+                  <span className="px-2.5 py-1 rounded bg-purple-950/80 border border-purple-800/60 text-[11px] text-purple-300 font-semibold">
+                    🇮🇳 NPCI SIM Anchor
+                  </span>
+                </div>
+              </div>
+
+              {/* Three Column Feature Grid */}
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                {/* Column 1: Singapore MAS Money Lock Vault */}
+                <div className="p-4 rounded bg-slate-950 border border-slate-800 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-slate-200 flex items-center">
+                      <span className="mr-1.5">🔒</span> Singapore MAS Money Lock
+                    </span>
+                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-900/60 text-amber-200">
+                      NON-DIGITAL VAULT
+                    </span>
+                  </div>
+
+                  <div className="p-3 rounded bg-slate-900 border border-slate-800 space-y-2">
+                    <div className="flex justify-between text-xs">
+                      <span className="text-slate-400">Total Account Balance:</span>
+                      <span className="text-white font-mono font-bold">KES {mlTotalBalance.toLocaleString()}</span>
+                    </div>
+                    <div className="flex justify-between text-xs">
+                      <span className="text-amber-400 font-semibold">Locked Vault Balance (MAS):</span>
+                      <span className="text-amber-300 font-mono font-bold">KES {mlLockedBalance.toLocaleString()}</span>
+                    </div>
+                    <div className="flex justify-between text-xs border-t border-slate-800 pt-1.5">
+                      <span className="text-emerald-400 font-semibold">Available Liquid Balance:</span>
+                      <span className="text-emerald-300 font-mono font-bold">KES {mlAvailableBalance.toLocaleString()}</span>
+                    </div>
+                  </div>
+
+                  {/* Actions & Drainage Simulator */}
+                  <div className="space-y-2 pt-1">
+                    <button
+                      onClick={handleSimulateDrainage}
+                      className="w-full py-1.5 bg-rose-950/80 hover:bg-rose-900 border border-rose-800/60 text-rose-200 rounded text-xs font-semibold transition"
+                    >
+                      ⚡ Test Account Takeover (Sweep KES 120,000)
+                    </button>
+                    <button
+                      onClick={handleAttemptDigitalUnlock}
+                      className="w-full py-1.5 bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 rounded text-xs font-semibold transition"
+                    >
+                      🚫 Attempt Digital Vault Unlock (Simulate API Hack)
+                    </button>
+                  </div>
+
+                  {mlDrainAttemptResult && (
+                    <div className="p-2.5 rounded bg-rose-950/90 border border-rose-800 text-[11px] text-rose-200 space-y-1">
+                      <div className="font-bold flex items-center text-rose-300">
+                        <span className="mr-1">🛡️</span> Digital Drainage Blocked
+                      </div>
+                      <div>{mlDrainAttemptResult}</div>
+                    </div>
+                  )}
+
+                  {mlDigitalBlockedNotice && (
+                    <div className="p-2.5 rounded bg-amber-950/90 border border-amber-800 text-[11px] text-amber-200 space-y-1">
+                      <div className="font-bold flex items-center text-amber-300">
+                        <span className="mr-1">⚠️</span> Policy Violation
+                      </div>
+                      <div>{mlDigitalBlockedNotice}</div>
+                    </div>
+                  )}
+
+                  {/* Physical Branch Unlock Panel */}
+                  <div className="p-3 rounded bg-slate-900 border border-slate-800 space-y-2 pt-2">
+                    <span className="text-[11px] font-bold text-slate-300 uppercase tracking-wider block">
+                      Physical Branch Counter Unlock (Maker-Checker)
+                    </span>
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      <div>
+                        <label className="text-[10px] text-slate-400">Unlock Amount (KES)</label>
+                        <input
+                          type="number"
+                          value={mlBranchUnlockAmount}
+                          onChange={(e) => setMlBranchUnlockAmount(e.target.value)}
+                          className="w-full mt-0.5 p-1 rounded bg-slate-950 border border-slate-800 text-white font-mono text-xs"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] text-slate-400">Station / Terminal</label>
+                        <input
+                          type="text"
+                          value={mlBranchStation}
+                          onChange={(e) => setMlBranchStation(e.target.value)}
+                          className="w-full mt-0.5 p-1 rounded bg-slate-950 border border-slate-800 text-white font-mono text-xs"
+                        />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      <div>
+                        <label className="text-[10px] text-slate-400">Teller Officer</label>
+                        <input
+                          type="text"
+                          value={mlBranchOfficer}
+                          onChange={(e) => setMlBranchOfficer(e.target.value)}
+                          className="w-full mt-0.5 p-1 rounded bg-slate-950 border border-slate-800 text-white font-mono text-xs"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] text-slate-400">Dual Authorizer</label>
+                        <input
+                          type="text"
+                          value={mlDualAuthorizer}
+                          onChange={(e) => setMlDualAuthorizer(e.target.value)}
+                          className="w-full mt-0.5 p-1 rounded bg-slate-950 border border-slate-800 text-white font-mono text-xs"
+                        />
+                      </div>
+                    </div>
+                    <button
+                      onClick={handleBranchUnlock}
+                      className="w-full mt-1 py-1.5 bg-emerald-700 hover:bg-emerald-600 text-white rounded text-xs font-semibold transition"
+                    >
+                      Authorize In-Person Branch Unlock
+                    </button>
+                    {mlUnlockSuccessNotice && (
+                      <div className="p-2 rounded bg-emerald-950/80 border border-emerald-800 text-[10px] text-emerald-300 font-mono">
+                        {mlUnlockSuccessNotice}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Column 2: Brazil BCB Bloqueio Cautelar 72h */}
+                <div className="p-4 rounded bg-slate-950 border border-slate-800 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-slate-200 flex items-center">
+                      <span className="mr-1.5">⏱️</span> Brazil BCB Bloqueio Cautelar
+                    </span>
+                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-900/60 text-indigo-200">
+                      72H PRECAUTIONARY HOLD
+                    </span>
+                  </div>
+
+                  <div className="p-3 rounded bg-slate-900 border border-slate-800 space-y-2">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-slate-400">Statutory Basis:</span>
+                      <span className="text-indigo-300 font-mono text-[11px]">Resolução BCB nº 493/2025</span>
+                    </div>
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-slate-400">Nighttime Limit (20h-06h):</span>
+                      <span className="text-emerald-400 font-mono font-semibold">Active (Max KES 20,000)</span>
+                    </div>
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-slate-400">Korea FSS Recall Window:</span>
+                      <span className="text-slate-200 font-mono text-[11px]">3h Delay / 30m Cutoff</span>
+                    </div>
+                  </div>
+
+                  {/* Quarantined Holds List */}
+                  <div className="space-y-2">
+                    <span className="text-[11px] font-bold text-slate-300 uppercase tracking-wider block">
+                      Active Inbound Quarantined Funds
+                    </span>
+                    {precHoldsList.map((hold) => (
+                      <div key={hold.hold_id} className="p-2.5 rounded bg-slate-900 border border-slate-800 space-y-2">
+                        <div className="flex justify-between items-center text-xs">
+                          <span className="font-mono text-white font-semibold">{hold.hold_id}</span>
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-semibold ${
+                            hold.state === "ESCALATED_CLAWBACK_CAMT056"
+                              ? "bg-purple-900/60 text-purple-300"
+                              : "bg-amber-900/60 text-amber-200"
+                          }`}>
+                            {hold.state}
+                          </span>
+                        </div>
+                        <div className="text-[11px] text-slate-400">
+                          Amount: <span className="font-mono text-emerald-400 font-semibold">KES {hold.amount.toLocaleString()}</span> | Remaining: <span className="font-mono text-amber-300">{hold.expires_in}</span>
+                        </div>
+                        <div className="text-[10px] text-slate-500">{hold.reason}</div>
+                        {hold.state !== "ESCALATED_CLAWBACK_CAMT056" && (
+                          <div className="flex space-x-2 pt-1">
+                            <button
+                              onClick={() => handleEscalateHold(hold.hold_id)}
+                              className="px-2 py-1 bg-purple-700 hover:bg-purple-600 text-white rounded text-[10px] font-semibold transition"
+                            >
+                              Dispatch camt.056 Clawback
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Column 3: India SIM Binding & BioCatch Biometrics */}
+                <div className="p-4 rounded bg-slate-950 border border-slate-800 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-slate-200 flex items-center">
+                      <span className="mr-1.5">🔬</span> BioCatch RAT & Coercion Telemetry
+                    </span>
+                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-purple-900/60 text-purple-200">
+                      PHYSICS TELEMETRY
+                    </span>
+                  </div>
+
+                  <div className="p-3 rounded bg-slate-900 border border-slate-800 space-y-2">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-slate-400">Hardware Anchor (NPCI):</span>
+                      <span className="text-emerald-400 font-mono text-[11px]">BOUND_TRUSTED (IMEI/SIM)</span>
+                    </div>
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-slate-400">Emulator Enforcement:</span>
+                      <span className="text-slate-200 font-mono text-[11px]">HARD_BLOCK (Bluestacks/QEMU)</span>
+                    </div>
+                  </div>
+
+                  {/* Interactive Biometrics Physics Sandbox */}
+                  <div className="space-y-3 pt-1 text-xs">
+                    <span className="text-[11px] font-bold text-slate-300 uppercase tracking-wider block">
+                      In-Session Kinematics Simulator
+                    </span>
+                    <div className="space-y-2">
+                      <label className="flex items-center space-x-2 text-slate-300 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={bioSimRatLinear}
+                          onChange={(e) => setBioSimRatLinear(e.target.checked)}
+                          className="rounded bg-slate-900 border-slate-700 text-indigo-600 focus:ring-0"
+                        />
+                        <span>Simulate RAT Linear Cursor Trajectory (R² = 0.99)</span>
+                      </label>
+                      <label className="flex items-center space-x-2 text-slate-300 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={bioSimMicroTremorLoss}
+                          onChange={(e) => setBioSimMicroTremorLoss(e.target.checked)}
+                          className="rounded bg-slate-900 border-slate-700 text-indigo-600 focus:ring-0"
+                        />
+                        <span>Loss of Human Micro-Tremors (&lt; 0.2 Hz)</span>
+                      </label>
+                      <label className="flex items-center space-x-2 text-slate-300 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={bioSimActiveCall}
+                          onChange={(e) => setBioSimActiveCall(e.target.checked)}
+                          className="rounded bg-slate-900 border-slate-700 text-indigo-600 focus:ring-0"
+                        />
+                        <span>Active GSM Voice Call Concurrency (Coached Victim)</span>
+                      </label>
+                    </div>
+
+                    <div>
+                      <div className="flex justify-between text-[11px] text-slate-400 mb-1">
+                        <span>Cognitive Hesitation Dwell:</span>
+                        <span className="font-mono text-white">{bioSimHesitation} ms</span>
+                      </div>
+                      <input
+                        type="range"
+                        min="500"
+                        max="25000"
+                        step="500"
+                        value={bioSimHesitation}
+                        onChange={(e) => setBioSimHesitation(Number(e.target.value))}
+                        className="w-full accent-indigo-500"
+                      />
+                    </div>
+
+                    <button
+                      onClick={handleEvaluateBiometrics}
+                      className="w-full py-1.5 bg-indigo-700 hover:bg-indigo-600 text-white rounded text-xs font-semibold transition"
+                    >
+                      Evaluate In-Session Kinematics
+                    </button>
+
+                    {bioSimResult && (
+                      <div className={`p-3 rounded border text-xs space-y-1.5 ${
+                        bioSimResult.verdict === "SUSPECTED_REMOTE_ACCESS_TROJAN"
+                          ? "bg-rose-950/90 border-rose-800 text-rose-200"
+                          : bioSimResult.verdict === "SUSPECTED_COACHED_VICTIM"
+                          ? "bg-amber-950/90 border-amber-800 text-amber-200"
+                          : "bg-emerald-950/90 border-emerald-800 text-emerald-200"
+                      }`}>
+                        <div className="font-bold flex items-center justify-between">
+                          <span>Verdict: {bioSimResult.verdict}</span>
+                          <span className="font-mono">Risk: {(bioSimResult.score * 100).toFixed(0)}%</span>
+                        </div>
+                        <div className="text-[11px]">{bioSimResult.reason}</div>
+                        <div className="text-[10px] font-mono font-semibold uppercase">Action: {bioSimResult.action}</div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         )}

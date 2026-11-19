@@ -560,6 +560,23 @@ class InflightPaymentEvaluationRequest(BaseModel):
     use_parallel_pipeline: bool = True
     sla_budget_ms: float = 45.0
     simulated_latencies: dict[str, float] | None = None
+    # Phase 15.0 - 15.3 Global Frontier Hardening Extensions
+    check_money_lock: bool = True
+    enforce_nighttime_limits: bool = False
+    client_local_hour: int | None = None
+    # Phase 15.2 Hardware & SIM Binding
+    sim_device_imei_hash: str | None = None
+    sim_iccid_hash: str | None = None
+    sim_is_emulator: bool = False
+    sim_is_rooted: bool = False
+    sim_swap_hours_ago: float | None = None
+    # Phase 15.3 BioCatch Behavioral Biometrics
+    biometrics_trajectory_r2: float | None = None
+    biometrics_micro_tremor_hz: float | None = None
+    biometrics_is_active_call: bool | None = None
+    biometrics_is_remote_software: bool | None = None
+    biometrics_hesitation_ms: int | None = None
+    biometrics_backspaces: int | None = None
 
 
 class InflightPaymentEvaluationResponse(BaseModel):
@@ -589,6 +606,20 @@ class InflightPaymentEvaluationResponse(BaseModel):
     behavioral_latency_ms: float | None = None
     feed_statuses: dict[str, str] | None = None
     circuit_breaker_tripped: bool = False
+    # Phase 15 Global Frontier Hardening Outputs
+    money_lock_active: bool = False
+    money_lock_available_balance: float | None = None
+    money_lock_locked_balance: float | None = None
+    is_money_lock_breach: bool = False
+    is_nighttime_breach: bool = False
+    nighttime_ceiling: float | None = None
+    precautionary_hold_id: str | None = None
+    precautionary_hold_state: str | None = None
+    sim_binding_status: str | None = None
+    is_emulator_detected: bool = False
+    biometrics_verdict: str | None = None
+    biometrics_risk_score: float | None = None
+    is_rat_detected: bool = False
 
 
 # ==============================================================================
@@ -797,6 +828,108 @@ class ExecuteCascadeDirectiveResponse(BaseModel):
     action_taken: str
     camt056_xml: str | None = None
     executed_at: str
+
+
+# ==============================================================================
+# Phase 15.0: Singapore MAS Money Lock Schemas
+# ==============================================================================
+
+class MoneyLockLockRequest(BaseModel):
+    amount: Decimal
+    actor: str = "CUSTOMER_PORTAL"
+
+
+class MoneyLockBranchUnlockRequest(BaseModel):
+    amount: Decimal
+    officer_id: str
+    station_id: str
+    dual_authorizer_id: str | None = None
+    channel: Literal["PHYSICAL_BRANCH_COUNTER", "PHYSICAL_ATM_CHIP_PIN"] = "PHYSICAL_BRANCH_COUNTER"
+
+
+class MoneyLockAccountResponse(BaseModel):
+    account_id: str
+    installation_id: str
+    currency: str
+    total_balance: float
+    locked_vault_balance: float
+    available_balance: float
+    status: str
+    last_locked_at: str | None = None
+    last_unlocked_at: str | None = None
+    unlock_channel: str | None = None
+    unlock_officer_id: str | None = None
+    unlock_station_id: str | None = None
+    dual_authorizer_id: str | None = None
+    audit_trail: list[dict[str, Any]] = []
+
+
+# ==============================================================================
+# Phase 15.1: Brazil BCB Bloqueio Cautelar & Recall Schemas
+# ==============================================================================
+
+class PrecautionaryHoldCreateRequest(BaseModel):
+    tx_id: str
+    amount: Decimal
+    debtor_account: str
+    creditor_account: str
+    reason: str
+    currency: str = "KES"
+    duration_hours: int = 72
+
+
+class PrecautionaryHoldReleaseRequest(BaseModel):
+    officer_id: str
+    resolution_notes: str
+
+
+class PrecautionaryHoldEscalateRequest(BaseModel):
+    officer_id: str
+    resolution_notes: str
+
+
+class PrecautionaryHoldRecallRequest(BaseModel):
+    recall_requested_at: str | None = None
+
+
+class PrecautionaryHoldResponse(BaseModel):
+    hold_id: str
+    installation_id: str
+    tx_id: str
+    amount: float
+    currency: str
+    debtor_account: str
+    creditor_account: str
+    state: str
+    placed_at: str
+    expires_at: str
+    reason: str
+    statutory_basis: str
+    decision_officer_id: str | None = None
+    resolution_notes: str | None = None
+    camt056_xml: str | None = None
+
+
+# ==============================================================================
+# Phase 15.2: India NPCI SIM & Hardware Binding Schemas
+# ==============================================================================
+
+class SimBindingEnrollRequest(BaseModel):
+    account_id: str
+    device_imei: str
+    sim_iccid: str
+    carrier_name: str = "Safaricom"
+
+
+class SimBindingEnrollResponse(BaseModel):
+    account_id: str
+    installation_id: str
+    bound_device_imei_hash: str
+    bound_sim_iccid_hash: str
+    carrier_name: str
+    status: str
+    enrolled_at: str
+
 
 
 

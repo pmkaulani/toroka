@@ -163,22 +163,20 @@ class SIC5ParallelClearingEngine:
             "behavioral": 0.0,
         }
 
-        # Thread worker definitions
-        def _run_cop() -> tuple[str | None, float | None]:
+        # Thread worker definitions - thread-safe: workers return values and do not mutate shared dictionaries
+        def _run_cop() -> tuple[str | None, float | None, float, bool]:
             t0 = time.perf_counter()
             delay = sim_delays.get("cop", 0.0)
             if delay > 0:
                 time.sleep(delay / 1000.0)
 
             if cop_override_status is not None:
-                feed_latencies["cop"] = (time.perf_counter() - t0) * 1000.0
-                feed_statuses["cop"] = SIC5FeedStatus.SUCCESS.value
-                return cop_override_status, cop_override_score
+                lat = (time.perf_counter() - t0) * 1000.0
+                return cop_override_status, cop_override_score, lat, False
 
             if not cop_enabled or not cop_registered_name:
-                feed_latencies["cop"] = (time.perf_counter() - t0) * 1000.0
-                feed_statuses["cop"] = SIC5FeedStatus.SKIPPED.value
-                return None, None
+                lat = (time.perf_counter() - t0) * 1000.0
+                return None, None, lat, True
 
             inquiry = CopInquiryRequest(
                 intended_name=transfer.creditor.name,
@@ -189,26 +187,23 @@ class SIC5ParallelClearingEngine:
                 bank_bic=transfer.creditor.agent_bic,
             )
             res = ConfirmationOfPayeeEngine.verify(inquiry)
-            feed_latencies["cop"] = (time.perf_counter() - t0) * 1000.0
-            feed_statuses["cop"] = SIC5FeedStatus.SUCCESS.value
-            return res.status.value, res.match_score
+            lat = (time.perf_counter() - t0) * 1000.0
+            return res.status.value, res.match_score, lat, False
 
-        def _run_telecom() -> tuple[str | None, float | None]:
+        def _run_telecom() -> tuple[str | None, float | None, float, bool]:
             t0 = time.perf_counter()
             delay = sim_delays.get("telecom", 0.0)
             if delay > 0:
                 time.sleep(delay / 1000.0)
 
             if telecom_override_status is not None:
-                feed_latencies["telecom"] = (time.perf_counter() - t0) * 1000.0
-                feed_statuses["telecom"] = SIC5FeedStatus.SUCCESS.value
-                return telecom_override_status, telecom_override_score
+                lat = (time.perf_counter() - t0) * 1000.0
+                return telecom_override_status, telecom_override_score, lat, False
 
             target_phone = telecom_msisdn or transfer.debtor.msisdn
             if not telecom_enabled or not target_phone:
-                feed_latencies["telecom"] = (time.perf_counter() - t0) * 1000.0
-                feed_statuses["telecom"] = SIC5FeedStatus.SKIPPED.value
-                return None, None
+                lat = (time.perf_counter() - t0) * 1000.0
+                return None, None, lat, True
 
             c_status = CallStatus(telecom_simulated_call) if telecom_simulated_call else None
             s_status = SimSwapStatus(telecom_simulated_swap) if telecom_simulated_swap else None
@@ -227,40 +222,35 @@ class SIC5ParallelClearingEngine:
                 simulated_sim_swap_status=s_status,
             )
             sig_res = TelecomScamSignalGateway.evaluate_telecom_signal(query)
-            feed_latencies["telecom"] = (time.perf_counter() - t0) * 1000.0
-            feed_statuses["telecom"] = SIC5FeedStatus.SUCCESS.value
-            return sig_res.call_status.value, sig_res.scam_signal_score
+            lat = (time.perf_counter() - t0) * 1000.0
+            return sig_res.call_status.value, sig_res.scam_signal_score, lat, False
 
-        def _run_federated_mule() -> Any:
+        def _run_federated_mule() -> tuple[Any, float, bool]:
             t0 = time.perf_counter()
             delay = sim_delays.get("federated_mule", 0.0)
             if delay > 0:
                 time.sleep(delay / 1000.0)
 
             if not federated_mule_enabled or federated_mule_records is None:
-                feed_latencies["federated_mule"] = (time.perf_counter() - t0) * 1000.0
-                feed_statuses["federated_mule"] = SIC5FeedStatus.SKIPPED.value
-                return None
+                lat = (time.perf_counter() - t0) * 1000.0
+                return None, lat, True
 
             query = FederatedMuleQuery(
                 value=transfer.creditor.account_number,
                 entity_type=MuleEntityType.BANK_ACCOUNT,
             )
             m_res = FederatedMuleEngine.evaluate_mule_query(query, federated_mule_records)
-            feed_latencies["federated_mule"] = (time.perf_counter() - t0) * 1000.0
-            feed_statuses["federated_mule"] = SIC5FeedStatus.SUCCESS.value
-            return m_res
+            lat = (time.perf_counter() - t0) * 1000.0
+            return m_res, lat, False
 
-        def _run_behavioral() -> dict[str, Any]:
+        def _run_behavioral() -> tuple[dict[str, Any], float, bool]:
             t0 = time.perf_counter()
             delay = sim_delays.get("behavioral", 0.0)
             if delay > 0:
                 time.sleep(delay / 1000.0)
 
-            # Fast internal behavioral & AML baseline checks
-            feed_latencies["behavioral"] = (time.perf_counter() - t0) * 1000.0
-            feed_statuses["behavioral"] = SIC5FeedStatus.SUCCESS.value
-            return {"status": "OK"}
+            lat = (time.perf_counter() - t0) * 1000.0
+            return {"status": "OK"}, lat, False
 
         circuit_breaker_tripped = False
         cop_res_status = None
@@ -278,7 +268,9 @@ class SIC5ParallelClearingEngine:
 
         # Wait for CoP with timeout
         try:
-            cop_res_status, cop_res_score = future_cop.result(timeout=feed_timeout_sec)
+            cop_res_status, cop_res_score, cop_lat_val, is_cop_skip = future_cop.result(timeout=feed_timeout_sec)
+            feed_latencies["cop"] = cop_lat_val
+            feed_statuses["cop"] = SIC5FeedStatus.SKIPPED.value if is_cop_skip else SIC5FeedStatus.SUCCESS.value
         except concurrent.futures.TimeoutError:
             circuit_breaker_tripped = True
             feed_statuses["cop"] = SIC5FeedStatus.TIMEOUT.value
@@ -291,7 +283,9 @@ class SIC5ParallelClearingEngine:
 
         # Wait for Telecom with timeout
         try:
-            telecom_res_call, telecom_res_score = future_tel.result(timeout=feed_timeout_sec)
+            telecom_res_call, telecom_res_score, tel_lat_val, is_tel_skip = future_tel.result(timeout=feed_timeout_sec)
+            feed_latencies["telecom"] = tel_lat_val
+            feed_statuses["telecom"] = SIC5FeedStatus.SKIPPED.value if is_tel_skip else SIC5FeedStatus.SUCCESS.value
         except concurrent.futures.TimeoutError:
             circuit_breaker_tripped = True
             feed_statuses["telecom"] = SIC5FeedStatus.TIMEOUT.value
@@ -304,7 +298,9 @@ class SIC5ParallelClearingEngine:
 
         # Wait for Federated Mule with timeout
         try:
-            fed_mule_res = future_fed.result(timeout=feed_timeout_sec)
+            fed_mule_res, fed_lat_val, is_fed_skip = future_fed.result(timeout=feed_timeout_sec)
+            feed_latencies["federated_mule"] = fed_lat_val
+            feed_statuses["federated_mule"] = SIC5FeedStatus.SKIPPED.value if is_fed_skip else SIC5FeedStatus.SUCCESS.value
         except concurrent.futures.TimeoutError:
             circuit_breaker_tripped = True
             feed_statuses["federated_mule"] = SIC5FeedStatus.TIMEOUT.value
@@ -316,7 +312,9 @@ class SIC5ParallelClearingEngine:
 
         # Wait for Behavioral
         try:
-            future_beh.result(timeout=feed_timeout_sec)
+            _, beh_lat_val, _ = future_beh.result(timeout=feed_timeout_sec)
+            feed_latencies["behavioral"] = beh_lat_val
+            feed_statuses["behavioral"] = SIC5FeedStatus.SUCCESS.value
         except concurrent.futures.TimeoutError:
             circuit_breaker_tripped = True
             feed_statuses["behavioral"] = SIC5FeedStatus.TIMEOUT.value
