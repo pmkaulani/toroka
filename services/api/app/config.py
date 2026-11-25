@@ -21,6 +21,7 @@ class Settings:
     evidence_retention_days: int = 7
     max_evidence_per_check: int = 5
     trust_proxy_headers: bool = False
+    trusted_proxy_hops: int = 1   # number of proxies you control in front of the app (see client_key)
     # connectors (all optional; absent means "not checked", never silently "clean")
     webrisk_api_key: str = ""
     tavily_api_key: str = ""  # Optional public-web search; absence means live search is not checked.
@@ -105,7 +106,7 @@ class Settings:
             return (int(n), int(w))
         s = cls(env=g("SSI_ENV", "dev"), database_url=g("DATABASE_URL", cls.database_url), encryption_key=g("ENCRYPTION_KEY", ""),
                 hmac_key=g("HMAC_KEY", ""), diagnostics_api_key=g("DIAGNOSTICS_API_KEY", ""), storage_dir=g("STORAGE_DIR", cls.storage_dir), public_base_url=g("PUBLIC_BASE_URL", cls.public_base_url),
-                retention_days=int(g("RETENTION_DAYS", 7)), trust_proxy_headers=g("TRUST_PROXY_HEADERS") == "1",
+                retention_days=int(g("RETENTION_DAYS", 7)), trust_proxy_headers=g("TRUST_PROXY_HEADERS") == "1", trusted_proxy_hops=max(1, int(g("TRUSTED_PROXY_HOPS", 1))),
                 webrisk_api_key=g("WEBRISK_API_KEY", ""), tavily_api_key=g("TAVILY_API_KEY", ""), weir_api_key=g("WEIR_API_KEY", ""), scrape_creators_api_key=g("SCRAPE_CREATORS_API_KEY", ""), intelligence_cache_ttl_seconds=max(0, min(int(g("INTELLIGENCE_CACHE_TTL_SECONDS", 900)), 86400)), google_places_api_key=g("GOOGLE_PLACES_API_KEY", ""), urlscan_api_key=g("URLSCAN_API_KEY", ""), blocklist_path=g("BLOCKLIST_PATH", ""), enable_link_fetch=g("ENABLE_LINK_FETCH", "1") != "0",
                 enable_rdap=g("ENABLE_RDAP") == "1", enable_domain_intelligence=g("ENABLE_DOMAIN_INTELLIGENCE") == "1",
                 certspotter_api_key=g("CERTSPOTTER_API_KEY", ""), domain_intel_include_subdomains=g("DOMAIN_INTEL_INCLUDE_SUBDOMAINS") == "1",
@@ -124,7 +125,7 @@ class Settings:
 
     def with_dev_keys(self) -> "Settings":
         if not self.encryption_key or not self.hmac_key:
-            if self.env == "production":
+            if self.env.strip().lower() in ("production", "prod"):
                 raise RuntimeError("ENCRYPTION_KEY and HMAC_KEY are required in production")
             warnings.warn("Using ephemeral development keys: encrypted data will not survive a restart.")
             self.encryption_key = self.encryption_key or Fernet.generate_key().decode()

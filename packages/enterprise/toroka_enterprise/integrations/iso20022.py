@@ -18,6 +18,9 @@ import re
 import time
 import uuid
 import xml.etree.ElementTree as ET
+
+from defusedxml.common import DefusedXmlException
+from defusedxml.ElementTree import fromstring as _safe_fromstring
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -297,9 +300,9 @@ class ISO20022Engine:
     def parse_pacs008_xml(cls, xml_text: str) -> Pacs008CreditTransfer:
         """Parses standard ISO 20022 pacs.008 XML format."""
         try:
-            raw_root = ET.fromstring(xml_text)
-        except ET.ParseError as exc:
-            raise ValueError(f"Malformed pacs.008 XML payload: {exc}") from exc
+            raw_root = _safe_fromstring(xml_text)
+        except (ET.ParseError, DefusedXmlException) as exc:
+            raise ValueError(f"Malformed or unsafe pacs.008 XML payload: {exc}") from exc
 
         tag_name = raw_root.tag.split("}")[-1] if "}" in raw_root.tag else raw_root.tag
         if tag_name not in ("Document", "pacs.008.001.10", "FIToFICstmrCdtTrf"):
@@ -307,7 +310,7 @@ class ISO20022Engine:
 
         # Strip default XML namespace for clean XPath
         xml_clean = re.sub(r'\sxmlns="[^"]+"', "", xml_text, count=1)
-        root = ET.fromstring(xml_clean)
+        root = _safe_fromstring(xml_clean)
 
         msg_id_elem = root.find(".//GrpHdr/MsgId")
         msg_id = msg_id_elem.text if msg_id_elem is not None and msg_id_elem.text else f"MSG-{uuid.uuid4().hex[:12]}"

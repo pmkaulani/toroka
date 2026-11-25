@@ -378,6 +378,9 @@ def _toroka_profile_replies(level: int) -> tuple[str, str]:
     )
 
 
+_PIN_OTP_RX = re.compile(r"\b(?:pin|otp|password|nywila|msimbo|safaricom called)\b")
+
+
 def _local_expert_replies(
     user_message: str,
     findings: list[dict[str, Any]],
@@ -1384,7 +1387,7 @@ def _local_expert_replies(
         )
 
     # 11. Critical Threat: PIN / OTP / Credential Phishing
-    if "PIN_OR_OTP_REQUEST" in codes or any(w in msg_low for w in ["pin", "otp", "password", "nywila", "msimbo", "safaricom called"]):
+    if "PIN_OR_OTP_REQUEST" in codes or _PIN_OTP_RX.search(msg_low):
         return (
             (
                 "CRITICAL SECURITY WARNING:\n"

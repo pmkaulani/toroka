@@ -17,6 +17,7 @@ import json
 import re
 import socket
 import time
+import zlib
 import html as html_lib
 from dataclasses import dataclass, field
 from html.parser import HTMLParser
@@ -57,6 +58,51 @@ _BINARY_CONTENT_TYPES = {
     "application/x-apple-diskimage",           # DMG
     "application/x-iso9660-image",
 }
+
+
+_BINARY_EXTENSIONS = (".exe", ".apk", ".bin", ".dmg", ".iso", ".bat")
+
+
+class _FetchAbort(Exception):
+    """Raised while streaming a body when a safety budget is exceeded."""
+
+
+def _read_capped(resp: "httpx.Response", max_bytes: int, deadline: float) -> bytes:
+    """Read at most max_bytes of *decoded* body, honouring the overall deadline.
+
+    Reads raw bytes and decompresses with a hard output limit, so a small
+    gzip/deflate response cannot expand into hundreds of MB (decompression bomb),
+    and a slow-drip server cannot outlive the total time budget.
+    """
+    if resp.is_stream_consumed:
+        # Fully buffered (and already decoded) response, e.g. from httpx.MockTransport; nothing left to stream.
+        return resp.content[:max_bytes]
+    enc = resp.headers.get("content-encoding", "identity").lower().strip()
+    if enc in ("", "identity"):
+        decomp = None
+    elif enc in ("gzip", "x-gzip"):
+        decomp = zlib.decompressobj(16 + zlib.MAX_WBITS)
+    elif enc == "deflate":
+        decomp = zlib.decompressobj()
+    else:
+        raise _FetchAbort(f"Unsupported content-encoding '{enc[:20]}'; page content was not inspected.")
+    out = bytearray()
+    try:
+        for chunk in resp.iter_raw():
+            if time.monotonic() > deadline:
+                raise _FetchAbort("Time budget exceeded while reading the response body")
+            if decomp is None:
+                out += chunk
+            else:
+                data = chunk
+                while data and len(out) < max_bytes and not decomp.eof:
+                    out += decomp.decompress(data, max_bytes - len(out))
+                    data = decomp.unconsumed_tail
+            if len(out) >= max_bytes:
+                break
+    except zlib.error as exc:
+        raise _FetchAbort("Malformed compressed response; page content was not inspected.") from exc
+    return bytes(out[:max_bytes])
 
 
 def default_resolver(host: str) -> list[str]:
@@ -503,6 +549,7 @@ def safe_fetch_page(
             "User-Agent": UA,
             "Accept": "text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.5",
             "Accept-Language": "en-US,en;q=0.9,sw;q=0.8",
+            "Accept-Encoding": "gzip, deflate",
         }
 
         try:
@@ -565,7 +612,10 @@ def safe_fetch_page(
 
                     # Validate Content-Type. Do not download documents or executables.
                     content_type = resp_headers.get("content-type", "").lower().split(";")[0].strip()
-                    if content_type in _BINARY_CONTENT_TYPES or any(ext in current.lower() for ext in (".exe", ".apk", ".bin", ".dmg", ".iso", ".bat")):
+                    path_l = urlsplit(current).path.lower()
+                    # Trust the server's Content-Type; fall back to the URL *path* extension only when none is sent.
+                    # (Substring-matching the whole URL skipped bing.com, battery-shops and any phishing URL ending in "?.apk".)
+                    if content_type in _BINARY_CONTENT_TYPES or (not content_type and path_l.endswith(_BINARY_EXTENSIONS)):
                         return SafePageContent(
                             status=CoverageStatus.NOT_APPLICABLE,
                             final_url=current,
@@ -578,13 +628,17 @@ def safe_fetch_page(
                         )
 
                     # Read streamed bytes up to max_bytes
-                    raw_body = b""
-                    for chunk in resp.iter_bytes():
-                        raw_body += chunk
-                        if len(raw_body) >= max_bytes:
-                            raw_body = raw_body[:max_bytes]
-                            break
+                    raw_body = _read_capped(resp, max_bytes, t0 + total_budget)
 
+        except _FetchAbort as exc:
+            return SafePageContent(
+                status=CoverageStatus.COULD_NOT_CHECK,
+                final_url=current,
+                hops=hop,
+                redirect_chain=chain,
+                reason=str(exc),
+                fetch_time_ms=(time.monotonic() - t0) * 1000,
+            )
         except httpx.ConnectTimeout:
             return SafePageContent(
                 status=CoverageStatus.COULD_NOT_CHECK,

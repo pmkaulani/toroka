@@ -50,8 +50,14 @@ def get_db(request: Request):
 
 def client_key(request: Request, c: Ctx) -> str:
     ip = request.client.host if request.client else "unknown"
-    if c.settings.trust_proxy_headers and request.headers.get("x-forwarded-for"):
-        ip = request.headers["x-forwarded-for"].split(",")[0].strip()
+    xff = request.headers.get("x-forwarded-for")
+    if c.settings.trust_proxy_headers and xff:
+        # The left end is client-supplied and trivially forged. Each proxy *we control* appends the address it saw,
+        # so count from the right: with N trusted proxies the real client is the Nth entry from the end.
+        hops = [h.strip() for h in xff.split(",") if h.strip()]
+        n = max(1, getattr(c.settings, "trusted_proxy_hops", 1))
+        if hops:
+            ip = hops[-n] if len(hops) >= n else hops[0]
     return c.crypto.lookup("client", ip)
 
 
