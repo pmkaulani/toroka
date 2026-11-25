@@ -2,8 +2,12 @@ services:
   - type: web
     name: toroka
     runtime: docker
-    plan: free
+    plan: starter # Starter plan required for persistent disk storage on Render
     healthCheckPath: /v1/health
+    disk:
+      name: toroka-data
+      mountPath: /data
+      sizeGB: 10
     envVars:
       - key: PORT
         value: "8000"
@@ -11,6 +15,10 @@ services:
         value: "1"
       - key: SSI_ENV
         value: prod
+      - key: TRUST_PROXY_HEADERS
+        value: "1"
+      - key: TRUSTED_PROXY_HOPS
+        value: "1"
       - key: DATABASE_URL
         value: sqlite:////data/ssi.db
       - key: STORAGE_DIR

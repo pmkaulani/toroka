@@ -1,5 +1,5 @@
 {
   "active_version": "v1.0.0-champion",
-  "rollback_version": "v-test-temp",
+  "rollback_version": "v1.0.0-champion",
   "shadow_version": "candidate-v1.0.1793554596"
 }

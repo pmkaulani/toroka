@@ -19,6 +19,10 @@ from .schema import ModelMetadata
 
 
 def get_models_dir() -> str:
+    env_dir = os.environ.get("TOROKA_MODELS_DIR")
+    if env_dir:
+        os.makedirs(env_dir, exist_ok=True)
+        return env_dir
     base_dir = os.path.dirname(os.path.abspath(__file__))
     models_dir = os.path.join(base_dir, "models")
     os.makedirs(models_dir, exist_ok=True)

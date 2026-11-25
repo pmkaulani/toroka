@@ -87,3 +87,53 @@ def test_pin_otp_branch_ignores_substrings(msg):
 ])
 def test_pin_otp_branch_still_fires_on_real_requests(msg):
     assert _PIN_OTP_RX.search(msg.lower())
+
+
+def test_request_id_sanitization():
+    from cryptography.fernet import Fernet
+    from starlette.testclient import TestClient
+    from app.main import create_app
+
+    key = Fernet.generate_key().decode()
+    app = create_app(Settings(env="dev", encryption_key=key, hmac_key="secret-hmac"))
+    client = TestClient(app)
+
+    # Valid ID accepted
+    res1 = client.get("/v1/health", headers={"x-request-id": "valid-id_123"})
+    assert res1.headers["x-request-id"] == "valid-id_123"
+
+    # Malicious / invalid characters sanitized to fresh UUID
+    res2 = client.get("/v1/health", headers={"x-request-id": "<script>alert(1)</script>"})
+    assert res2.headers["x-request-id"] != "<script>alert(1)</script>"
+    assert len(res2.headers["x-request-id"]) > 10
+
+
+def test_docs_disabled_in_prod():
+    from cryptography.fernet import Fernet
+    from starlette.testclient import TestClient
+    from app.main import create_app
+
+    # Prod app disables docs
+    key = Fernet.generate_key().decode()
+    app = create_app(Settings(env="prod", encryption_key=key, hmac_key="secret-hmac"))
+    client = TestClient(app)
+    assert client.get("/docs").status_code == 404
+    assert client.get("/openapi.json").status_code == 404
+
+
+def test_scrypt_owasp_work_factor_and_backward_compatibility():
+    from app.security import hash_password, verify_password
+
+    h = hash_password("super-secret-pass")
+    assert h.startswith("scrypt$131072$8$1$")
+    assert verify_password("super-secret-pass", h) is True
+    assert verify_password("wrong-pass", h) is False
+
+    # Old 16384 hashes still verify cleanly
+    import base64, hashlib, os
+    old_salt = os.urandom(16)
+    old_h = hashlib.scrypt(b"legacy-pass", salt=old_salt, n=16384, r=8, p=1, dklen=32)
+    old_stored = "scrypt$16384$8$1$" + base64.b64encode(old_salt).decode() + "$" + base64.b64encode(old_h).decode()
+    assert verify_password("legacy-pass", old_stored) is True
+
+

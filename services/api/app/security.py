@@ -45,14 +45,16 @@ def same(a: str, b: str) -> bool:
 
 def hash_password(pw: str) -> str:
     salt = os.urandom(16)
-    h = hashlib.scrypt(pw.encode(), salt=salt, n=2**14, r=8, p=1, dklen=32)
-    return "scrypt$16384$8$1$" + base64.b64encode(salt).decode() + "$" + base64.b64encode(h).decode()
+    # OWASP recommended work factor n=2**17 (131,072)
+    n = 2**17
+    h = hashlib.scrypt(pw.encode(), salt=salt, n=n, r=8, p=1, dklen=32, maxmem=256 * 1024 * 1024)
+    return f"scrypt${n}$8$1$" + base64.b64encode(salt).decode() + "$" + base64.b64encode(h).decode()
 
 
 def verify_password(pw: str, stored: str) -> bool:
     try:
         _, n, r, p, salt, h = stored.split("$")
-        calc = hashlib.scrypt(pw.encode(), salt=base64.b64decode(salt), n=int(n), r=int(r), p=int(p), dklen=32)
+        calc = hashlib.scrypt(pw.encode(), salt=base64.b64decode(salt), n=int(n), r=int(r), p=int(p), dklen=32, maxmem=256 * 1024 * 1024)
         return hmac.compare_digest(calc, base64.b64decode(h))
     except Exception:
         return False

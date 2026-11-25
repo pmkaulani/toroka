@@ -267,12 +267,20 @@ def test_19_new_candidate_model_worse_performance():
     assert report.legit_false_positive_rate > 0.02
 
 
-def test_20_model_rollback():
+def test_20_model_rollback(tmp_path, monkeypatch):
     """20. Rollback restores previous active champion model."""
+    import shutil
+    real_models_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "ssi_rules", "ml", "models")
+    for f in os.listdir(real_models_dir):
+        src = os.path.join(real_models_dir, f)
+        if os.path.isfile(src):
+            shutil.copy2(src, tmp_path / f)
+    monkeypatch.setenv("TOROKA_MODELS_DIR", str(tmp_path))
+
     active = get_active_model()
     initial_version = active.model_version
 
-    # Promote a dummy version
+    # Promote a dummy version in temp directory
     save_model(active, evaluate_model(active, [DatasetSample("s1", SampleType.TEXT, "Hi", Language.EN, ["ambiguous_neutral"], "no_known_threats_found", "test")]), "v-test-temp")
     promote_candidate("v-test-temp", force=True)
 

@@ -1,5 +1,6 @@
 import os
 os.environ["SSI_NO_AUTOAPP"] = "1"          # tests build their own app instance
+os.environ["SSI_NO_WORKER"] = "1"           # tests do not start background worker daemon or touch manifest
 import io
 import pytest
 from app.config import Settings

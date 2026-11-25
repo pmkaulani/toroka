@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any, Callable
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
@@ -12,6 +13,8 @@ from ..exceptions import SchemaValidationError
 from ..mapping import map_core_banking_transaction
 
 logger = logging.getLogger(__name__)
+
+_IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
 class BankDatabaseConnector:
@@ -35,6 +38,9 @@ class BankDatabaseConnector:
         self._source_system = source_system
         self._allowed_views = allowed_views or (view_name,)
         self._mapper = record_mapper or (lambda raw, inst, conn: map_core_banking_transaction(raw, installation_id=inst, connector_id=conn))
+
+        if not _IDENTIFIER_RE.match(self._cursor_column):
+            raise SchemaValidationError(f"Invalid cursor column identifier: '{self._cursor_column}'")
 
         if self._view_name not in self._allowed_views:
             raise SchemaValidationError(f"View '{self._view_name}' is not in the allowed views list")

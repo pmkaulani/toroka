@@ -191,6 +191,16 @@ async def test_database_connector_query_and_allowlist():
             allowed_views=("vw_core_transactions",),
         )
 
+    # Disallowed cursor column check (SQL injection guard)
+    with pytest.raises(SchemaValidationError, match="Invalid cursor column"):
+        BankDatabaseConnector(
+            connector_id="db-bad-col",
+            engine=engine,
+            view_name="vw_core_transactions",
+            cursor_column="id; DROP TABLE users; --",
+            allowed_views=("vw_core_transactions",),
+        )
+
 
 def test_signed_event_connector_hmac_and_replay():
     secret = b"bank-super-secure-event-secret-32b"

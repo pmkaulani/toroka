@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import uuid
 
 from fastapi import FastAPI, Request
@@ -26,6 +27,7 @@ STATIC = os.path.join(os.path.dirname(__file__), "static")
 
 def create_app(settings: Settings | None = None, *, deps: pipeline.Deps | None = None, senders: dict | None = None) -> FastAPI:
     s = (settings or Settings.from_env()).with_dev_keys()
+    is_prod = s.env.strip().lower() in ("production", "prod")
     engine = m.make_engine(s.database_url)
     m.Base.metadata.create_all(engine)          # dev convenience; production uses `alembic upgrade head`
     sm = m.make_sessionmaker(engine)
@@ -35,8 +37,14 @@ def create_app(settings: Settings | None = None, *, deps: pipeline.Deps | None =
             senders["whatsapp"] = channels.WhatsAppSender(s.whatsapp_token, s.whatsapp_phone_number_id)
         if s.at_username and s.at_api_key:
             senders["sms"] = channels.AfricasTalkingSender(s.at_username, s.at_api_key, s.at_shortcode or None)
-    app = FastAPI(title="Toroka API", version="0.2.0",
-                  description="Evidence-first checks. Results are never accusations and never a guarantee.")
+    app = FastAPI(
+        title="Toroka API",
+        version="0.2.0",
+        description="Evidence-first checks. Results are never accusations and never a guarantee.",
+        docs_url=None if is_prod else "/docs",
+        redoc_url=None if is_prod else "/redoc",
+        openapi_url=None if is_prod else "/openapi.json",
+    )
     app.state.ctx = Ctx(s, Crypto(s.encryption_key, s.hmac_key), RateLimiter(), deps or pipeline.build_deps(s), sm, senders)
     with sm() as db:
         seed_opportunities(db)
@@ -44,7 +52,11 @@ def create_app(settings: Settings | None = None, *, deps: pipeline.Deps | None =
 
     @app.middleware("http")
     async def request_id(request: Request, call_next):
-        rid = request.headers.get("x-request-id") or str(uuid.uuid4())
+        raw_rid = request.headers.get("x-request-id")
+        if raw_rid and re.match(r"^[a-zA-Z0-9_\-]{1,64}$", raw_rid.strip()):
+            rid = raw_rid.strip()
+        else:
+            rid = str(uuid.uuid4())
         request.state.request_id = rid
         try:
             response = await call_next(request)
@@ -66,30 +78,40 @@ def create_app(settings: Settings | None = None, *, deps: pipeline.Deps | None =
         from toroka_evidence.api_contract import router as evidence_router
         app.include_router(evidence_router)
     except Exception as e:
+        if is_prod:
+            raise RuntimeError(f"Failed to initialize evidence router in production: {e}") from e
         logging.getLogger("toroka.evidence").warning(f"Could not initialize evidence router: {e}")
 
     try:
         from .routes_phase5_phase6 import router as phase5_6_router
         app.include_router(phase5_6_router)
     except Exception as e:
+        if is_prod:
+            raise RuntimeError(f"Failed to initialize phase 5/6 router in production: {e}") from e
         logging.getLogger("toroka.phase5_6").warning(f"Could not initialize phase 5/6 router: {e}")
 
     try:
         from .routes_phase7 import router as phase7_router
         app.include_router(phase7_router)
     except Exception as e:
+        if is_prod:
+            raise RuntimeError(f"Failed to initialize phase 7 router in production: {e}") from e
         logging.getLogger("toroka.phase7").warning(f"Could not initialize phase 7 router: {e}")
 
     try:
         from .routes_build3 import router as build3_router
         app.include_router(build3_router)
     except Exception as e:
+        if is_prod:
+            raise RuntimeError(f"Failed to initialize Build 3 registry router in production: {e}") from e
         logging.getLogger("toroka.build3").warning(f"Could not initialize Build 3 registry router: {e}")
 
     try:
         from .routes_build4 import router as build4_router
         app.include_router(build4_router)
     except Exception as e:
+        if is_prod:
+            raise RuntimeError(f"Failed to initialize Build 4 campaign router in production: {e}") from e
         logging.getLogger("toroka.build4").warning(f"Could not initialize Build 4 campaign router: {e}")
 
     # Autonomous ML Worker Daemon
