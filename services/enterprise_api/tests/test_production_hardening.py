@@ -24,6 +24,8 @@ from toroka_enterprise_api.persistence.models import Base, AuditRecord
 def test_production_rejects_development_auth():
     settings = EnterpriseSettings(
         environment="production",
+        audit_checkpoint_dir="/tmp/toroka-test-checkpoints",
+        audit_checkpoint_hmac_key="k" * 32,
         auth_mode="development",
     )
     with pytest.raises(RuntimeError):
@@ -33,6 +35,8 @@ def test_production_rejects_development_auth():
 def test_production_rejects_raw_vault_key():
     settings = EnterpriseSettings(
         environment="production",
+        audit_checkpoint_dir="/tmp/toroka-test-checkpoints",
+        audit_checkpoint_hmac_key="k" * 32,
         auth_mode="oidc",
         oidc_issuer="https://idp.example.com",
         oidc_audience="toroka-enterprise",
@@ -49,6 +53,8 @@ def test_production_rejects_raw_vault_key():
 def test_production_requires_https_cors_origins():
     settings = EnterpriseSettings(
         environment="production",
+        audit_checkpoint_dir="/tmp/toroka-test-checkpoints",
+        audit_checkpoint_hmac_key="k" * 32,
         auth_mode="oidc",
         oidc_issuer="https://idp.example.com",
         oidc_audience="toroka-enterprise",
@@ -65,6 +71,8 @@ def test_production_requires_https_cors_origins():
 def test_production_requires_vault_service_url():
     settings = EnterpriseSettings(
         environment="production",
+        audit_checkpoint_dir="/tmp/toroka-test-checkpoints",
+        audit_checkpoint_hmac_key="k" * 32,
         auth_mode="oidc",
         oidc_issuer="https://idp.example.com",
         oidc_audience="toroka-enterprise",
@@ -80,6 +88,8 @@ def test_production_requires_vault_service_url():
 def test_production_requires_expected_schema_revision():
     settings = EnterpriseSettings(
         environment="production",
+        audit_checkpoint_dir="/tmp/toroka-test-checkpoints",
+        audit_checkpoint_hmac_key="k" * 32,
         auth_mode="oidc",
         oidc_issuer="https://idp.example.com",
         oidc_audience="toroka-enterprise",
@@ -95,6 +105,8 @@ def test_production_requires_expected_schema_revision():
 def test_production_requires_postgresql():
     settings = EnterpriseSettings(
         environment="production",
+        audit_checkpoint_dir="/tmp/toroka-test-checkpoints",
+        audit_checkpoint_hmac_key="k" * 32,
         auth_mode="oidc",
         oidc_issuer="https://idp.example.com",
         oidc_audience="toroka-enterprise",
@@ -231,6 +243,8 @@ def test_audit_checkpoint_signing_and_verification():
 def test_production_requires_strong_vault_service_token():
     settings = EnterpriseSettings(
         environment="production",
+        audit_checkpoint_dir="/tmp/toroka-test-checkpoints",
+        audit_checkpoint_hmac_key="k" * 32,
         auth_mode="oidc",
         oidc_issuer="https://idp.example.com",
         oidc_audience="toroka-enterprise",
@@ -248,6 +262,8 @@ def test_production_rejects_sample_federation_salt(monkeypatch):
     monkeypatch.setenv("TOROKA_FEDERATED_MULE_SALT", "TOROKA_CONSORTIUM_MULE_SALT_KENYA_CBK_2026_V1")
     settings = EnterpriseSettings(
         environment="production",
+        audit_checkpoint_dir="/tmp/toroka-test-checkpoints",
+        audit_checkpoint_hmac_key="k" * 32,
         auth_mode="oidc",
         oidc_issuer="https://idp.example.com",
         oidc_audience="toroka-enterprise",

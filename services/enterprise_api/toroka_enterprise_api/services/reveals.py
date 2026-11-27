@@ -99,8 +99,11 @@ class RevealService:
         ttl_hours: int = 24,
     ) -> RevealRequest:
         if ROLE_INVESTIGATOR not in principal.roles:
+            denied_case = self.cases.get_by_id(case_id)
             self._audit_denial(
-                installation_id=principal.installation_id or "toroka-default-installation",
+                installation_id=(denied_case.installation_id if denied_case else None)
+                or principal.installation_id
+                or "toroka-default-installation",
                 actor_subject=principal.subject,
                 actor_role=sorted(principal.roles)[0] if principal.roles else "unknown",
                 action="reveal_denied_role",

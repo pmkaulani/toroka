@@ -52,7 +52,7 @@ RUN groupadd --system --gid 10001 toroka && \
     --gid toroka \
     --home-dir /app \
     --shell /usr/sbin/nologin toroka && \
-    mkdir -p /app/tmp && \
+    mkdir -p /app/tmp /app/audit-checkpoints && \
     chown -R toroka:toroka /app
 
 COPY --from=python-deps --chown=10001:10001 \

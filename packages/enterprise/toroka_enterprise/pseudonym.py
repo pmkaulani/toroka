@@ -34,9 +34,24 @@ class Pseudonymiser:
         if kind not in PREFIX:
             raise ValueError(f"unknown identifier kind: {kind}")
         value = str(raw).strip()
-        canonical = value.casefold()
-        # Keep 128 bits of the keyed digest; 48 bits is too short for large-scale correlation.
-        digest = hmac.new(self._secret, f"toroka-ent:{kind}:{canonical}".encode(), hashlib.sha256).hexdigest()[:32]
-        pseudo = f"{PREFIX[kind]}-{digest}"
+        pseudo = self._pseudonym(kind, value.casefold())
         self.vault.setdefault(pseudo, value)
         return pseudo
+
+    def legacy_ref(self, kind: str, raw: str | None) -> str | None:
+        """The pseudonym this value had BEFORE case-insensitive normalisation (digest over the exact trimmed text).
+
+        For migrations only: ``ref()`` changed for any value that contains upper-case letters, so stored pseudonyms
+        (vault rows, case focus, reveal requests, federated tokens) must be re-mapped old -> new. Lower-case-only
+        values are identical under both schemes. Does not touch ``self.vault``.
+        """
+        if raw is None or not str(raw).strip():
+            return None
+        if kind not in PREFIX:
+            raise ValueError(f"unknown identifier kind: {kind}")
+        return self._pseudonym(kind, str(raw).strip())
+
+    def _pseudonym(self, kind: str, canonical: str) -> str:
+        # Keep 128 bits of the keyed digest; 48 bits is too short for large-scale correlation.
+        digest = hmac.new(self._secret, f"toroka-ent:{kind}:{canonical}".encode(), hashlib.sha256).hexdigest()[:32]
+        return f"{PREFIX[kind]}-{digest}"

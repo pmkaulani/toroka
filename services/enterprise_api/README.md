@@ -58,7 +58,9 @@ The service is configured via environment variables:
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `TOROKA_ENT_ENV` | `development` | Environment name: `development`, `test`, or `production`. |
+| `TOROKA_ENT_ENV` | `development` | Environment name: `development`, `test`, `staging` or `production`. `staging` gets the same guards as `production`. |
+| `TOROKA_ENT_AUDIT_CHECKPOINT_DIR` | `""` | Directory for signed, write-once audit checkpoints. **Required in staging/production**; use WORM/object-lock or off-host storage. |
+| `TOROKA_ENT_AUDIT_CHECKPOINT_KEY` | `""` | HMAC key (>= 32 bytes) that signs checkpoints. **Required in staging/production**; keep it in a KMS-backed secret (`_FILE` variant supported). |
 | `TOROKA_ENT_AUTH_MODE` | `oidc` | Authentication mode: `oidc` (mandatory in production) or `development`. |
 | `TOROKA_ENT_OIDC_ISSUER` | `""` | Bank IDP issuer URL (e.g. `https://idp.bank.example.com`). |
 | `TOROKA_ENT_OIDC_AUDIENCE` | `""` | Expected JWT audience (e.g. `toroka-enterprise-api`). |

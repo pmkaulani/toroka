@@ -88,10 +88,19 @@ services:
       TOROKA_ENT_DATABASE_URL_FILE: /run/secrets/enterprise_database_url
       TOROKA_ENT_VAULT_SERVICE_URL: http://identity-vault:8200
       TOROKA_ENT_VAULT_SERVICE_TOKEN_FILE: /run/secrets/vault_service_token
+      # Signed audit checkpoints are mandatory in staging/production. A Docker volume is NOT write-once:
+      # in a real deployment mount WORM / object-lock storage here, or ship the checkpoints off-host, and keep
+      # the signing key in a KMS/HSM-backed secret rather than on the same host as the database.
+      TOROKA_ENT_AUDIT_CHECKPOINT_DIR: /app/audit-checkpoints
+      TOROKA_ENT_AUDIT_CHECKPOINT_KEY_FILE: /run/secrets/audit_checkpoint_key
+
+    volumes:
+      - audit_checkpoints:/app/audit-checkpoints
 
     secrets:
       - enterprise_database_url
       - vault_service_token
+      - audit_checkpoint_key
 
     depends_on:
       enterprise-db:
@@ -123,6 +132,7 @@ networks:
 volumes:
   enterprise_data:
   vault_data:
+  audit_checkpoints:
 
 secrets:
   enterprise_db_password:
@@ -133,6 +143,9 @@ secrets:
 
   enterprise_database_url:
     file: ./secrets/enterprise_database_url.txt
+
+  audit_checkpoint_key:
+    file: ./secrets/audit_checkpoint_key.txt
 
   vault_database_url:
     file: ./secrets/vault_database_url.txt

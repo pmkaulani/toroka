@@ -23,6 +23,22 @@ def is_federation_enabled() -> bool:
     return os.environ.get("TOROKA_ENABLE_FEDERATION", "false").lower() in ("true", "1", "yes")
 
 
+_DEV_ENVIRONMENTS = ("development", "dev", "test", "testing")
+_ENVIRONMENT_VARIABLES = ("TOROKA_ENV", "ENVIRONMENT", "TOROKA_ENT_ENV")
+
+
+def _is_dev_or_test(environment: str | None) -> bool:
+    """True only when every configured environment name says development/test.
+
+    An explicit ``environment`` argument wins. Otherwise all of TOROKA_ENV, ENVIRONMENT and TOROKA_ENT_ENV are
+    consulted and a single non-dev value (for example ``TOROKA_ENT_ENV=production`` next to a generic
+    ``ENVIRONMENT=development``) keeps the strict, fail-closed behaviour. No configured name at all is not dev.
+    """
+    values = [environment] if environment is not None else [os.environ.get(n) for n in _ENVIRONMENT_VARIABLES]
+    names = [v.strip().lower() for v in values if v and v.strip()]
+    return bool(names) and all(n in _DEV_ENVIRONMENTS for n in names)
+
+
 def get_federation_salt(environment: str | None = None) -> str:
     """Retrieve consortium federation salt or fail closed outside explicit dev/test environments.
 
@@ -31,17 +47,7 @@ def get_federation_salt(environment: str | None = None) -> str:
     explicitly development or test.
     """
     salt = os.environ.get("TOROKA_FEDERATED_MULE_SALT")
-    env = (
-        environment
-        if environment is not None
-        else (
-            os.environ.get("TOROKA_ENV")
-            or os.environ.get("ENVIRONMENT")
-            or os.environ.get("TOROKA_ENT_ENV")
-            or ""
-        )
-    ).strip().lower()
-    is_dev_or_test = env in ("development", "dev", "test", "testing")
+    is_dev_or_test = _is_dev_or_test(environment)
     if not salt:
         if not is_dev_or_test:
             raise RuntimeError(

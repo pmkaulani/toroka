@@ -28,6 +28,8 @@ def test_config_from_env_custom(monkeypatch):
     monkeypatch.setenv("TOROKA_ENT_DATABASE_URL", "postgresql+psycopg://db.bank.local/toroka")
     monkeypatch.setenv("TOROKA_ENT_VAULT_SERVICE_URL", "https://vault.bank.local")
     monkeypatch.setenv("TOROKA_ENT_EXPECTED_SCHEMA_REVISION", "002_case_closure_proposals")
+    monkeypatch.setenv("TOROKA_ENT_AUDIT_CHECKPOINT_DIR", "/tmp/toroka-test-checkpoints")
+    monkeypatch.setenv("TOROKA_ENT_AUDIT_CHECKPOINT_KEY", "k" * 32)
     monkeypatch.delenv("TOROKA_ENT_VAULT_KEY", raising=False)
 
     cfg = EnterpriseSettings.from_env()

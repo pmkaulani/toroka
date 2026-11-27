@@ -5,6 +5,7 @@ import base64
 import hmac
 import json
 import os
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Protocol
@@ -102,11 +103,19 @@ class DirectoryImmutableCheckpointStore:
         if file_path.exists():
             raise FileExistsError(f"Immutable checkpoint '{object_key}' already exists on disk")
         file_path.parent.mkdir(parents=True, exist_ok=True)
-        # Write to temporary file and move without overwriting
-        tmp_file = file_path.with_suffix(".tmp")
-        tmp_file.write_bytes(content)
-        # Exclusive rename
-        tmp_file.rename(file_path)
+        # Write a private temp file, then publish it with a hard link: unlike rename(), link() fails atomically if the
+        # target already exists, so a racing writer can never replace an existing checkpoint.
+        tmp_file = file_path.with_name(f"{file_path.name}.{os.getpid()}.{uuid.uuid4().hex}.tmp")
+        with open(tmp_file, "wb") as handle:
+            handle.write(content)
+            handle.flush()
+            os.fsync(handle.fileno())
+        try:
+            os.link(tmp_file, file_path)
+        except FileExistsError:
+            raise FileExistsError(f"Immutable checkpoint '{object_key}' already exists on disk") from None
+        finally:
+            tmp_file.unlink(missing_ok=True)
 
     def get(self, object_key: str) -> bytes | None:
         file_path = self.base_dir / object_key

@@ -88,6 +88,8 @@ def test_22_security_headers_and_correlation_id(oidc_client):
 def test_23_production_disables_documentation_routes():
     prod_settings = EnterpriseSettings(
         environment="production",
+        audit_checkpoint_dir="/tmp/toroka-test-checkpoints",
+        audit_checkpoint_hmac_key="k" * 32,
         auth_mode="oidc",
         oidc_issuer="https://idp.bank.local",
         oidc_audience="toroka-enterprise",
