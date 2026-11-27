@@ -1,0 +1,168 @@
+# Kubernetes CronJob: sign an audit checkpoint every 15 minutes.
+#
+# Prerequisites
+# -------------
+# 1. The Enterprise API pods must be running and reachable on the in-cluster
+#    service `enterprise-api:8080`.
+# 2. A Kubernetes Secret named `toroka-ent-checkpoint-creds` must exist with
+#    two keys:
+#      checkpoint-api-token   – a bearer token accepted by the Enterprise API
+#                               (e.g. the OIDC service-account token or a
+#                               dedicated internal API key)
+#      checkpoint-verify-url  – the full URL of the checkpoint verify endpoint
+#                               (optional, only needed for the separate verify
+#                               job below)
+# 3. The checkpoint directory must be backed by WORM/object-lock storage or
+#    be copied off-host after each write.  A plain writable EmptyDir or
+#    hostPath volume is NOT sufficient for tamper evidence.
+#    Recommended: mount a GCS/S3 bucket with Object Lock via a sidecar FUSE
+#    mount, or write to a path that an off-host rsync/rclone DaemonSet
+#    immediately replicates.
+#
+# HMAC key rotation
+# -----------------
+# Rotate the HMAC key by:
+#   1. Writing the new key to the secret.
+#   2. Posting one checkpoint with the new key (all subsequent ones use it).
+#   3. Verifying the latest checkpoint succeeds.
+#   4. Keeping the old key in a secondary secret until all old checkpoints
+#      have been archived/verified.
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: audit-checkpoint-writer
+  namespace: toroka
+  labels:
+    app.kubernetes.io/name: toroka-enterprise
+    app.kubernetes.io/component: audit
+spec:
+  # Every 15 minutes; use a jitter offset so it does not coincide with other
+  # scheduled tasks (1-minute resolution is the finest cron supports).
+  schedule: "3,18,33,48 * * * *"
+  concurrencyPolicy: Forbid          # never run two writers at the same time
+  successfulJobsHistoryLimit: 5
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      activeDeadlineSeconds: 120
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/component: audit-checkpoint-writer
+        spec:
+          restartPolicy: OnFailure
+          serviceAccountName: toroka-enterprise-audit-writer
+          containers:
+            - name: writer
+              image: curlimages/curl:8.6.0
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  set -eu
+                  TOKEN="$(cat /var/run/secrets/checkpoint/checkpoint-api-token)"
+                  RESPONSE=$(curl --silent --fail --show-error \
+                    --max-time 30 \
+                    -X POST \
+                    -H "Authorization: Bearer ${TOKEN}" \
+                    -H "Content-Type: application/json" \
+                    "http://enterprise-api:8080/api/enterprise/v1/audit/checkpoints")
+                  echo "Checkpoint created: ${RESPONSE}"
+              volumeMounts:
+                - name: checkpoint-creds
+                  mountPath: /var/run/secrets/checkpoint
+                  readOnly: true
+              resources:
+                requests:
+                  cpu: "10m"
+                  memory: "16Mi"
+                limits:
+                  cpu: "100m"
+                  memory: "64Mi"
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                runAsNonRoot: true
+                runAsUser: 65534           # nobody
+                capabilities:
+                  drop: ["ALL"]
+          volumes:
+            - name: checkpoint-creds
+              secret:
+                secretName: toroka-ent-checkpoint-creds
+---
+# Optional: separate CronJob to verify the latest checkpoint.
+# Runs 5 minutes after each write so the filesystem has had time to flush.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: audit-checkpoint-verifier
+  namespace: toroka
+  labels:
+    app.kubernetes.io/name: toroka-enterprise
+    app.kubernetes.io/component: audit
+spec:
+  schedule: "8,23,38,53 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 5
+  failedJobsHistoryLimit: 10         # keep more failure history for incident review
+  jobTemplate:
+    spec:
+      backoffLimit: 0                # do NOT retry a verify failure – alert immediately
+      activeDeadlineSeconds: 60
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/component: audit-checkpoint-verifier
+        spec:
+          restartPolicy: Never
+          serviceAccountName: toroka-enterprise-audit-writer
+          containers:
+            - name: verifier
+              image: curlimages/curl:8.6.0
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  set -eu
+                  TOKEN="$(cat /var/run/secrets/checkpoint/checkpoint-api-token)"
+                  # Retrieve the latest checkpoint ID from the list endpoint
+                  LATEST_ID=$(curl --silent --fail \
+                    --max-time 15 \
+                    -H "Authorization: Bearer ${TOKEN}" \
+                    "http://enterprise-api:8080/api/enterprise/v1/audit/checkpoints" \
+                    | grep -o '"checkpoint_id":"[^"]*"' | head -1 | cut -d'"' -f4)
+                  if [ -z "${LATEST_ID}" ]; then
+                    echo "ERROR: no checkpoint found" >&2
+                    exit 1
+                  fi
+                  curl --silent --fail --show-error \
+                    --max-time 15 \
+                    -X POST \
+                    -H "Authorization: Bearer ${TOKEN}" \
+                    "http://enterprise-api:8080/api/enterprise/v1/audit/checkpoints/${LATEST_ID}/verify"
+                  echo "Checkpoint ${LATEST_ID} verified OK"
+              volumeMounts:
+                - name: checkpoint-creds
+                  mountPath: /var/run/secrets/checkpoint
+                  readOnly: true
+              resources:
+                requests:
+                  cpu: "10m"
+                  memory: "16Mi"
+                limits:
+                  cpu: "100m"
+                  memory: "64Mi"
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                runAsNonRoot: true
+                runAsUser: 65534
+                capabilities:
+                  drop: ["ALL"]
+          volumes:
+            - name: checkpoint-creds
+              secret:
+                secretName: toroka-ent-checkpoint-creds

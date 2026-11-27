@@ -138,8 +138,13 @@ class EnterpriseSettings:
                 "TOROKA_CONSORTIUM_MULE_SALT_KENYA_CBK_2026_DEV",
             ):
                 raise RuntimeError("Production cannot use the default sample federation salt")
-            if self.audit_checkpoint_dir and len(self.audit_checkpoint_hmac_key.encode("utf-8")) < 32:
-                raise RuntimeError("Audit checkpoint HMAC key must be at least 32 bytes when checkpointing is enabled")
+            if not self.audit_checkpoint_dir or not self.audit_checkpoint_hmac_key:
+                raise RuntimeError(
+                    "Signed audit checkpoints are required in staging and production: set "
+                    "TOROKA_ENT_AUDIT_CHECKPOINT_DIR (write-once or off-host storage) and TOROKA_ENT_AUDIT_CHECKPOINT_KEY"
+                )
+            if len(self.audit_checkpoint_hmac_key.encode("utf-8")) < 32:
+                raise RuntimeError("Audit checkpoint HMAC key must be at least 32 bytes")
         if self.environment == "production":
             if self.vault_key:
                 raise RuntimeError(

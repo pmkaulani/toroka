@@ -127,7 +127,15 @@ def test_cop_empty_name_edge_case():
     assert result.reason_code == "EMPTY_NAME_NO_MATCH"
 
 
+@pytest.mark.performance
 def test_cop_sub_millisecond_latency():
+    """Wall-clock latency guard.
+
+    Skipped in the default suite (``pytest.mark.performance``).
+    Run explicitly with ``pytest -m performance`` on the target hardware
+    before releasing a new CoP engine implementation.
+    CI on shared runners is too noisy for this assertion.
+    """
     import time
     req = CopInquiryRequest(
         intended_name="John Kariuki Kamau Enterprises Limited",

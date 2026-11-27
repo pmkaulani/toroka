@@ -45,8 +45,11 @@ services:
     environment:
       - TOROKA_ENT_ENV=production
       - TOROKA_ENT_AUTH_MODE=oidc
+      - TOROKA_ENT_AUDIT_CHECKPOINT_DIR=/app/audit-checkpoints
       - TOROKA_ENT_DATABASE_URL=postgresql+psycopg://toroka_ent:change-me-ent-db@enterprise-db:5432/toroka_enterprise
       - TOROKA_ENT_VAULT_DATABASE_URL=postgresql+psycopg://toroka_vault:change-me-vault-db@enterprise-vault-db:5432/toroka_vault
+    volumes:
+      - audit_checkpoints:/app/audit-checkpoints
     depends_on:
       enterprise-db: { condition: service_healthy }
       enterprise-vault-db: { condition: service_healthy }
@@ -57,3 +60,4 @@ volumes:
   evidence: {}
   ent_dbdata: {}
   ent_vaultdata: {}
+  audit_checkpoints: {}
