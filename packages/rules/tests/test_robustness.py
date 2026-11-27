@@ -53,12 +53,14 @@ PATHOLOGICAL = {
 
 
 @pytest.mark.parametrize("name", list(PATHOLOGICAL))
+@pytest.mark.performance
 def test_pathological_inputs_finish_quickly(name):
     t0 = time.perf_counter(); a = assess(PATHOLOGICAL[name][:5000]); dt = time.perf_counter() - t0
     assert dt < 1.0, f"{name} took {dt:.2f}s"
     assert a.label in set(Label)
 
 
+@pytest.mark.performance
 def test_typical_message_is_fast():
     t0 = time.perf_counter()
     for _ in range(200):

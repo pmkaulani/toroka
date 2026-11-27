@@ -33,7 +33,7 @@ from .social_intelligence import investigate_social_targets
 from .routes_community import upsert_subject
 from .url_pipeline import (ThreatFeedManager, investigate_single_url, parse_platform_profile, URLInvestigationResult, is_verified_record_current, invalidate_url_cache)
 from ssi_rules import normalize as nz
-from .security import hash_password, new_token, same, sha256, verify_password
+from .security import hash_password, needs_rehash, new_token, same, sha256, verify_password
 
 router = APIRouter()
 REGISTRY = load_registry()
@@ -398,6 +398,10 @@ def login(body: AuthIn, request: Request, db: Session = Depends(get_db), c: Ctx 
     u = db.execute(select(m.User).where(m.User.email_hmac == c.crypto.lookup("email", body.email.strip().lower()))).scalar_one_or_none()
     if not u or u.status != "active" or not verify_password(body.password, u.password_hash):
         raise HTTPException(401, "Email or password is not right.")
+    # Transparent scrypt work-factor upgrade: rehash with the current n=2**17
+    # if the stored hash was produced with a lower factor (e.g. the old n=2**14).
+    if needs_rehash(u.password_hash):
+        u.password_hash = hash_password(body.password)
     token = _login(db, u)
     audit(db, request, u.id, "user.login", "user", u.id)
     db.commit()
