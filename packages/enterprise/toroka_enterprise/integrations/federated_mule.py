@@ -50,7 +50,6 @@ def get_federation_salt() -> str:
     return salt
 
 
-DEFAULT_FEDERATION_SALT = os.environ.get("TOROKA_FEDERATED_MULE_SALT", "TOROKA_CONSORTIUM_MULE_SALT_KENYA_CBK_2026_DEV")
 
 
 

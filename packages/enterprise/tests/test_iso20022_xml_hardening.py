@@ -22,3 +22,4 @@ def _parser():
 def test_entity_declarations_are_rejected(payload):
     with pytest.raises(ValueError, match="unsafe|Malformed"):
         _parser()(payload)
+

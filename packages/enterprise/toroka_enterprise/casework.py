@@ -135,7 +135,10 @@ class CaseStore:
             self.audit.append(p.user_id, p.role, "authz.denied", str(request_id), {"attempted": "self-approval of reveal"})
             raise PermissionError("a reveal cannot be approved by the person who requested it")
         with self._db:
-            self._db.execute("UPDATE reveals SET status='approved', approved_by=?, approved_at=? WHERE id=?", (p.user_id, self._now(), request_id))
+            cur = self._db.execute("UPDATE reveals SET status='approved', approved_by=?, approved_at=? WHERE id=? AND status='pending'",
+                                   (p.user_id, self._now(), request_id))
+            if cur.rowcount != 1:     # lost a race with another decision on the same request
+                raise ValueError("request is not pending")
         self.audit.append(p.user_id, p.role, "reveal.approve", str(request_id), {"requested_by": r["requested_by"]})
 
     def reveal(self, p: Principal, request_id: int) -> str:
@@ -154,7 +157,9 @@ class CaseStore:
         if not sealed:
             raise KeyError("no vault entry for this pseudonym")
         with self._db:
-            self._db.execute("UPDATE reveals SET status='used' WHERE id=?", (request_id,))
+            cur = self._db.execute("UPDATE reveals SET status='used' WHERE id=? AND status='approved'", (request_id,))
+            if cur.rowcount != 1:     # single use: a concurrent consumer got there first
+                raise PermissionError("reveal is no longer approved")
         self.audit.append(p.user_id, p.role, "reveal.use", str(request_id), {"case": r["case_id"], "pseudonym": r["pseudonym"], "approved_by": r["approved_by"]})
         return self._fernet.decrypt(sealed["sealed"]).decode()
 

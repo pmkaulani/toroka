@@ -30,6 +30,27 @@ def _ensure_utc(dt: datetime) -> datetime:
     return dt.astimezone(timezone.utc)
 
 
+def _case_pseudonyms(case) -> set[str]:
+    """Pseudonyms that legitimately belong to a case: its focus, staff/customer refs and evidence subjects.
+
+    Mirrors the reference implementation in toroka_enterprise.casework.CaseStore.request_reveal. Without this check an
+    investigator assigned to one case could request the identity behind *any* pseudonym in the installation.
+    """
+    snap = case.snapshot if isinstance(case.snapshot, dict) else {}
+    found = {snap.get("staff_ref"), snap.get("customer_ref"), snap.get("focus"), getattr(case, "focus", None)}
+    result = snap.get("result") if isinstance(snap.get("result"), dict) else {}
+    for key in ("risk_evidence", "supporting_evidence"):
+        for ev in result.get(key) or []:
+            if isinstance(ev, dict) and ev.get("subject"):
+                found.add(ev["subject"])
+    out: set[str] = set()
+    for value in found:
+        if isinstance(value, str) and value:
+            out.add(value)
+            out.update(part for part in value.split("/") if part)
+    return out
+
+
 class RevealService:
     def __init__(self, db: Session, vault_repo: IdentityVaultRepository):
         self.db = db
@@ -61,6 +82,20 @@ class RevealService:
         assignment = self.assignments.get_active_assignment(case_id, principal.subject)
         if assignment is None and ROLE_AUTHORISER not in principal.roles:
             raise PermissionError("You are not assigned to this case.")
+
+        if pseudonym.strip() not in _case_pseudonyms(case):
+            append_audit(
+                self.db,
+                installation_id=case.installation_id,
+                actor_subject=principal.subject,
+                actor_role="investigator",
+                action="reveal_denied_out_of_scope",
+                target_type="case",
+                target_id=case_id,
+                safe_metadata={"pseudonym": pseudonym.strip()},
+            )
+            self.db.commit()
+            raise ValueError("Pseudonym does not appear in this case.")
 
         if not reason or len(reason.strip()) < 10:
             raise ValueError("A substantive written justification (at least 10 characters) is required.")
