@@ -47,7 +47,16 @@ def test_17_development_authentication_forbidden_in_production():
         environment="production",
         auth_mode="development",
     )
-    with pytest.raises(RuntimeError, match="Development authentication is forbidden in production"):
+    with pytest.raises(RuntimeError, match="Development authentication is forbidden"):
+        settings.validate()
+
+
+def test_17c_development_authentication_forbidden_in_staging():
+    settings = EnterpriseSettings(
+        environment="staging",
+        auth_mode="development",
+    )
+    with pytest.raises(RuntimeError, match="Development authentication is forbidden"):
         settings.validate()
 
 

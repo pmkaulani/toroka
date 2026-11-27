@@ -17,6 +17,8 @@ from datetime import datetime, timezone
 from enum import StrEnum
 from typing import Any
 
+from .model_registry import get_models_dir
+
 logger = logging.getLogger("toroka.ml.job_store")
 
 
@@ -70,8 +72,7 @@ class PersistentJobStore:
     """Manages atomic, persistent job lifecycle operations."""
 
     def __init__(self, store_file: str | None = None):
-        base_dir = os.path.dirname(os.path.abspath(__file__))
-        self.store_file = store_file or os.path.join(base_dir, "models", "jobs.json")
+        self.store_file = store_file or os.path.join(get_models_dir(), "jobs.json")
         os.makedirs(os.path.dirname(self.store_file), exist_ok=True)
         self.jobs: dict[str, JobRecord] = {}
         self._load_and_recover()

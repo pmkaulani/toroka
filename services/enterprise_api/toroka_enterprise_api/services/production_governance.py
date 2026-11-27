@@ -576,11 +576,13 @@ class ProductionGovernanceService:
         installation_id: str,
         evidence_resolver: EvidenceReferenceResolver | None = None,
         trust_registry: SignerTrustRegistry | None = None,
+        environment: str | None = None,
     ) -> None:
         self.session = session
         self.installation_id = installation_id
         self.evidence_resolver = evidence_resolver
         self.trust_registry = trust_registry or SignerTrustRegistry()
+        self.environment = environment
         self._load_trust_registry_from_db()
 
     def _load_trust_registry_from_db(self) -> None:
@@ -3664,6 +3666,7 @@ class ProductionGovernanceService:
                 telecom_simulated_call=request.telecom_call_status,
                 federated_mule_enabled=request.check_federated_mule_directory,
                 federated_mule_records=active_dicts,
+                environment=self.environment,
                 known_mule_accounts=mule_accounts,
                 account_prior_transfers_count=request.account_prior_transfers_count,
                 beneficiary_inflow_restriction=request.beneficiary_inflow_restriction,
@@ -3686,6 +3689,7 @@ class ProductionGovernanceService:
                 creditor_token = FederatedMuleEngine.compute_blinded_token(
                     transfer.creditor.account_number,
                     MuleEntityType.BANK_ACCOUNT,
+                    environment=self.environment,
                 )
                 fed_records = self.session.execute(
                     select(FederatedMuleRecord).where(
@@ -3715,7 +3719,9 @@ class ProductionGovernanceService:
                         entity_type=MuleEntityType.BANK_ACCOUNT,
                         is_already_blinded=True,
                     )
-                    federated_match = FederatedMuleEngine.evaluate_mule_query(query_obj, active_dicts)
+                    federated_match = FederatedMuleEngine.evaluate_mule_query(
+                        query_obj, active_dicts, environment=self.environment
+                    )
 
             eval_result = ISO20022Engine.evaluate_inflight_payment(
                 transfer=transfer,
@@ -4246,7 +4252,9 @@ class ProductionGovernanceService:
         actor_subject: str,
     ) -> FederatedMuleEntryResponse:
         """Registers a suspect/corroborated mule in the federated directory with a blinded HMAC token."""
-        token = FederatedMuleEngine.compute_blinded_token(request.value, request.entity_type)
+        token = FederatedMuleEngine.compute_blinded_token(
+            request.value, request.entity_type, environment=self.environment
+        )
         preview = FederatedMuleEngine.mask_identifier(request.value, request.entity_type)
         entry_id = f"mule-{uuid.uuid4().hex[:12]}"
         now = _utc_now()
@@ -4281,7 +4289,9 @@ class ProductionGovernanceService:
         if request.is_already_blinded:
             token = request.value.strip().lower()
         else:
-            token = FederatedMuleEngine.compute_blinded_token(request.value, request.entity_type)
+            token = FederatedMuleEngine.compute_blinded_token(
+                request.value, request.entity_type, environment=self.environment
+            )
 
         fed_records = self.session.execute(
             select(FederatedMuleRecord).where(
@@ -4309,7 +4319,9 @@ class ProductionGovernanceService:
             entity_type=MuleEntityType(request.entity_type),
             is_already_blinded=request.is_already_blinded,
         )
-        match = FederatedMuleEngine.evaluate_mule_query(query_obj, active_dicts)
+        match = FederatedMuleEngine.evaluate_mule_query(
+            query_obj, active_dicts, environment=self.environment
+        )
         return QueryFederatedMuleResponse(
             is_match=match.is_match,
             blinded_token=match.blinded_token,

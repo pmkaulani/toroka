@@ -23,28 +23,38 @@ def is_federation_enabled() -> bool:
     return os.environ.get("TOROKA_ENABLE_FEDERATION", "false").lower() in ("true", "1", "yes")
 
 
-def get_federation_salt() -> str:
-    """Retrieve consortium federation salt or fail closed in production.
-    
-    In production, a configured non-default salt or KMS-backed key is mandatory.
-    Default federation salt fallback is strictly prohibited.
+def get_federation_salt(environment: str | None = None) -> str:
+    """Retrieve consortium federation salt or fail closed outside explicit dev/test environments.
+
+    In staging, production, or any unconfigured environment, a distinct salt or KMS-backed
+    key is mandatory. Default federation salt fallback is permitted only when environment is
+    explicitly development or test.
     """
     salt = os.environ.get("TOROKA_FEDERATED_MULE_SALT")
-    is_prod = (
-        os.environ.get("TOROKA_ENV", "").lower() == "production"
-        or os.environ.get("ENVIRONMENT", "").lower() == "production"
-        or os.environ.get("TOROKA_ENT_ENV", "").lower() == "production"
-    )
+    env = (
+        environment
+        if environment is not None
+        else (
+            os.environ.get("TOROKA_ENV")
+            or os.environ.get("ENVIRONMENT")
+            or os.environ.get("TOROKA_ENT_ENV")
+            or ""
+        )
+    ).strip().lower()
+    is_dev_or_test = env in ("development", "dev", "test", "testing")
     if not salt:
-        if is_prod:
+        if not is_dev_or_test:
             raise RuntimeError(
-                "Production federation requires explicit TOROKA_FEDERATED_MULE_SALT or KMS-backed key. "
-                "Default federation salt fallback is strictly prohibited in production."
+                "Federation requires explicit TOROKA_FEDERATED_MULE_SALT or KMS-backed key. "
+                "Default federation salt fallback is strictly prohibited outside development/test."
             )
         return "TOROKA_CONSORTIUM_MULE_SALT_KENYA_CBK_2026_DEV"
-    if is_prod and salt == "TOROKA_CONSORTIUM_MULE_SALT_KENYA_CBK_2026_V1":
+    if not is_dev_or_test and salt in (
+        "TOROKA_CONSORTIUM_MULE_SALT_KENYA_CBK_2026_V1",
+        "TOROKA_CONSORTIUM_MULE_SALT_KENYA_CBK_2026_DEV",
+    ):
         raise RuntimeError(
-            "Production cannot use the default or sample consortium salt. "
+            "Non-dev deployment cannot use the default or sample consortium salt. "
             "A distinct, KMS-backed consortium key is required."
         )
     return salt
@@ -164,10 +174,11 @@ class FederatedMuleEngine:
         raw: str,
         entity_type: MuleEntityType | str,
         salt: str | None = None,
+        environment: str | None = None,
     ) -> str:
         """Computes keyed HMAC-SHA256 blinded token over normalized identifier."""
         canonical = cls.normalize_identifier(raw, entity_type)
-        salt_val = salt if salt is not None else get_federation_salt()
+        salt_val = salt if salt is not None else get_federation_salt(environment=environment)
         actual_salt = salt_val.encode("utf-8")
         token = hmac.new(actual_salt, canonical.encode("utf-8"), hashlib.sha256).hexdigest()
         return token
@@ -189,13 +200,16 @@ class FederatedMuleEngine:
         query: FederatedMuleQuery,
         active_directory_entries: list[dict[str, Any]],
         salt: str | None = None,
+        environment: str | None = None,
     ) -> FederatedMuleMatch:
         """Evaluates whether an identifier exists in the federated directory."""
         if query.is_already_blinded:
             blinded_token = query.value.strip().lower()
             preview = "BLINDED_TOKEN"
         else:
-            blinded_token = cls.compute_blinded_token(query.value, query.entity_type, salt=salt)
+            blinded_token = cls.compute_blinded_token(
+                query.value, query.entity_type, salt=salt, environment=environment
+            )
             preview = cls.mask_identifier(query.value, query.entity_type)
 
         now = datetime.now(timezone.utc)

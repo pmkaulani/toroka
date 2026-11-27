@@ -90,6 +90,13 @@ def get_installation_id(request: Request) -> str:
     return "toroka-default-installation"
 
 
+def get_environment(request: Request) -> str | None:
+    settings = getattr(request.app.state, "settings", None)
+    if settings is not None and hasattr(settings, "environment"):
+        return settings.environment
+    return None
+
+
 def get_investigation_service(
     db: Session = Depends(get_db),
 ) -> InvestigationService:

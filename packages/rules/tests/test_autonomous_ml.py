@@ -80,6 +80,48 @@ from ssi_rules.ml.schema import (
 )
 
 
+@pytest.fixture(autouse=True)
+def isolate_ml_filesystem(tmp_path, monkeypatch):
+    """Redirect ML model registry, snapshots, telemetry, and jobs into tmp_path."""
+    import ssi_rules.ml.model_registry as model_registry
+
+    ml_pkg_dir = os.path.dirname(os.path.abspath(model_registry.__file__))
+    src_data = os.path.join(ml_pkg_dir, "data")
+    src_models = os.path.join(ml_pkg_dir, "models")
+
+    dst_data = tmp_path / "ml_data"
+    dst_models = tmp_path / "ml_models"
+    dst_data.mkdir()
+    dst_models.mkdir()
+
+    for fname in ("benchmark_v1.jsonl", "challenge_set_v1.jsonl", "seed_dataset_v1.jsonl", "manifest.json"):
+        fpath = os.path.join(src_data, fname)
+        if os.path.isfile(fpath):
+            shutil.copy2(fpath, dst_data / fname)
+
+    src_sources = os.path.join(src_data, "sources")
+    if os.path.isdir(src_sources):
+        dst_sources = dst_data / "sources"
+        dst_sources.mkdir()
+        for fname in ("regulator_advisories.json", "phishing_threats.json"):
+            fpath = os.path.join(src_sources, fname)
+            if os.path.isfile(fpath):
+                shutil.copy2(fpath, dst_sources / fname)
+
+    for fname in ("active_model.json", "meta_v1.0.0-champion.json", "model_v1.0.0-champion.json"):
+        fpath = os.path.join(src_models, fname)
+        if os.path.isfile(fpath):
+            shutil.copy2(fpath, dst_models / fname)
+
+    monkeypatch.setenv("TOROKA_ML_DATA_DIR", str(dst_data))
+    monkeypatch.setenv("TOROKA_MODELS_DIR", str(dst_models))
+    AutonomousMLEngine._instance = None
+    model_registry._ACTIVE_MODEL_CACHE = None
+    yield
+    AutonomousMLEngine._instance = None
+    model_registry._ACTIVE_MODEL_CACHE = None
+
+
 @pytest.fixture
 def temp_env():
     """Create isolated temporary directory for test artifacts."""
@@ -422,11 +464,11 @@ def test_23_training_isolated_from_inference():
 
 
 # --- 24. No administrative training operation can be triggered by unauthenticated user ---
-def test_24_admin_operations_require_auth():
+def test_24_admin_operations_require_auth(monkeypatch):
     from app.main import create_app
 
-    os.environ["SSI_NO_AUTOAPP"] = "1"
-    os.environ["SSI_NO_WORKER"] = "1"
+    monkeypatch.setenv("SSI_NO_AUTOAPP", "1")
+    monkeypatch.setenv("SSI_NO_WORKER", "1")
     app = create_app()
     client = TestClient(app)
 

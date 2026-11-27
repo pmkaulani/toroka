@@ -75,7 +75,7 @@ class CaseCloseRequest(BaseModel):
 
 class RevealRequestCreate(BaseModel):
     pseudonym: str = Field(min_length=1, max_length=255)
-    reason: str = Field(min_length=10, max_length=2000)
+    reason: str = Field(min_length=20, max_length=2000)
     ttl_hours: int = Field(default=24, ge=1, le=168)
 
 
@@ -197,3 +197,15 @@ class AuditVerificationResponse(BaseModel):
     head_hash: str
     records_verified: int
     error: str | None = None
+
+
+class AuditCheckpointResponse(BaseModel):
+    data: dict[str, Any]
+    key_id: str
+    signature: str
+
+
+class AuditCheckpointVerifyResponse(BaseModel):
+    valid: bool
+    message: str
+    head_sequence: int | None = None

@@ -133,6 +133,8 @@ class SIC5ParallelClearingEngine:
         # Feed 3 Inputs (Federated Mule Directory)
         federated_mule_enabled: bool = True,
         federated_mule_records: list[dict[str, Any]] | None = None,
+        federated_mule_salt: str | None = None,
+        environment: str | None = None,
         # Feed 4 Inputs (Behavioral / Internal Rules)
         known_mule_accounts: set[str] | None = None,
         account_prior_transfers_count: int | None = None,
@@ -239,7 +241,12 @@ class SIC5ParallelClearingEngine:
                 value=transfer.creditor.account_number,
                 entity_type=MuleEntityType.BANK_ACCOUNT,
             )
-            m_res = FederatedMuleEngine.evaluate_mule_query(query, federated_mule_records)
+            m_res = FederatedMuleEngine.evaluate_mule_query(
+                query,
+                federated_mule_records,
+                salt=federated_mule_salt,
+                environment=environment,
+            )
             lat = (time.perf_counter() - t0) * 1000.0
             return m_res, lat, False
 

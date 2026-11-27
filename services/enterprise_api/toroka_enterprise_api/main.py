@@ -54,6 +54,7 @@ def create_app(
     settings.validate()
 
     production = settings.environment == "production"
+    hide_docs = settings.environment in ("production", "staging")
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -67,13 +68,27 @@ def create_app(
         title="Toroka Enterprise API",
         version="0.3.0",
         description="Authenticated financial-crime investigation operations API.",
-        docs_url=None if production else "/docs",
-        redoc_url=None if production else "/redoc",
-        openapi_url=None if production else "/openapi.json",
+        docs_url=None if hide_docs else "/docs",
+        redoc_url=None if hide_docs else "/redoc",
+        openapi_url=None if hide_docs else "/openapi.json",
         lifespan=lifespan,
     )
 
     app.state.settings = settings
+    if settings.audit_checkpoint_dir and settings.audit_checkpoint_hmac_key:
+        from .persistence.checkpoints import (
+            DirectoryImmutableCheckpointStore,
+            HMACCheckpointSigner,
+            HMACCheckpointVerifier,
+        )
+        key_bytes = settings.audit_checkpoint_hmac_key.encode("utf-8")
+        app.state.checkpoint_store = DirectoryImmutableCheckpointStore(settings.audit_checkpoint_dir)
+        app.state.checkpoint_signer = HMACCheckpointSigner(key_bytes, key_id="ent-hmac-v1")
+        app.state.checkpoint_verifier = HMACCheckpointVerifier(key_bytes, key_id="ent-hmac-v1")
+    else:
+        app.state.checkpoint_store = None
+        app.state.checkpoint_signer = None
+        app.state.checkpoint_verifier = None
 
     # Operational database engine and session factory
     app.state.engine = build_engine(settings.database_url, production=production)

@@ -17,6 +17,7 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
+from .dataset import get_data_dir
 from .schema import Language, Provenance, SampleType, compute_template_hash
 
 logger = logging.getLogger("toroka.ml.data_acquisition")
@@ -135,8 +136,7 @@ class RegulatorAdvisoryAdapter(BaseSourceAdapter):
         source_url: str = "https://www.cak.go.ke/advisories",
         feed_path: str | None = None,
     ):
-        base_dir = os.path.dirname(os.path.abspath(__file__))
-        self.feed_path = feed_path or os.path.join(base_dir, "data", "sources", "regulator_advisories.json")
+        self.feed_path = feed_path or os.path.join(get_data_dir(), "sources", "regulator_advisories.json")
         meta = SourceMetadata(
             source_id=source_id,
             source_type="regulator_warning",
@@ -211,8 +211,7 @@ class PhishingThreatFeedAdapter(BaseSourceAdapter):
         feed_path: str | None = None,
         enable_live_network: bool = True,
     ):
-        base_dir = os.path.dirname(os.path.abspath(__file__))
-        self.feed_path = feed_path or os.path.join(base_dir, "data", "sources", "phishing_threats.json")
+        self.feed_path = feed_path or os.path.join(get_data_dir(), "sources", "phishing_threats.json")
         self.enable_live_network = enable_live_network
         meta = SourceMetadata(
             source_id=source_id,
@@ -373,8 +372,7 @@ class DataAcquisitionManager:
     """Orchestrates all source adapters with state persistence and rate limiting."""
 
     def __init__(self, state_file: str | None = None):
-        base_dir = os.path.dirname(os.path.abspath(__file__))
-        self.state_file = state_file or os.path.join(base_dir, "data", "sources", "sources_state.json")
+        self.state_file = state_file or os.path.join(get_data_dir(), "sources", "sources_state.json")
         os.makedirs(os.path.dirname(self.state_file), exist_ok=True)
         self.adapters: dict[str, BaseSourceAdapter] = {}
         self._init_default_adapters()

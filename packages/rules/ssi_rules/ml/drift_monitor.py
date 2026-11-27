@@ -17,6 +17,8 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
+from .model_registry import get_models_dir
+
 logger = logging.getLogger("toroka.ml.drift_monitor")
 
 
@@ -71,8 +73,7 @@ class DriftMonitor:
         max_fp_rate_threshold: float = 0.10,
         max_high_risk_rate_threshold: float = 0.70,
     ):
-        base_dir = os.path.dirname(os.path.abspath(__file__))
-        self.telemetry_file = telemetry_file or os.path.join(base_dir, "models", "telemetry.jsonl")
+        self.telemetry_file = telemetry_file or os.path.join(get_models_dir(), "telemetry.jsonl")
         os.makedirs(os.path.dirname(self.telemetry_file), exist_ok=True)
         self.window_size = window_size
         self.max_fp_rate_threshold = max_fp_rate_threshold

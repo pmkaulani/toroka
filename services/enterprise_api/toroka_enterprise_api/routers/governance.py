@@ -1,9 +1,10 @@
 """Governance, maker-checker closure review, workbench overview, and audit verification endpoints."""
 from __future__ import annotations
 
+import json
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -24,6 +25,7 @@ from ..permissions import (
     ROLE_SYSTEM_ADMINISTRATOR,
 )
 from ..persistence.audit import verify_audit_chain
+from ..persistence.checkpoints import AuditCheckpointManager
 from ..persistence.models import (
     AuditRecord,
     CaseAssignment,
@@ -33,13 +35,15 @@ from ..persistence.models import (
     RunRecord,
 )
 from ..schemas import (
+    AuditCheckpointResponse,
+    AuditCheckpointVerifyResponse,
     AuditTimelineItemResponse,
     AuditVerificationResponse,
     ClosureProposalResponse,
     ClosureReviewRequest,
     WorkbenchOverviewResponse,
 )
-from ..services.cases import CaseService
+from ..services.cases import CaseService, resolve_installation_id
 from ..services.reveals import RevealService
 from ..services.runs import RunService
 
@@ -239,23 +243,43 @@ def get_case_timeline(
     return timeline
 
 
+def _require_audit_role(principal: EnterprisePrincipal) -> None:
+    if not principal.roles.intersection(
+        {ROLE_AUDITOR, ROLE_AUTHORISER, ROLE_SYSTEM_ADMINISTRATOR}
+    ):
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            detail="Access to audit operations is restricted to auditors, authorisers, and system administrators.",
+        )
+
+
+def _get_checkpoint_runtime(request: Request):
+    store = getattr(request.app.state, "checkpoint_store", None)
+    signer = getattr(request.app.state, "checkpoint_signer", None)
+    verifier = getattr(request.app.state, "checkpoint_verifier", None)
+    if store is None or signer is None or verifier is None:
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Audit checkpointing is not configured on this installation.",
+        )
+    return store, signer, verifier
+
+
 @router.get("/audit/verify", response_model=AuditVerificationResponse)
 def verify_audit_log(
     principal: EnterprisePrincipal = Depends(get_current_principal),
     db: Session = Depends(get_db),
     installation_id: str = Depends(get_installation_id),
 ):
-    if not principal.roles.intersection(
-        {ROLE_AUDITOR, ROLE_AUTHORISER, ROLE_SYSTEM_ADMINISTRATOR}
-    ):
-        raise HTTPException(
-            status.HTTP_403_FORBIDDEN,
-            detail="Only auditors, authorisers, or system administrators can verify the cryptographic audit chain.",
-        )
+    _require_audit_role(principal)
+    try:
+        effective_inst = resolve_installation_id(principal, installation_id)
+    except PermissionError as exc:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, detail=str(exc))
 
-    is_valid, head_hash, count = verify_audit_chain(db, installation_id)
+    is_valid, head_hash, count = verify_audit_chain(db, effective_inst)
     return AuditVerificationResponse(
-        installation_id=installation_id,
+        installation_id=effective_inst,
         valid=is_valid,
         head_hash=head_hash,
         records_verified=count,
@@ -271,17 +295,15 @@ def list_audit_records(
     db: Session = Depends(get_db),
     installation_id: str = Depends(get_installation_id),
 ):
-    if not principal.roles.intersection(
-        {ROLE_AUDITOR, ROLE_AUTHORISER, ROLE_SYSTEM_ADMINISTRATOR}
-    ):
-        raise HTTPException(
-            status.HTTP_403_FORBIDDEN,
-            detail="Access to audit records is restricted to auditors, authorisers, and system administrators.",
-        )
+    _require_audit_role(principal)
+    try:
+        effective_inst = resolve_installation_id(principal, installation_id)
+    except PermissionError as exc:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, detail=str(exc))
 
     records = db.execute(
         select(AuditRecord)
-        .where(AuditRecord.installation_id == installation_id)
+        .where(AuditRecord.installation_id == effective_inst)
         .order_by(AuditRecord.sequence.desc())
         .limit(limit)
         .offset(offset)
@@ -301,3 +323,87 @@ def list_audit_records(
         )
         for r in records
     ]
+
+
+@router.post(
+    "/audit/checkpoints",
+    response_model=AuditCheckpointResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_audit_checkpoint(
+    request: Request,
+    principal: EnterprisePrincipal = Depends(get_current_principal),
+    db: Session = Depends(get_db),
+    installation_id: str = Depends(get_installation_id),
+):
+    """Create, sign, and immutably store an external audit chain checkpoint."""
+    _require_audit_role(principal)
+    store, signer, _ = _get_checkpoint_runtime(request)
+    try:
+        effective_inst = resolve_installation_id(principal, installation_id)
+        envelope = AuditCheckpointManager.create_checkpoint(effective_inst, db, signer, store)
+        return AuditCheckpointResponse(**envelope)
+    except PermissionError as exc:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, detail=str(exc))
+    except LookupError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail=str(exc))
+    except FileExistsError as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(exc))
+
+
+@router.get("/audit/checkpoints", response_model=list[str])
+def list_audit_checkpoints(
+    request: Request,
+    principal: EnterprisePrincipal = Depends(get_current_principal),
+    installation_id: str = Depends(get_installation_id),
+):
+    """List immutable checkpoint keys stored for this installation."""
+    _require_audit_role(principal)
+    store, _, _ = _get_checkpoint_runtime(request)
+    try:
+        effective_inst = resolve_installation_id(principal, installation_id)
+    except PermissionError as exc:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, detail=str(exc))
+    return store.list_keys(prefix=f"checkpoints/{effective_inst}/")
+
+
+@router.post("/audit/checkpoints/verify", response_model=AuditCheckpointVerifyResponse)
+def verify_audit_checkpoint(
+    request: Request,
+    envelope: AuditCheckpointResponse | None = Body(default=None),
+    principal: EnterprisePrincipal = Depends(get_current_principal),
+    db: Session = Depends(get_db),
+    installation_id: str = Depends(get_installation_id),
+):
+    """Verify a signed audit checkpoint (or latest stored checkpoint) against the database."""
+    _require_audit_role(principal)
+    store, _, verifier = _get_checkpoint_runtime(request)
+    try:
+        effective_inst = resolve_installation_id(principal, installation_id)
+    except PermissionError as exc:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, detail=str(exc))
+
+    if envelope is not None:
+        raw_envelope = envelope.model_dump()
+    else:
+        keys = store.list_keys(prefix=f"checkpoints/{effective_inst}/")
+        if not keys:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, detail="No audit checkpoints stored for this installation.")
+        raw_bytes = store.get(keys[-1])
+        if raw_bytes is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Stored audit checkpoint is unavailable.")
+        raw_envelope = json.loads(raw_bytes.decode("utf-8"))
+
+    ckpt_inst = (raw_envelope.get("data") or {}).get("installation_id")
+    if ckpt_inst != effective_inst:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Checkpoint installation does not match active installation.")
+
+    valid, message = AuditCheckpointManager.verify_checkpoint(raw_envelope, verifier, db)
+    head_seq = (raw_envelope.get("data") or {}).get("head_sequence")
+    return AuditCheckpointVerifyResponse(
+        valid=valid,
+        message=message,
+        head_sequence=head_seq if isinstance(head_seq, int) else None,
+    )

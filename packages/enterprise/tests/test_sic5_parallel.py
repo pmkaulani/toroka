@@ -55,6 +55,7 @@ def test_sic5_parallel_execution_success():
         telecom_simulated_call="IDLE",
         federated_mule_enabled=True,
         federated_mule_records=[],
+        federated_mule_salt="TEST_SIC5_FED_SALT",
         sla_budget_ms=100.0,
     )
 
@@ -88,6 +89,7 @@ def test_sic5_concurrency_proof():
         telecom_simulated_call="IDLE",
         federated_mule_enabled=True,
         federated_mule_records=[],
+        federated_mule_salt="TEST_SIC5_FED_SALT",
         simulated_latencies=sim_latencies,
         sla_budget_ms=50.0,
         feed_timeout_ms=35.0,

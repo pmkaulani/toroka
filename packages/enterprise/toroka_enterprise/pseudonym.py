@@ -34,8 +34,9 @@ class Pseudonymiser:
         if kind not in PREFIX:
             raise ValueError(f"unknown identifier kind: {kind}")
         value = str(raw).strip()
+        canonical = value.casefold()
         # Keep 128 bits of the keyed digest; 48 bits is too short for large-scale correlation.
-        digest = hmac.new(self._secret, f"toroka-ent:{kind}:{value}".encode(), hashlib.sha256).hexdigest()[:32]
+        digest = hmac.new(self._secret, f"toroka-ent:{kind}:{canonical}".encode(), hashlib.sha256).hexdigest()[:32]
         pseudo = f"{PREFIX[kind]}-{digest}"
-        self.vault[pseudo] = value
+        self.vault.setdefault(pseudo, value)
         return pseudo

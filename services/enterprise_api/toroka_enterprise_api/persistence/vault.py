@@ -186,11 +186,3 @@ class IdentityVaultRepository:
         record.rotated_at = utc_now()
         self.db.flush()
         return record
-        new_ciphertext, version = self.cipher.rotate(
-            record.ciphertext, record.key_version, new_key_version
-        )
-        record.ciphertext = new_ciphertext
-        record.key_version = version
-        record.rotated_at = utc_now()
-        self.db.flush()
-        return record

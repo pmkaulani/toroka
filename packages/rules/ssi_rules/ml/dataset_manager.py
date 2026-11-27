@@ -24,7 +24,7 @@ from ssi_rules.fingerprint import minhash, similarity
 
 from .auto_labeller import AutoLabeller, LabelTier
 from .data_acquisition import RawSourceRecord
-from .dataset import load_dataset, save_dataset
+from .dataset import get_data_dir, load_dataset, save_dataset
 from .schema import DatasetSample, Language, Provenance, SampleType, compute_template_hash
 
 logger = logging.getLogger("toroka.ml.dataset_manager")
@@ -67,8 +67,7 @@ class DatasetManager:
     """Manages versioned datasets, continuous ingestion, anti-poisoning, and snapshots."""
 
     def __init__(self, data_dir: str | None = None):
-        base_dir = os.path.dirname(os.path.abspath(__file__))
-        self.data_dir = data_dir or os.path.join(base_dir, "data")
+        self.data_dir = data_dir or get_data_dir()
         self.snapshots_dir = os.path.join(self.data_dir, "snapshots")
         self.quarantine_dir = os.path.join(self.data_dir, "quarantine")
         self.manifest_file = os.path.join(self.data_dir, "manifest.json")

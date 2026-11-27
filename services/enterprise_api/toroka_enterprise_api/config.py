@@ -47,6 +47,7 @@ class EnterpriseSettings:
     oidc_issuer: str = ""
     oidc_audience: str = ""
     oidc_jwks_url: str = ""
+    oidc_authorized_party: str = ""
     role_claim: str = "groups"
     algorithms: tuple[str, ...] = ("RS256",)
     role_map: dict[str, str] = field(default_factory=dict)
@@ -59,6 +60,8 @@ class EnterpriseSettings:
     vault_service_url: str = ""
     vault_service_token: str = ""
     expected_schema_revision: str = ""
+    audit_checkpoint_dir: str = ""
+    audit_checkpoint_hmac_key: str = ""
 
     @classmethod
     def from_env(cls) -> "EnterpriseSettings":
@@ -86,6 +89,7 @@ class EnterpriseSettings:
             oidc_issuer=os.getenv("TOROKA_ENT_OIDC_ISSUER", ""),
             oidc_audience=os.getenv("TOROKA_ENT_OIDC_AUDIENCE", ""),
             oidc_jwks_url=os.getenv("TOROKA_ENT_OIDC_JWKS_URL", ""),
+            oidc_authorized_party=os.getenv("TOROKA_ENT_OIDC_AZP", ""),
             role_claim=os.getenv("TOROKA_ENT_ROLE_CLAIM", "groups"),
             algorithms=algorithms or ("RS256",),
             role_map=role_map,
@@ -98,6 +102,8 @@ class EnterpriseSettings:
             vault_service_url=read_setting("TOROKA_ENT_VAULT_SERVICE_URL", ""),
             vault_service_token=read_setting("TOROKA_ENT_VAULT_SERVICE_TOKEN", ""),
             expected_schema_revision=read_setting("TOROKA_ENT_EXPECTED_SCHEMA_REVISION", ""),
+            audit_checkpoint_dir=read_setting("TOROKA_ENT_AUDIT_CHECKPOINT_DIR", ""),
+            audit_checkpoint_hmac_key=read_setting("TOROKA_ENT_AUDIT_CHECKPOINT_KEY", ""),
         )
 
     def validate(self) -> None:
@@ -108,15 +114,33 @@ class EnterpriseSettings:
             "production",
         }:
             raise ValueError("Unsupported Enterprise environment")
-        if self.environment == "production":
+        if self.environment in ("production", "staging"):
             if self.auth_mode == "development":
                 raise RuntimeError(
-                    "Development authentication is forbidden in production. Production requires bank-controlled OIDC"
+                    "Development authentication is forbidden in staging and production. "
+                    "Bank-controlled OIDC is required"
                 )
             if self.auth_mode != "oidc":
                 raise RuntimeError(
                     "Production Enterprise API requires OIDC"
                 )
+            if not self.oidc_issuer.startswith("https://") or not self.oidc_jwks_url.startswith("https://"):
+                raise RuntimeError("OIDC issuer and JWKS URL must use HTTPS in staging and production")
+            for origin in self.cors_allowed_origins:
+                parsed = urlparse(origin)
+                if parsed.scheme != "https" or not parsed.netloc or origin == "*":
+                    raise RuntimeError("Production CORS origins must use HTTPS and specify a valid host")
+            if self.vault_service_token and len(self.vault_service_token) < 32:
+                raise RuntimeError("Production Identity Vault service token must be at least 32 characters")
+            fed_salt = os.environ.get("TOROKA_FEDERATED_MULE_SALT", "")
+            if fed_salt in (
+                "TOROKA_CONSORTIUM_MULE_SALT_KENYA_CBK_2026_V1",
+                "TOROKA_CONSORTIUM_MULE_SALT_KENYA_CBK_2026_DEV",
+            ):
+                raise RuntimeError("Production cannot use the default sample federation salt")
+            if self.audit_checkpoint_dir and len(self.audit_checkpoint_hmac_key.encode("utf-8")) < 32:
+                raise RuntimeError("Audit checkpoint HMAC key must be at least 32 bytes when checkpointing is enabled")
+        if self.environment == "production":
             if self.vault_key:
                 raise RuntimeError(
                     "Production must not use a raw Fernet key "
@@ -133,17 +157,6 @@ class EnterpriseSettings:
             op_url = make_url(self.database_url)
             if op_url.get_backend_name() != "postgresql":
                 raise RuntimeError("Production Enterprise persistence requires PostgreSQL")
-            for origin in self.cors_allowed_origins:
-                parsed = urlparse(origin)
-                if parsed.scheme != "https" or not parsed.netloc or origin == "*":
-                    raise RuntimeError("Production CORS origins must use HTTPS and specify a valid host")
-            if self.vault_service_token and len(self.vault_service_token) < 32:
-                raise RuntimeError("Production Identity Vault service token must be at least 32 characters")
-            if not self.oidc_issuer.startswith("https://") or not self.oidc_jwks_url.startswith("https://"):
-                raise RuntimeError("Production OIDC issuer and JWKS URL must use HTTPS")
-            fed_salt = os.environ.get("TOROKA_FEDERATED_MULE_SALT", "")
-            if fed_salt == "TOROKA_CONSORTIUM_MULE_SALT_KENYA_CBK_2026_V1":
-                raise RuntimeError("Production cannot use the default sample federation salt")
         if self.auth_mode not in {"oidc", "development"}:
             raise ValueError("Unsupported authentication mode")
         if self.auth_mode == "oidc":

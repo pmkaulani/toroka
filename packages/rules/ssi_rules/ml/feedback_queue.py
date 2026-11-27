@@ -13,12 +13,12 @@ import os
 import uuid
 from typing import Any
 
+from .dataset import get_data_dir
 from .schema import AdjudicationStatus, DatasetSample, FeedbackItem, Language, Provenance, ReviewStatus, SampleType
 
 
 def get_feedback_db_path() -> str:
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    data_dir = os.path.join(base_dir, "data")
+    data_dir = get_data_dir()
     os.makedirs(data_dir, exist_ok=True)
     return os.path.join(data_dir, "feedback_queue.jsonl")
 

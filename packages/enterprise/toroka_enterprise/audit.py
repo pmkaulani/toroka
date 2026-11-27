@@ -7,6 +7,7 @@ the TAIL detectable too, periodically copy head_hash to a system the database ad
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
 import sqlite3
 import threading
@@ -26,14 +27,29 @@ class VerifyResult:
     problems: list[str] = field(default_factory=list)
 
 
-def _digest(prev: str, seq: int, ts: str, actor: str, role: str, action: str, target: str, detail: str) -> str:
-    payload = json.dumps([prev, seq, ts, actor, role, action, target, detail], separators=(",", ":"), ensure_ascii=True)
-    return hashlib.sha256(payload.encode()).hexdigest()
+def _digest(
+    prev: str,
+    seq: int,
+    ts: str,
+    actor: str,
+    role: str,
+    action: str,
+    target: str,
+    detail: str,
+    hmac_key: bytes | None = None,
+) -> str:
+    payload = json.dumps([prev, seq, ts, actor, role, action, target, detail], separators=(",", ":"), ensure_ascii=True).encode("utf-8")
+    if hmac_key is not None:
+        return hmac.new(hmac_key, payload, hashlib.sha256).hexdigest()
+    return hashlib.sha256(payload).hexdigest()
 
 
 class AuditLog:
-    def __init__(self, path: str | Path, clock: Callable[[], datetime] | None = None):
+    def __init__(self, path: str | Path, clock: Callable[[], datetime] | None = None, hmac_key: bytes | None = None):
+        if hmac_key is not None and len(hmac_key) < 32:
+            raise ValueError("AuditLog hmac_key must be at least 32 bytes")
         self._clock = clock or (lambda: datetime.now(timezone.utc))
+        self._hmac_key = hmac_key
         self._lock = threading.Lock()
         self._db = sqlite3.connect(str(path), check_same_thread=False, isolation_level=None)
         self._db.executescript("""
@@ -52,7 +68,7 @@ class AuditLog:
                 seq, prev = (row[0] + 1, row[1]) if row else (1, GENESIS)
                 ts = self._clock().astimezone(timezone.utc).isoformat()
                 body = json.dumps(detail or {}, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
-                h = _digest(prev, seq, ts, actor, role, action, target, body)
+                h = _digest(prev, seq, ts, actor, role, action, target, body, hmac_key=self._hmac_key)
                 self._db.execute("INSERT INTO audit VALUES (?,?,?,?,?,?,?,?,?)", (seq, ts, actor, role, action, target, body, prev, h))
                 self._db.execute("COMMIT")
                 return h
@@ -77,7 +93,7 @@ class AuditLog:
                 expected = seq
             if prev_hash != prev:
                 problems.append(f"entry {seq}: previous-hash link is broken")
-            if _digest(prev_hash, seq, ts, actor, role, action, target, detail) != h:
+            if _digest(prev_hash, seq, ts, actor, role, action, target, detail, hmac_key=self._hmac_key) != h:
                 problems.append(f"entry {seq}: content does not match its hash")
             prev, expected = h, expected + 1
         return VerifyResult(not problems, count, prev, problems)

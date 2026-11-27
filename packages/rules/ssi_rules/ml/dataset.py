@@ -15,9 +15,17 @@ from typing import Any
 from .schema import AdjudicationStatus, DatasetSample, Language, Provenance, SampleType
 
 
-def get_default_dataset_path() -> str:
+def get_data_dir() -> str:
+    env_dir = os.environ.get("TOROKA_ML_DATA_DIR")
+    if env_dir:
+        os.makedirs(env_dir, exist_ok=True)
+        return env_dir
     base_dir = os.path.dirname(os.path.abspath(__file__))
-    return os.path.join(base_dir, "data", "seed_dataset_v1.jsonl")
+    return os.path.join(base_dir, "data")
+
+
+def get_default_dataset_path() -> str:
+    return os.path.join(get_data_dir(), "seed_dataset_v1.jsonl")
 
 
 def load_dataset(file_path: str | None = None) -> list[DatasetSample]:

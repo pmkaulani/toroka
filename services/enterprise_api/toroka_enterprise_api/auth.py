@@ -56,8 +56,10 @@ def get_current_principal(
     settings = request.app.state.settings
 
     # Isolated local development adapter.
-    # This must never be enabled in a production deployment.
+    # This must never be enabled in a staging or production deployment.
     if settings.auth_mode == "development":
+        if settings.environment in ("production", "staging"):
+            raise HTTPException(403, "Development access denied outside local development")
         client = request.client
         if not client or not client.host:
             raise HTTPException(403, "Development access denied")
@@ -93,6 +95,15 @@ def get_current_principal(
         )
 
     try:
+        unverified_header = jwt.get_unverified_header(token)
+        tok_typ = unverified_header.get("typ")
+        if tok_typ is not None and str(tok_typ).strip().lower() not in {
+            "jwt",
+            "at+jwt",
+            "application/jwt",
+            "application/at+jwt",
+        }:
+            raise HTTPException(401, "Invalid token type")
         signing_key = jwks.get_signing_key_from_jwt(token)
         claims = jwt.decode(
             token,
@@ -100,6 +111,7 @@ def get_current_principal(
             algorithms=list(settings.algorithms),
             audience=settings.oidc_audience,
             issuer=settings.oidc_issuer,
+            leeway=30,
             options={
                 "require": [
                     "iss",
@@ -110,6 +122,8 @@ def get_current_principal(
                 ]
             },
         )
+    except HTTPException:
+        raise
     except PyJWKClientConnectionError:
         raise HTTPException(
             503,
@@ -117,6 +131,13 @@ def get_current_principal(
         )
     except (PyJWKClientError, PyJWTError):
         raise HTTPException(401, "Invalid or expired access token")
+
+    azp_claim = claims.get("azp")
+    if azp_claim is not None and (not isinstance(azp_claim, str) or not azp_claim.strip()):
+        raise HTTPException(401, "Invalid authorized party claim")
+    expected_azp = getattr(settings, "oidc_authorized_party", "")
+    if expected_azp and azp_claim != expected_azp:
+        raise HTTPException(401, "Token authorized party mismatch")
 
     subject = claims.get("sub")
     if not isinstance(subject, str) or not subject.strip():
@@ -131,6 +152,8 @@ def get_current_principal(
 
     inst_claim = claims.get("inst") or claims.get("installation_id")
     inst_val = str(inst_claim).strip() if inst_claim else None
+    if settings.environment in ("production", "staging") and inst_val and inst_val != settings.installation_id:
+        raise HTTPException(403, "Token installation does not match server installation")
 
     return EnterprisePrincipal(
         subject=subject,

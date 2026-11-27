@@ -6,7 +6,7 @@ from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 
 from ..auth import EnterprisePrincipal, get_current_principal, require_roles
-from ..dependencies import get_db, get_installation_id
+from ..dependencies import get_db, get_environment, get_installation_id
 from ..governance_schemas import (
     ApproveAIProviderRequest,
     ApproveComponentRequest,
@@ -1035,10 +1035,11 @@ def evaluate_inflight_payment(
     request: InflightPaymentEvaluationRequest,
     principal: EnterprisePrincipal = Depends(get_current_principal),
     installation_id: str = Depends(get_installation_id),
+    environment: str | None = Depends(get_environment),
     db: Session = Depends(get_db),
 ) -> InflightPaymentEvaluationResponse:
     effective_inst = principal.installation_id or installation_id
-    service = ProductionGovernanceService(db, effective_inst)
+    service = ProductionGovernanceService(db, effective_inst, environment=environment)
     return service.evaluate_inflight_payment(request=request, actor_subject=principal.subject)
 
 
@@ -1187,10 +1188,11 @@ def register_federated_mule(
     request: RegisterFederatedMuleRequest,
     principal: EnterprisePrincipal = Depends(get_current_principal),
     installation_id: str = Depends(get_installation_id),
+    environment: str | None = Depends(get_environment),
     db: Session = Depends(get_db),
 ) -> FederatedMuleEntryResponse:
     effective_inst = principal.installation_id or installation_id
-    service = ProductionGovernanceService(db, effective_inst)
+    service = ProductionGovernanceService(db, effective_inst, environment=environment)
     return service.register_federated_mule(request=request, actor_subject=principal.subject)
 
 
@@ -1205,10 +1207,11 @@ def query_federated_mule(
     request: QueryFederatedMuleRequest,
     principal: EnterprisePrincipal = Depends(get_current_principal),
     installation_id: str = Depends(get_installation_id),
+    environment: str | None = Depends(get_environment),
     db: Session = Depends(get_db),
 ) -> QueryFederatedMuleResponse:
     effective_inst = principal.installation_id or installation_id
-    service = ProductionGovernanceService(db, effective_inst)
+    service = ProductionGovernanceService(db, effective_inst, environment=environment)
     return service.query_federated_mule(request=request)
 
 
